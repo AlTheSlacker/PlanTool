@@ -54,6 +54,44 @@ def test_cold_session_rehydrates_from_status_and_gap(workspace):
     assert world and world[0]["context"]["row"]["system_response"] == "rely on vendor batch upserts"
 
 
+def test_full_v1_write_surface_is_registered():
+    """Guard against an engine function existing without its MCP tool."""
+    import asyncio
+    names = {t.name for t in asyncio.run(main.mcp.list_tools())}
+    assert names >= {
+        "plan_start", "plan_status", "next_gap",
+        "submit_use_cases", "submit_uc_extensions", "submit_requirements",
+        "submit_entities", "submit_crud", "submit_states", "submit_state_cells",
+        "submit_components", "submit_contracts", "submit_contract_deps",
+        "submit_dependencies", "submit_dep_failure_modes",
+        "file_question", "resolve_question", "file_conflict", "resolve_conflict",
+        "record_decision",
+    }
+
+
+def test_singular_tools_no_plan_guard(workspace):
+    assert main.file_question_impl("q?")["status"] == "no_plan"
+    assert main.record_decision_impl("x", "decided")["status"] == "no_plan"
+
+
+def test_server_nested_submit_and_decision_roundtrip(workspace):
+    """Nested rows and the significance heuristic through the impl layer."""
+    from conftest import valid_component, valid_contract, valid_use_case
+    main.plan_start_impl("toy-plan")
+    ucs = main.submit_use_cases_impl([valid_use_case()])
+    assert ucs["accepted"] == 1
+
+    main.submit_components_impl([valid_component()])
+    main.submit_contracts_impl([valid_contract()])
+    blocked = main.record_decision_impl(
+        "contract place_order is synchronous", "decided", links=["contracts:1"])
+    assert "significance" in blocked["error"]
+    ok = main.record_decision_impl(
+        "contract place_order is synchronous", "decided", links=["contracts:1"],
+        alternatives=[{"alternative": "async job", "rejected_because": "overkill for v1"}])
+    assert ok == {"id": 1, "significant": True}
+
+
 def test_server_batch_partial_acceptance(workspace):
     main.plan_start_impl("toy-plan")
     out = main.submit_requirements_impl([
