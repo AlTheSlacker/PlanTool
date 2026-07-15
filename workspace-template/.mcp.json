@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "plantool": {
+      "type": "stdio",
+      "command": "D:/PythonProjects/PlanTool/.venv/Scripts/python.exe",
+      "args": ["D:/PythonProjects/PlanTool/server/main.py"]
+    }
+  }
+}

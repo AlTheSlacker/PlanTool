@@ -1,0 +1,62 @@
+"""Thin sqlite3 wrapper. One DB file per plan, living in the planning
+workspace so the plan travels with the project folder (spec section 3).
+
+Every connection opens with journal_mode=WAL and a busy_timeout so two
+concurrent sessions on one workspace degrade gracefully instead of
+corrupting or hard-failing.
+"""
+from __future__ import annotations
+
+import sqlite3
+from pathlib import Path
+
+SCHEMA_PATH = Path(__file__).with_name("schema.sql")
+BUSY_TIMEOUT_MS = 5000
+
+# Tables whose rows assert planning facts (carry provenance).
+CLAIM_TABLES = (
+    "use_cases", "uc_steps", "uc_extensions", "requirements", "entities",
+    "crud_grid", "state_machines", "sm_cells", "components", "contracts",
+    "contract_deps", "dependencies", "dep_failure_modes", "decisions",
+)
+# Process bookkeeping (no provenance).
+BOOKKEEPING_TABLES = ("open_questions", "conflicts", "spikes", "findings", "gate_results")
+COUNTED_TABLES = CLAIM_TABLES + BOOKKEEPING_TABLES
+
+
+def connect(db_path: str | Path) -> sqlite3.Connection:
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    conn.execute(f"PRAGMA busy_timeout = {BUSY_TIMEOUT_MS}")
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA foreign_keys = ON")
+    return conn
+
+
+def create_plan_db(db_path: str | Path, name: str) -> sqlite3.Connection:
+    """Create a fresh plan database and its single plan row."""
+    conn = connect(db_path)
+    conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
+    conn.execute("PRAGMA foreign_keys = ON")  # executescript may run outside our pragma
+    conn.execute("INSERT INTO plans (name) VALUES (?)", (name,))
+    conn.commit()
+    return conn
+
+
+def get_plan(conn: sqlite3.Connection) -> sqlite3.Row | None:
+    return conn.execute("SELECT * FROM plans ORDER BY id LIMIT 1").fetchone()
+
+
+def insert_row(conn: sqlite3.Connection, table: str, values: dict) -> int:
+    """Insert one row; caller supplies validated column->value mapping."""
+    cols = ", ".join(values)
+    marks = ", ".join("?" * len(values))
+    cur = conn.execute(f"INSERT INTO {table} ({cols}) VALUES ({marks})", tuple(values.values()))
+    return cur.lastrowid
+
+
+def table_counts(conn: sqlite3.Connection) -> dict[str, int]:
+    return {
+        t: conn.execute(f"SELECT count(*) FROM {t}").fetchone()[0]
+        for t in COUNTED_TABLES
+    }
