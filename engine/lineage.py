@@ -315,7 +315,7 @@ def _insert_special(conn, table: str, original, merged: dict, plan) -> int:
 
 def supersede_row(conn: db.Connection, table: str, row_id: int,
                   replacement_fields: dict, reason: str) -> dict:
-    err = _table_error(table)
+    err = db.frozen_error(conn) or _table_error(table)
     if err:
         return {"error": err}
     err, original = _fetch_active(conn, table, row_id)
@@ -426,7 +426,7 @@ def _retire_cascade(conn, table: str, row_id: int, reason: str,
 
 
 def retire_row(conn: db.Connection, table: str, row_id: int, reason: str) -> dict:
-    err = _table_error(table)
+    err = db.frozen_error(conn) or _table_error(table)
     if err:
         return {"error": err}
     err, original = _fetch_active(conn, table, row_id)
@@ -454,7 +454,7 @@ def retire_row(conn: db.Connection, table: str, row_id: int, reason: str) -> dic
 
 
 def confirm_assumption(conn: db.Connection, table: str, row_id: int, evidence: str) -> dict:
-    err = _table_error(table)
+    err = db.frozen_error(conn) or _table_error(table)
     if err:
         return {"error": err}
     err, row = _fetch_active(conn, table, row_id)

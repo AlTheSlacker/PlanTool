@@ -34,6 +34,9 @@ def _slug(question: str) -> str:
 def register_spike(conn: db.Connection, spikes_root: str | Path, question: str,
                    hypothesis: str | None = None, method: str | None = None,
                    budget: str | None = None, links: list[str] | None = None) -> dict:
+    frozen = db.frozen_error(conn)
+    if frozen:
+        return {"error": frozen}
     args = _clean({"question": question, "hypothesis": hypothesis, "method": method,
                    "budget": budget, "links": links})
     for field, why in REGISTER_REQUIRED:
@@ -66,6 +69,9 @@ def register_spike(conn: db.Connection, spikes_root: str | Path, question: str,
 
 def record_spike_result(conn: db.Connection, spike_id, verdict: str,
                         evidence_summary: str, evidence_path: str | None = None) -> dict:
+    frozen = db.frozen_error(conn)
+    if frozen:
+        return {"error": frozen}
     spike = None
     if isinstance(spike_id, int) and not isinstance(spike_id, bool):
         spike = conn.execute("SELECT * FROM spikes WHERE id = ?", (spike_id,)).fetchone()

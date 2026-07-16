@@ -1,6 +1,6 @@
 import pytest
 
-from engine import db, submits
+from engine import db, findings, submits
 
 
 @pytest.fixture
@@ -163,8 +163,22 @@ def make_stage6_pass(conn):
         conn, [valid_contract(links=["requirements:1"], is_external=True)]))
 
 
+def make_stage7_pass(conn):
+    fid = _ok(findings.file_finding(
+        conn, "redteam", "Stripe retry handling never bounds total wait time",
+        links=["dependencies:1"]))["id"]
+    _ok(findings.disposition_finding(
+        conn, fid, "accepted", "user accepted: launch volume makes runaway retries moot"))
+
+
 def populate_full_plan(conn):
     """Drive the submit surface to a state where gates 1-6 all pass."""
     for build in (make_stage1_pass, make_stage2_pass, make_stage3_pass,
                   make_stage4_pass, make_stage5_pass, make_stage6_pass):
         build(conn)
+
+
+def populate_freezable_plan(conn):
+    """A plan where every gate 1-8 passes — the freeze_plan precondition."""
+    populate_full_plan(conn)
+    make_stage7_pass(conn)

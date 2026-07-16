@@ -94,3 +94,92 @@ def test_export_yaml_is_plain_safe_yaml(tmp_path):
     data = yaml.safe_load((tmp_path / "plan.yaml").read_text(encoding="utf-8"))
     assert data["plantool_export"] == render.EXPORT_FORMAT
     assert data["plan_name"] == "roundtrip-plan"
+
+
+# --- plan.md / plan packs (Session E) ------------------------------------------
+
+
+def test_full_markdown_carries_every_section_with_refs(tmp_path):
+    conn = populated_conn(tmp_path)
+    try:
+        md = render.render_markdown(conn)
+    finally:
+        conn.close()
+    assert md.startswith("# Plan: roundtrip-plan")
+    # The EARS sentence is assembled from slots, never stored.
+    assert ("WHEN the user submits a valid order, the system shall persist the order "
+            "and emit OrderPlaced.") in md
+    for expected in (
+            "Goal: customers place orders online",          # stage 1
+            "Place an order — actor: Customer",             # stage 2
+            "### Order (`entities:1`", "| C | OrderService", # stage 4 grid
+            "| draft | place | placed |",                    # stage 4 machine
+            "### Stripe API (api)", "| unavailable |",       # stage 5
+            "**place_order** (function): (draft: OrderDraft) -> OrderId",  # stage 6
+            "error ValidationError",
+            "does the sandbox rate-limit?",                  # spikes
+            "Which currency rounding rule applies?",         # questions
+            "`requirements:1`", "`contracts:1`"):            # refs for the red team
+        assert expected in md, expected
+
+
+def test_stage_pack_scopes_to_one_stage(tmp_path):
+    conn = populated_conn(tmp_path)
+    try:
+        pack = render.plan_pack(conn, "stage:3")
+        assert pack["scope"] == "stage:3"
+        assert "the system shall persist the order" in pack["markdown"]
+        assert "Stripe API" not in pack["markdown"]
+    finally:
+        conn.close()
+
+
+def test_component_pack_carries_contracts_and_linked_decisions(tmp_path):
+    conn = populated_conn(tmp_path)
+    try:
+        submits.record_decision(
+            conn, "place_order is synchronous", "decided",
+            rationale="callers need the OrderId immediately", links=["contracts:1"],
+            alternatives=[{"alternative": "async job + callback",
+                           "rejected_because": "no consumer can use it"}])
+        by_name = render.plan_pack(conn, "component:orderservice")
+        assert by_name["scope"] == "component:OrderService"
+        assert "place_order" in by_name["markdown"]
+        assert "place_order is synchronous" in by_name["markdown"]
+        assert "rejected: async job + callback" in by_name["markdown"]
+        assert render.plan_pack(conn, "component:1")["markdown"] == by_name["markdown"]
+    finally:
+        conn.close()
+
+
+def test_plan_pack_rejects_bad_scopes(tmp_path):
+    conn = populated_conn(tmp_path)
+    try:
+        assert "\"stage:N\"" in render.plan_pack(conn, "everything")["error"]
+        assert "freeze procedure" in render.plan_pack(conn, "stage:8")["error"]
+        unknown = render.plan_pack(conn, "component:NoSuch")["error"]
+        assert "matches none" in unknown and "OrderService" in unknown
+    finally:
+        conn.close()
+
+
+def test_export_plan_writes_both_files(tmp_path):
+    conn = populated_conn(tmp_path)
+    try:
+        out = render.export_plan(conn, tmp_path)
+    finally:
+        conn.close()
+    md = (tmp_path / "plan.md").read_text(encoding="utf-8")
+    assert "# Plan: roundtrip-plan" in md
+    assert out["plan_md"]["chars"] == len(md)
+    assert out["plan_yaml"]["rows"]["plans"] == 1
+    (tmp_path / "plan.db").unlink()
+    render.import_yaml(tmp_path / "plan.yaml", tmp_path / "plan.db")  # still a real bundle
+
+
+def test_roundtrip_check_is_clean_on_a_real_plan(tmp_path):
+    conn = populated_conn(tmp_path)
+    try:
+        assert render.roundtrip_check(conn) == []
+    finally:
+        conn.close()

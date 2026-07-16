@@ -211,6 +211,31 @@ def _stage_holes(conn, stage: int):
                        "invented scope. Record its consumer edge (submit_contract_deps), mark "
                        "it external (supersede_row), or cut it (retire_row).",
                        row_id=k["id"], entity=k["component_name"], context={"contract": k})
+    elif stage == 7:
+        findings = _rows(conn, "SELECT * FROM findings ORDER BY id")
+        if not findings:
+            yield _gap(
+                2, "hole:no_findings", "findings", 7,
+                "Stage 7 is adversarial. Ask the user to open a FRESH session and tell it "
+                "to red-team this plan (it will follow get_stage_prompt('redteam') + "
+                "get_plan_pack('full')); run the pre-mortem yourself. Every issue is filed "
+                "with file_finding — a red team that finds nothing means the script is "
+                "broken, not that the plan is perfect.")
+        for f in findings:
+            if f["disposition"] is None:
+                yield _gap(
+                    2, "hole:finding_undispositioned", "findings", 7,
+                    f"Finding findings:{f['id']} ({f['source']}: \"{f['text']}\") awaits "
+                    "disposition. Work it with the user, then disposition_finding — fixed "
+                    "(link the corrected rows), accepted, or spiked (link the spike) — "
+                    "with the rationale.",
+                    row_id=f["id"], context={"finding": f})
+    elif stage == 8:
+        yield _gap(
+            2, "hole:awaiting_freeze", "plans", 8,
+            "Stage 8 is mechanical: run_gate(8) checks every gate, open conflicts, the "
+            "plan.md render, and the plan.yaml round-trip; when it passes, freeze_plan() "
+            "makes the plan read-only and export_plan() writes plan.md + plan.yaml.")
 
 
 # (table, alias, stage, sql) -> rows with id, label, entity for the assumed scans.
@@ -319,6 +344,16 @@ def _dismissed_keys(conn) -> set[tuple]:
 
 def next_gap(conn: db.Connection) -> dict:
     plan = db.get_plan(conn)
+    if plan["state"] == "frozen":
+        return {
+            "status": "frozen",
+            "current_stage": plan["current_stage"],
+            "message": (
+                f"This plan froze at version {plan['version']} — planning is complete and "
+                "the record is read-only. plan_status, get_rows, get_plan_pack, and "
+                "export_plan remain available; implementation works from the frozen "
+                "contracts."),
+        }
     stage = plan["current_stage"]
     candidates = [
         *(_conflict_gaps(conn)),
@@ -357,6 +392,9 @@ def dismiss_gap(conn: db.Connection, kind: str, table: str, row_id: int | None,
     """Deliberately set a surfaced gap aside (dogfood F4: next_gap nagged
     items the user had answered). Identity is (kind, table, row_id) exactly as
     the gap carried them. next_gap stops surfacing it; gates are unaffected."""
+    frozen = db.frozen_error(conn)
+    if frozen:
+        return {"error": frozen}
     if kind in UNDISMISSABLE:
         return {"error": (
             f"Rule: '{kind}' gaps cannot be dismissed — {UNDISMISSABLE[kind]}.")}

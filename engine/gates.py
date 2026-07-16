@@ -1,8 +1,10 @@
-"""Stage gates 1-6 (spec section 8): one function per gate, pure SQL/queries
+"""Stage gates 1-8 (spec section 8): one function per gate, pure SQL/queries
 over the plan DB, no LLM anywhere. A gate returns row-level holes — each hole
 names its table, row, problem, and what compliance looks like. run_gate()
 records the result in gate_results and, on a pass at the plan's current
 stage, advances the stage (the server attaches the next stage's script).
+freeze_plan() is the terminal write: allowed only while gate 8 (which folds
+in gates 1-7, the export render, and the plan.yaml round-trip) passes.
 
 Most structural rules are also enforced at write time (engine/submits.py);
 the gates re-check them in SQL anyway because the plan.yaml reimport path
@@ -20,7 +22,7 @@ from __future__ import annotations
 
 import json
 
-from . import db
+from . import db, render
 
 FAILURE_MODES = ("unavailable", "slow", "malformed", "auth", "partial")
 CRUD_OPS = ("C", "R", "U", "D")
@@ -339,8 +341,73 @@ def gate_stage6(conn) -> list[dict]:
     return holes
 
 
-GATES = {1: gate_stage1, 2: gate_stage2, 3: gate_stage3,
-         4: gate_stage4, 5: gate_stage5, 6: gate_stage6}
+# --- stage 7: adversarial ------------------------------------------------------
+
+def gate_stage7(conn) -> list[dict]:
+    holes = []
+    findings = _rows(conn, "SELECT * FROM findings ORDER BY id")
+    if not findings:
+        holes.append(_hole(
+            "findings", "no adversarial findings recorded",
+            "run the red-team pass (fresh session + get_plan_pack('full') + "
+            "get_stage_prompt('redteam')) and the pre-mortem, filing each issue with "
+            "file_finding — a red team that finds nothing means the red-team script is "
+            "broken, not that the plan is perfect"))
+    for f in findings:
+        if f["disposition"] is None:
+            holes.append(_hole(
+                "findings",
+                f"finding findings:{f['id']} ({f['source']}: \"{f['text']}\") is "
+                "undispositioned",
+                "disposition_finding — fixed (link the corrected rows), accepted (the "
+                "user's knowing risk acceptance), or spiked (link the spike), with the "
+                "rationale", row_id=f["id"]))
+        elif not (f["disposition_rationale"] or "").strip():
+            holes.append(_hole(
+                "findings",
+                f"finding findings:{f['id']} has disposition '{f['disposition']}' but no "
+                "rationale",
+                "every disposition records why — what was fixed, why the risk is "
+                "acceptable, or what the spike will settle", row_id=f["id"]))
+    return holes
+
+
+# --- stage 8: freeze -------------------------------------------------------------
+
+def gate_stage8(conn) -> list[dict]:
+    """All gates green, no open conflicts, exports render, and the plan.yaml
+    round-trip is lossless — the mechanical preconditions of freeze_plan()."""
+    holes = []
+    for stage in range(1, 8):
+        stage_holes = GATES[stage](conn)
+        if stage_holes:
+            holes.append(_hole(
+                "gate_results",
+                f"the stage-{stage} gate has {len(stage_holes)} open hole(s)",
+                f"run_gate({stage}) for the row-level holes and work them with the user — "
+                "freeze requires every gate green"))
+    for c in _rows(conn, "SELECT id, description FROM conflicts WHERE state = 'open' ORDER BY id"):
+        holes.append(_hole(
+            "conflicts", f"conflict #{c['id']} is still open: {c['description']}",
+            "a frozen plan cannot contradict itself — resolve_conflict with the user's "
+            "adjudication first", row_id=c["id"]))
+    try:
+        render.render_markdown(conn)
+    except Exception as exc:
+        holes.append(_hole(
+            "plans", f"plan.md fails to render: {exc!r}",
+            "the renderer choked on recorded data — likely a reimport artifact; fix the "
+            "offending row"))
+    for problem in render.roundtrip_check(conn):
+        holes.append(_hole(
+            "plans", f"plan.yaml round-trip is not lossless: {problem}",
+            "the export escape hatch must reproduce the DB exactly before the plan can "
+            "freeze on it"))
+    return holes
+
+
+GATES = {1: gate_stage1, 2: gate_stage2, 3: gate_stage3, 4: gate_stage4,
+         5: gate_stage5, 6: gate_stage6, 7: gate_stage7, 8: gate_stage8}
 
 
 def run_gate(conn: db.Connection, stage) -> dict:
@@ -348,10 +415,6 @@ def run_gate(conn: db.Connection, stage) -> dict:
     at its current stage. Returns pass/fail with the specific row-level holes."""
     if isinstance(stage, bool) or not isinstance(stage, int) or not 1 <= stage <= 8:
         return {"error": f"Rule: stage is an integer 1-8. Offending input: stage={stage!r}."}
-    if stage not in GATES:
-        return {"error": (
-            "Rule: the stage-7 (adversarial) and stage-8 (freeze) gates arrive in a later "
-            f"build session; gates 1-6 are live. Offending input: stage={stage}.")}
     holes = GATES[stage](conn)
     passed = not holes
     plan = db.get_plan(conn)
@@ -364,5 +427,40 @@ def run_gate(conn: db.Connection, stage) -> dict:
         conn.execute("UPDATE plans SET current_stage = ?", (stage + 1,))
         out["advanced_to"] = stage + 1
         out["current_stage"] = stage + 1
+    if stage == 8 and passed and plan["state"] == "open":
+        out["next"] = ("Every mechanical precondition holds — freeze_plan() bumps the "
+                       "version and makes the plan read-only, then export_plan() writes "
+                       "the final plan.md and plan.yaml.")
     conn.commit()
     return out
+
+
+def freeze_plan(conn: db.Connection) -> dict:
+    """The terminal write (spec section 5): allowed only while gate 8 passes.
+    Bumps the version, sets state=frozen; every write surface refuses from
+    then on (db.frozen_error) — the exports and reads stay available."""
+    plan = db.get_plan(conn)
+    if plan["state"] == "frozen":
+        return {"error": (
+            f"Rule: this plan is already frozen (version {plan['version']}). "
+            "There is no unfreeze — a frozen plan is the record; a new planning round "
+            "is a new plan.")}
+    holes = gate_stage8(conn)
+    db.insert_row(conn, "gate_results", {
+        "plan_id": plan["id"], "stage": 8,
+        "passed": 0 if holes else 1, "holes": json.dumps(holes)})
+    if holes:
+        conn.commit()
+        return {"error": (
+            "Rule: freeze_plan is allowed only when all gates pass — gate 8 found "
+            f"{len(holes)} hole(s), each naming its fix."), "holes": holes}
+    version = plan["version"] + 1
+    conn.execute("UPDATE plans SET state = 'frozen', version = ?, current_stage = 8",
+                 (version,))
+    conn.commit()
+    return {
+        "state": "frozen", "version": version,
+        "next": ("The plan is frozen and read-only. export_plan() writes the final "
+                 "plan.md and plan.yaml; implementation sessions work from those "
+                 "contracts."),
+    }
