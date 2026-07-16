@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import sqlite3
 
+from . import conflicts as conflict_detect
 from . import db
 
 PROVENANCE_VALUES = ("decided", "derived", "assumed", "verified")
@@ -275,8 +276,9 @@ def _envelope_error(row: dict) -> str | None:
         return (
             "Rule: 'verified' is never set at submit time — only recording a spike result "
             "upgrades an assumed(world) row to verified. Offending row: " + _fmt(row) + ". "
-            "Compliant: submit with provenance='assumed', assumption_kind='world', then run a "
-            "spike against the real dependency (spike tools arrive in a later build session)."
+            "Compliant: submit with provenance='assumed', assumption_kind='world', then "
+            "register_spike (linking this row), run it against the real dependency, and "
+            "record_spike_result — a confirmed verdict performs the upgrade."
         )
     return _links_error(row)
 
@@ -364,6 +366,20 @@ def _submit_batch(conn, rows, validate, insert) -> dict:
         "accepted": sum(1 for v in verdicts if v["accepted"]),
         "rejected": sum(1 for v in verdicts if not v["accepted"]),
     }
+
+
+def _with_crud_sweep(conn, result: dict) -> dict:
+    """After a write that can create an n/a-cell-vs-step contradiction, run the
+    engine conflict sweep (spec section 6) and surface anything it filed."""
+    if result["accepted"]:
+        filed = conflict_detect.sweep_crud_contradictions(conn)
+        if filed:
+            result["conflicts_filed"] = filed
+            result.setdefault("guidance", "")
+            result["guidance"] = (result["guidance"] + " Engine-detected conflict(s) were "
+                                  "filed — they sit at next_gap() priority 1 until resolved "
+                                  "with the user.").strip()
+    return result
 
 
 # --- requirements (stage 3) --------------------------------------------------
@@ -594,7 +610,7 @@ def submit_use_cases(conn: sqlite3.Connection, rows: list[dict]) -> dict:
                     **_child_envelope(plan, ext, step_env)})
         return {"id": uc_id, "step_ids": step_ids}
 
-    return _submit_batch(conn, rows, validate, insert)
+    return _with_crud_sweep(conn, _submit_batch(conn, rows, validate, insert))
 
 
 def submit_uc_extensions(conn: sqlite3.Connection, rows: list[dict]) -> dict:
@@ -622,7 +638,7 @@ def submit_uc_extensions(conn: sqlite3.Connection, rows: list[dict]) -> dict:
             "handling": _text(row, "handling"),
             **_envelope(plan, row)})
 
-    return _submit_batch(conn, rows, validate, insert)
+    return _with_crud_sweep(conn, _submit_batch(conn, rows, validate, insert))
 
 
 # --- CRUD grid (stage 4) -----------------------------------------------------
@@ -695,7 +711,7 @@ def submit_crud(conn: sqlite3.Connection, rows: list[dict]) -> dict:
             "children_on_delete": _text(row, "children_on_delete"),
             **_envelope(plan, row)})
 
-    return _submit_batch(conn, rows, validate, insert)
+    return _with_crud_sweep(conn, _submit_batch(conn, rows, validate, insert))
 
 
 # --- state machines (stage 4) ------------------------------------------------

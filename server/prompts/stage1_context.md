@@ -21,12 +21,14 @@ proposal-first wherever you can form a defensible default.
 - World-assumptions you hit (e.g. "the vendor API supports batch upserts") get spiked, not
   asked; intent-assumptions get asked, not guessed.
 
-## This build (Session A)
-Only `submit_requirements` and `submit_entities` are live so far. File facts that fit those
-shapes — constraints often make good ubiquitous/state requirements; core domain nouns can be
-filed early as entities. Goals, non-goals, and target-stack decisions arrive with
-`record_decision` in the next build session; until then keep them crisply summarised in
-conversation so they can be filed the moment the tool exists.
+## How stage-1 facts are recorded (the gate queries these shapes)
+- Each goal: `record_decision` with text starting `Goal:` and the measurable success
+  criterion in `rationale`.
+- Each exclusion: text starting `Non-goal:`.
+- The target stack: text starting `Stack:` (language / platform / runtime), with the
+  alternatives that were considered.
+- Constraints often make good ubiquitous/state requirements (`submit_requirements`);
+  core domain nouns can be filed early as entities (`submit_entities`).
 
 ## Self-review before gate
 - Does every goal have a success criterion an acceptance test could check?

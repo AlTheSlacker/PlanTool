@@ -33,11 +33,18 @@ def connect(db_path: str | Path) -> sqlite3.Connection:
     return conn
 
 
-def create_plan_db(db_path: str | Path, name: str) -> sqlite3.Connection:
-    """Create a fresh plan database and its single plan row."""
+def create_db(db_path: str | Path) -> sqlite3.Connection:
+    """Create a fresh, empty database on the current schema (no plan row) —
+    the reimport target of the plan.yaml escape hatch."""
     conn = connect(db_path)
     conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
     conn.execute("PRAGMA foreign_keys = ON")  # executescript may run outside our pragma
+    return conn
+
+
+def create_plan_db(db_path: str | Path, name: str) -> sqlite3.Connection:
+    """Create a fresh plan database and its single plan row."""
+    conn = create_db(db_path)
     conn.execute("INSERT INTO plans (name) VALUES (?)", (name,))
     conn.commit()
     return conn

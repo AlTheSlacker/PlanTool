@@ -17,10 +17,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from pydantic import BaseModel, ConfigDict
 from mcp.server.fastmcp import FastMCP
 
-from engine import db, gaps, submits
+from engine import db, gaps, gates, spikes, submits
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
 DB_FILENAME = "plan.db"
+SPIKES_DIRNAME = "spikes"
 
 mcp = FastMCP("plantool")
 
@@ -408,6 +409,38 @@ def resolve_conflict_impl(conflict_id: int, resolution: str) -> dict:
     return _record_impl(submits.resolve_conflict, conflict_id, resolution)
 
 
+def run_gate_impl(stage: int) -> dict:
+    result = _record_impl(gates.run_gate, stage)
+    if result.get("advanced_to"):
+        result["stage_script"] = _stage_script(result["advanced_to"])
+        result["next"] = (
+            f"Stage {stage} gate passed — the plan advanced to stage {result['advanced_to']}. "
+            "Its script is attached; open that stage with the user, then next_gap().")
+    elif result.get("passed") is False:
+        result["next"] = (
+            "Work the holes with the user (each names its fix), then re-run the gate.")
+    return result
+
+
+def get_stage_prompt_impl(stage: int) -> dict:
+    if isinstance(stage, bool) or not isinstance(stage, int) or not 1 <= stage <= 8:
+        return {"error": f"Rule: stage is an integer 1-8. Offending input: stage={stage!r}."}
+    return {"stage": stage, "mandate": _mandate(), "stage_script": _stage_script(stage)}
+
+
+def register_spike_impl(question: str, hypothesis: str | None = None,
+                        method: str | None = None, budget: str | None = None,
+                        links: list[str] | None = None) -> dict:
+    return _record_impl(spikes.register_spike, _workspace() / SPIKES_DIRNAME,
+                        question, hypothesis, method, budget, links)
+
+
+def record_spike_result_impl(spike_id: int, verdict: str, evidence_summary: str,
+                             evidence_path: str | None = None) -> dict:
+    return _record_impl(spikes.record_spike_result, spike_id, verdict,
+                        evidence_summary, evidence_path)
+
+
 def record_decision_impl(text: str, provenance: str, rationale: str | None = None,
                          links: list[str] | None = None,
                          alternatives: list[dict] | None = None,
@@ -626,6 +659,51 @@ def record_decision(text: str, provenance: str, rationale: str | None = None,
         alternatives=[a.model_dump() for a in alternatives] if alternatives else None,
         challenge=challenge.model_dump() if challenge else None,
         assumption_kind=assumption_kind)
+
+
+@mcp.tool(description=(
+    "Evaluate a stage's mechanical gate (stages 1-6 live). Returns pass/fail with the specific "
+    "row-level holes — each names its table, row, problem, and fix. Run the stage's self-review "
+    "checklist first: gates verify completeness, self-review is where quality lives. On a pass "
+    "at the plan's current stage the plan advances and the result carries the next stage's "
+    "script."
+))
+def run_gate(stage: int) -> dict:
+    return run_gate_impl(stage)
+
+
+@mcp.tool(description=(
+    "Fetch any stage's interview script plus the engineer's mandate on demand — for "
+    "rehydrating a cold session onto a specific stage or preparing a red-team session. "
+    "plan_status() already carries the current stage's script."
+))
+def get_stage_prompt(stage: int) -> dict:
+    return get_stage_prompt_impl(stage)
+
+
+@mcp.tool(description=(
+    "Register a spike BEFORE writing any probe code. One spike = one question about external "
+    "reality; requires question, hypothesis (what you expect to observe), method (how the probe "
+    "touches the REAL dependency — a mock yields inconclusive at best), and budget (timebox; "
+    "expiry means inconclusive). Link the assumed(world) rows it tests via links. Returns the "
+    "spike id and a quarantine directory — all probe code lives there and never migrates to "
+    "any codebase."
+))
+def register_spike(question: str, hypothesis: str | None = None, method: str | None = None,
+                   budget: str | None = None, links: list[str] | None = None) -> dict:
+    return register_spike_impl(question, hypothesis, method, budget, links)
+
+
+@mcp.tool(description=(
+    "Record a spike's outcome: verdict (confirmed|refuted|inconclusive), evidence_summary "
+    "(what the experiment actually showed), optional evidence_path. 'confirmed' upgrades "
+    "linked assumed(world) rows to verified — the only path to 'verified'. 'refuted' is a "
+    "spike success: the engine files conflicts on the disproved rows for correction. Budget "
+    "expiry or a mocked stand-in is 'inconclusive' — escalate to the user as a risk decision."
+))
+def record_spike_result(spike_id: int, verdict: str, evidence_summary: str,
+                        evidence_path: str | None = None) -> dict:
+    return record_spike_result_impl(spike_id, verdict, evidence_summary, evidence_path)
 
 
 if __name__ == "__main__":
