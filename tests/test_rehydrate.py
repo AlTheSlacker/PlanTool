@@ -69,7 +69,20 @@ def test_full_v1_write_surface_is_registered():
         # Session D surface: corrections, targeted reads, gap dismissal.
         "supersede_row", "retire_row", "confirm_assumption", "get_rows", "dismiss_gap",
         "run_gate", "get_stage_prompt", "register_spike", "record_spike_result",
+        # Session E surface: the wrap.
+        "get_plan_pack", "export_plan", "freeze_plan",
+        "file_finding", "disposition_finding",
     }
+
+
+def test_stage_7_8_and_redteam_scripts_are_served():
+    assert "pre-mortem" in main.get_stage_prompt_impl(7)["stage_script"]
+    assert "freeze_plan" in main.get_stage_prompt_impl(8)["stage_script"]
+    redteam = main.get_stage_prompt_impl("redteam")
+    assert "you attack this plan" in redteam["stage_script"].lower()
+    assert "own technical rigor" in redteam["mandate"]
+    bad = main.get_stage_prompt_impl("blueteam")
+    assert "redteam" in bad["error"] and "integer 1-8" in bad["error"]
 
 
 def test_singular_tools_no_plan_guard(workspace):

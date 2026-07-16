@@ -378,6 +378,9 @@ def _submit_batch(conn, rows, validate, insert) -> dict:
     a dict of verdict extras; each row runs inside a savepoint so a mid-children
     integrity failure never leaves a partial row behind.
     """
+    frozen = db.frozen_error(conn)
+    if frozen:
+        return {"error": frozen}
     plan = db.get_plan(conn)
     verdicts = []
     for i, raw in enumerate(rows):
@@ -1279,6 +1282,9 @@ def submit_dep_failure_modes(conn: db.Connection, rows: list[dict]) -> dict:
 
 def file_question(conn: db.Connection, text: str, owner: str | None = None,
                   links: list[str] | None = None) -> dict:
+    frozen = db.frozen_error(conn)
+    if frozen:
+        return {"error": frozen}
     args = _clean({"text": text, "owner": owner, "links": links})
     if _text(args, "text") is None:
         return {"error": f"Rule: a question needs non-empty text. Offending input: {_fmt(args)}."}
@@ -1296,6 +1302,9 @@ def file_question(conn: db.Connection, text: str, owner: str | None = None,
 
 def resolve_question(conn: db.Connection, question_id: int,
                      resolution: str | None = None, defer: bool = False) -> dict:
+    frozen = db.frozen_error(conn)
+    if frozen:
+        return {"error": frozen}
     question = None
     if isinstance(question_id, int) and not isinstance(question_id, bool):
         question = _fetch(conn, "open_questions", question_id)
@@ -1326,6 +1335,9 @@ def resolve_question(conn: db.Connection, question_id: int,
 
 
 def file_conflict(conn: db.Connection, description: str, refs: list[str]) -> dict:
+    frozen = db.frozen_error(conn)
+    if frozen:
+        return {"error": frozen}
     args = _clean({"description": description, "refs": refs})
     if _text(args, "description") is None:
         return {"error": (
@@ -1351,6 +1363,9 @@ def file_conflict(conn: db.Connection, description: str, refs: list[str]) -> dic
 
 
 def resolve_conflict(conn: db.Connection, conflict_id: int, resolution: str) -> dict:
+    frozen = db.frozen_error(conn)
+    if frozen:
+        return {"error": frozen}
     conflict = None
     if isinstance(conflict_id, int) and not isinstance(conflict_id, bool):
         conflict = _fetch(conn, "conflicts", conflict_id)
@@ -1432,6 +1447,9 @@ def record_decision(conn: db.Connection, text: str, provenance: str,
                     rationale: str | None = None, links: list[str] | None = None,
                     alternatives: list[dict] | None = None, challenge: dict | None = None,
                     assumption_kind: str | None = None) -> dict:
+    frozen = db.frozen_error(conn)
+    if frozen:
+        return {"error": frozen}
     args = _clean({"text": text, "provenance": provenance, "assumption_kind": assumption_kind,
                    "rationale": rationale, "links": links,
                    "alternatives": alternatives, "challenge": challenge})

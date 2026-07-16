@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from pydantic import BaseModel, ConfigDict
 from mcp.server.fastmcp import FastMCP
 
-from engine import db, gaps, gates, lineage, spikes, status, submits
+from engine import db, findings, gaps, gates, lineage, render, spikes, status, submits
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
 DB_FILENAME = "plan.db"
@@ -38,8 +38,12 @@ def _mandate() -> str:
     return (PROMPTS_DIR / "mandate.md").read_text(encoding="utf-8")
 
 
-def _stage_script(stage: int) -> str:
-    matches = sorted(PROMPTS_DIR.glob(f"stage{stage}_*.md"))
+NAMED_SCRIPTS = ("redteam",)
+
+
+def _stage_script(stage: int | str) -> str:
+    pattern = f"{stage}.md" if stage in NAMED_SCRIPTS else f"stage{stage}_*.md"
+    matches = sorted(PROMPTS_DIR.glob(pattern))
     if matches:
         return matches[0].read_text(encoding="utf-8")
     return (
@@ -301,7 +305,11 @@ def plan_status_impl() -> dict:
             **status.digest(conn),
             "mandate": _mandate(),
             "stage_script": _stage_script(plan["current_stage"]),
-            "next": "Call next_gap() for the next 3-5 related gaps to work with the user.",
+            "next": (
+                "This plan is frozen and read-only — get_rows, get_plan_pack, and "
+                "export_plan serve it; implementation works from the frozen contracts."
+                if plan["state"] == "frozen" else
+                "Call next_gap() for the next 3-5 related gaps to work with the user."),
         }
     finally:
         conn.close()
@@ -417,9 +425,14 @@ def run_gate_impl(stage: int) -> dict:
     return result
 
 
-def get_stage_prompt_impl(stage: int) -> dict:
-    if isinstance(stage, bool) or not isinstance(stage, int) or not 1 <= stage <= 8:
-        return {"error": f"Rule: stage is an integer 1-8. Offending input: stage={stage!r}."}
+def get_stage_prompt_impl(stage: int | str) -> dict:
+    named = isinstance(stage, str) and stage.strip().lower() in NAMED_SCRIPTS
+    if named:
+        stage = stage.strip().lower()
+    elif isinstance(stage, bool) or not isinstance(stage, int) or not 1 <= stage <= 8:
+        return {"error": (
+            f"Rule: stage is an integer 1-8 or one of {list(NAMED_SCRIPTS)}. "
+            f"Offending input: stage={stage!r}.")}
     return {"stage": stage, "mandate": _mandate(), "stage_script": _stage_script(stage)}
 
 
@@ -457,6 +470,28 @@ def get_rows_impl(table: str, ids: list[int] | None = None,
 
 def dismiss_gap_impl(kind: str, table: str, row_id: int | None, reason: str) -> dict:
     return _record_impl(gaps.dismiss_gap, kind, table, row_id, reason)
+
+
+def get_plan_pack_impl(scope: str = "full") -> dict:
+    return _record_impl(render.plan_pack, scope)
+
+
+def export_plan_impl() -> dict:
+    return _record_impl(render.export_plan, _workspace())
+
+
+def freeze_plan_impl() -> dict:
+    return _record_impl(gates.freeze_plan)
+
+
+def file_finding_impl(source: str, text: str, links: list[str] | None = None) -> dict:
+    return _record_impl(findings.file_finding, source, text, links)
+
+
+def disposition_finding_impl(finding_id: int, disposition: str, rationale: str,
+                             links: list[str] | None = None) -> dict:
+    return _record_impl(findings.disposition_finding, finding_id, disposition,
+                        rationale, links)
 
 
 def record_decision_impl(text: str, provenance: str, rationale: str | None = None,
@@ -736,11 +771,12 @@ def dismiss_gap(kind: str, table: str, row_id: int | None, reason: str) -> dict:
 
 
 @mcp.tool(description=(
-    "Evaluate a stage's mechanical gate (stages 1-6 live). Returns pass/fail with the specific "
+    "Evaluate a stage's mechanical gate (stages 1-8). Returns pass/fail with the specific "
     "row-level holes — each names its table, row, problem, and fix. Run the stage's self-review "
     "checklist first: gates verify completeness, self-review is where quality lives. On a pass "
     "at the plan's current stage the plan advances and the result carries the next stage's "
-    "script."
+    "script. Gate 8 folds in gates 1-7, open conflicts, the plan.md render, and the plan.yaml "
+    "round-trip — its pass is the freeze_plan precondition."
 ))
 def run_gate(stage: int) -> dict:
     return run_gate_impl(stage)
@@ -748,11 +784,62 @@ def run_gate(stage: int) -> dict:
 
 @mcp.tool(description=(
     "Fetch any stage's interview script plus the engineer's mandate on demand — for "
-    "rehydrating a cold session onto a specific stage or preparing a red-team session. "
-    "plan_status() already carries the current stage's script."
+    "rehydrating a cold session onto a specific stage. stage is 1-8 or 'redteam' (the script "
+    "a fresh adversarial session follows in stage 7). plan_status() already carries the "
+    "current stage's script."
 ))
-def get_stage_prompt(stage: int) -> dict:
+def get_stage_prompt(stage: int | str) -> dict:
     return get_stage_prompt_impl(stage)
+
+
+@mcp.tool(description=(
+    "Render a scoped markdown slice of the plan: 'full' (the red-team pack and deep cold-"
+    "session rehydration), 'stage:N' (one stage's content, N 1-7), or 'component:<id or "
+    "name>' (a component with its contracts, edges, and linked decisions). Every rendered "
+    "row carries its table:id ref, so findings and links can cite exactly what they mean."
+))
+def get_plan_pack(scope: str = "full") -> dict:
+    return get_plan_pack_impl(scope)
+
+
+@mcp.tool(description=(
+    "Write plan.md (human-readable) and plan.yaml (structured, losslessly round-trippable "
+    "bundle) into the workspace. Both are derived views of the DB — regenerate after "
+    "changes; edits to the files never flow back. Available before and after freeze."
+))
+def export_plan() -> dict:
+    return export_plan_impl()
+
+
+@mcp.tool(description=(
+    "File a red-team or pre-mortem finding (source 'redteam' | 'premortem', text, optional "
+    "links to the rows it implicates). The stage-7 gate blocks until every finding is "
+    "dispositioned — and refuses to pass with zero findings, so the adversarial pass "
+    "cannot be skipped."
+))
+def file_finding(source: str, text: str, links: list[str] | None = None) -> dict:
+    return file_finding_impl(source, text, links)
+
+
+@mcp.tool(description=(
+    "Close a finding with the user's disposition: 'fixed' (the plan rows were corrected — "
+    "link them), 'accepted' (the user knowingly accepted the risk), or 'spiked' (an "
+    "experiment will settle it — a spikes:N link is required). rationale records why; "
+    "links merge into the finding's."
+))
+def disposition_finding(finding_id: int, disposition: str, rationale: str,
+                        links: list[str] | None = None) -> dict:
+    return disposition_finding_impl(finding_id, disposition, rationale, links)
+
+
+@mcp.tool(description=(
+    "Freeze the plan — the terminal write, allowed only while gate 8 passes (all gates "
+    "green, no open conflicts, exports render, plan.yaml round-trips losslessly). Bumps "
+    "the version and makes the plan read-only: every write tool refuses from then on; "
+    "status, reads, packs, and export_plan stay available. There is no unfreeze."
+))
+def freeze_plan() -> dict:
+    return freeze_plan_impl()
 
 
 @mcp.tool(description=(

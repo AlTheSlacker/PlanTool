@@ -74,6 +74,19 @@ def get_plan(conn: sqlite3.Connection) -> sqlite3.Row | None:
     return conn.execute("SELECT * FROM plans ORDER BY id LIMIT 1").fetchone()
 
 
+def frozen_error(conn: sqlite3.Connection) -> str | None:
+    """A frozen plan is read-only — every write surface checks this first.
+    Freezing that doesn't freeze would make plans.state decorative."""
+    plan = get_plan(conn)
+    if plan is not None and plan["state"] == "frozen":
+        return (
+            f"Rule: this plan is frozen (version {plan['version']}) — planning is complete "
+            "and the record is read-only. Reads still work: plan_status, get_rows, "
+            "get_plan_pack, get_stage_prompt, run_gate, and export_plan."
+        )
+    return None
+
+
 def insert_row(conn: sqlite3.Connection, table: str, values: dict) -> int:
     """Insert one row; caller supplies validated column->value mapping."""
     cols = ", ".join(values)

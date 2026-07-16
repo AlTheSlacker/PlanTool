@@ -89,6 +89,9 @@ def digest(conn) -> dict:
         "pending_spikes": [
             {"id": r["id"], "question": r["question"]} for r in conn.execute(
                 "SELECT id, question FROM spikes WHERE verdict IS NULL ORDER BY id")],
+        "open_findings": [
+            {"id": r["id"], "source": r["source"], "text": r["text"]} for r in conn.execute(
+                "SELECT id, source, text FROM findings WHERE disposition IS NULL ORDER BY id")],
         "open_gap_total": open_gaps,
         "recent_rows": _recent_rows(conn),
         "reading": ("Row content is fetched on demand: get_rows(table, ids=[...]) or "

@@ -1,15 +1,16 @@
-"""Gates 1-6, both directions: a fixture that fails with the specific hole,
+"""Gates 1-8, both directions: a fixture that fails with the specific hole,
 and a fixture that passes. Fail fixtures go through the submit surface where
 write-time validation permits the hole; where it doesn't, they use direct
 inserts — exactly the plan.yaml-reimport path the gates exist to re-check.
 """
 import json
 
-from engine import db, gates, submits
+from engine import db, findings, gates, submits
 
 from conftest import (FULL_MACHINE_CELLS, make_stage1_pass, make_stage2_pass,
                       make_stage3_pass, make_stage4_pass, make_stage5_pass,
-                      make_stage6_pass, populate_full_plan, valid_contract,
+                      make_stage6_pass, make_stage7_pass, populate_freezable_plan,
+                      populate_full_plan, valid_contract,
                       valid_component, valid_crud, valid_dependency, valid_entity,
                       valid_machine, valid_requirement, valid_use_case)
 
@@ -263,16 +264,82 @@ def test_gate6_passes(conn):
     assert gates.gate_stage6(conn) == []
 
 
+# --- stage 7 -----------------------------------------------------------------
+
+def test_gate7_no_findings_fails(conn):
+    # A stage-7 gate that passes on an empty findings table passes vacuously —
+    # a red team that finds nothing means the script is broken (spec section 11).
+    holes = gates.gate_stage7(conn)
+    assert len(holes) == 1
+    assert "no adversarial findings" in holes[0]["problem"]
+
+
+def test_gate7_undispositioned_finding_fails(conn):
+    findings.file_finding(conn, "premortem", "cold resume was never exercised")
+    holes = gates.gate_stage7(conn)
+    assert len(holes) == 1
+    assert "undispositioned" in holes[0]["problem"]
+    assert holes[0]["row_id"] == 1
+
+
+def test_gate7_blank_disposition_rationale_fails(conn):
+    # A disposition without rationale can only arrive via reimport — the write
+    # surface requires it; the gate must re-check.
+    plan = db.get_plan(conn)
+    db.insert_row(conn, "findings", {
+        "plan_id": plan["id"], "plan_version_added": plan["version"],
+        "source": "redteam", "text": "x", "disposition": "fixed"})
+    conn.commit()
+    holes = gates.gate_stage7(conn)
+    assert any("no rationale" in h["problem"] for h in holes)
+
+
+def test_gate7_passes(conn):
+    make_stage5_pass(conn)  # the finding links dependencies:1
+    make_stage7_pass(conn)
+    assert gates.gate_stage7(conn) == []
+
+
+# --- stage 8 -----------------------------------------------------------------
+
+def test_gate8_reports_every_failing_stage_gate(conn):
+    problems = " | ".join(h["problem"] for h in gates.gate_stage8(conn))
+    for stage in range(1, 8):
+        assert f"stage-{stage} gate" in problems
+
+
+def test_gate8_open_conflict_blocks(conn):
+    populate_freezable_plan(conn)
+    submits.file_conflict(conn, "step 2 contradicts the immutability decision",
+                          ["use_cases:1"])
+    holes = holes_for(gates.gate_stage8(conn), "conflicts")
+    assert len(holes) == 1 and "still open" in holes[0]["problem"]
+
+
+def test_gate8_lossy_roundtrip_blocks(conn, tmp_path, monkeypatch):
+    # Simulate schema churn: the reimport target lacks a column the export
+    # carries, so the round-trip drops data — gate 8 must refuse to freeze on it.
+    populate_freezable_plan(conn)
+    churned = db.SCHEMA_PATH.read_text(encoding="utf-8").replace(
+        "    planguage_target   TEXT,\n", "")
+    schema = tmp_path / "churned_schema.sql"
+    schema.write_text(churned, encoding="utf-8")
+    monkeypatch.setattr(db, "SCHEMA_PATH", schema)
+    problems = " | ".join(h["problem"] for h in gates.gate_stage8(conn))
+    assert "round-trip is not lossless" in problems
+    assert "planguage_target" in problems
+
+
+def test_gate8_passes(conn):
+    populate_freezable_plan(conn)
+    assert gates.gate_stage8(conn) == []
+
+
 # --- run_gate ----------------------------------------------------------------
 
 def test_run_gate_rejects_bad_stage(conn):
     for stage in (0, 9, "3", True, None):
         assert "integer 1-8" in gates.run_gate(conn, stage)["error"]
-
-
-def test_run_gate_stages_7_8_not_built_yet(conn):
-    assert "later build session" in gates.run_gate(conn, 7)["error"]
-    assert "later build session" in gates.run_gate(conn, 8)["error"]
 
 
 def test_run_gate_records_result_and_reports_holes(conn):
@@ -311,3 +378,15 @@ def test_full_plan_advances_through_all_six_gates(conn):
         assert result["passed"] is True, (stage, result["holes"])
         assert result["advanced_to"] == stage + 1
     assert db.get_plan(conn)["current_stage"] == 7
+
+
+def test_full_plan_advances_through_all_eight_gates(conn):
+    populate_freezable_plan(conn)
+    for stage in range(1, 8):
+        result = gates.run_gate(conn, stage)
+        assert result["passed"] is True, (stage, result["holes"])
+        assert result["advanced_to"] == stage + 1
+    final = gates.run_gate(conn, 8)
+    assert final["passed"] is True and "advanced_to" not in final
+    assert "freeze_plan" in final["next"]
+    assert db.get_plan(conn)["current_stage"] == 8
