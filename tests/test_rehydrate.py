@@ -66,6 +66,9 @@ def test_full_v1_write_surface_is_registered():
         "submit_dependencies", "submit_dep_failure_modes",
         "file_question", "resolve_question", "file_conflict", "resolve_conflict",
         "record_decision",
+        # Session D surface: corrections, targeted reads, gap dismissal.
+        "supersede_row", "retire_row", "confirm_assumption", "get_rows", "dismiss_gap",
+        "run_gate", "get_stage_prompt", "register_spike", "record_spike_result",
     }
 
 

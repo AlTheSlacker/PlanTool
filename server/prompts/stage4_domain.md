@@ -17,11 +17,20 @@ the user adjudicates. Propose, don't interrogate.
 - **Input domains:** for the values the system accepts, record range/format/units
   judgments as decisions or unwanted-type requirements linked to the entity.
 
+## Divergence round — even in synthesize mode, before presenting your design
+- Ask for the user's mental model first: what are the "things" in their world, which ones
+  matter, what do *they* call them? Their vocabulary wins over yours.
+- Negative space: which entity would they be surprised to see missing? What data must never
+  be deleted / never mutated?
+- Present your model against their instincts and name every divergence — those divergences
+  are your challenge material, recorded on the adjudicating decisions.
+
 ## Conduct here
 - Present the whole proposed model in one pass, then batch the adjudications.
 - An `n/a` CRUD cell contradicted by a use-case step is engine-detected and filed as a
   conflict — resolve them with the user, not by silently editing.
-- Lifecycle judgments you make without user input are `assumed`/`intent` until adjudicated.
+- Lifecycle judgments you make without user input are `assumed`/`intent` until adjudicated;
+  when the user answers, `confirm_assumption` (or `supersede_row` if they correct you).
 
 ## Self-review before gate
 - Would two entities always change together for the same reason? Merge them.

@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 import re
-import sqlite3
 from pathlib import Path
 
 from . import conflicts, db
@@ -32,7 +31,7 @@ def _slug(question: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", question.lower()).strip("_")[:40] or "spike"
 
 
-def register_spike(conn: sqlite3.Connection, spikes_root: str | Path, question: str,
+def register_spike(conn: db.Connection, spikes_root: str | Path, question: str,
                    hypothesis: str | None = None, method: str | None = None,
                    budget: str | None = None, links: list[str] | None = None) -> dict:
     args = _clean({"question": question, "hypothesis": hypothesis, "method": method,
@@ -65,7 +64,7 @@ def register_spike(conn: sqlite3.Connection, spikes_root: str | Path, question: 
     }
 
 
-def record_spike_result(conn: sqlite3.Connection, spike_id, verdict: str,
+def record_spike_result(conn: db.Connection, spike_id, verdict: str,
                         evidence_summary: str, evidence_path: str | None = None) -> dict:
     spike = None
     if isinstance(spike_id, int) and not isinstance(spike_id, bool):
@@ -107,6 +106,11 @@ def record_spike_result(conn: sqlite3.Connection, spike_id, verdict: str,
             row = conn.execute(f"SELECT * FROM {table} WHERE id = ?", (rid,)).fetchone()
             if row is None:
                 skipped.append({"ref": ref, "reason": "row no longer exists"})
+            elif not db.is_active(row):
+                skipped.append({"ref": ref, "reason": (
+                    "row was superseded or retired — the spike verified a claim that is no "
+                    "longer active; re-link and re-run against the successor if it still "
+                    "matters")})
             elif row["provenance"] == "assumed" and row["assumption_kind"] == "world":
                 conn.execute(
                     f"UPDATE {table} SET provenance = 'verified', spike_id = ?, "
@@ -129,7 +133,7 @@ def record_spike_result(conn: sqlite3.Connection, spike_id, verdict: str,
             if table not in db.CLAIM_TABLES:
                 continue
             row = conn.execute(f"SELECT * FROM {table} WHERE id = ?", (rid,)).fetchone()
-            if row is not None and row["provenance"] == "assumed":
+            if row is not None and db.is_active(row) and row["provenance"] == "assumed":
                 conflict = conflicts.file_engine_conflict(
                     conn,
                     f"Spike #{spike['id']} refuted its hypothesis "

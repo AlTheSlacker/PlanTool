@@ -99,7 +99,7 @@ def test_uc_extension_on_cannot_fail_step_rejected(conn):
     ])
     assert result["accepted"] == 0
     errors = [v["error"] for v in result["results"]]
-    assert "no_extension_reason" in errors[0] and "file_conflict" in errors[0]
+    assert "no_extension_reason" in errors[0] and "supersede_row" in errors[0]
     assert "Known uc_steps" in errors[1]
 
 
@@ -185,7 +185,7 @@ def test_state_machine_rejections_are_pedagogic(conn):
     ])
     assert result["accepted"] == 0
     errors = [v["error"] for v in result["results"]]
-    assert "lifecycle entities only" in errors[0] and "file_conflict" in errors[0]
+    assert "lifecycle entities only" in errors[0] and "supersede_row" in errors[0]
     assert "already has one" in errors[1] and "submit_state_cells" in errors[1]
     assert "non-empty array" in errors[2]
     assert "machine's states" in errors[3]

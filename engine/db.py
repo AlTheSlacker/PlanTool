@@ -13,6 +13,12 @@ from pathlib import Path
 SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 BUSY_TIMEOUT_MS = 5000
 
+# The one sqlite3 seam (spec: backend-neutral storage is a later shape; keep
+# this thin). Other engine modules take these from here, never from sqlite3.
+Connection = sqlite3.Connection
+Row = sqlite3.Row
+IntegrityError = sqlite3.IntegrityError
+
 # Tables whose rows assert planning facts (carry provenance).
 CLAIM_TABLES = (
     "use_cases", "uc_steps", "uc_extensions", "requirements", "entities",
@@ -22,6 +28,20 @@ CLAIM_TABLES = (
 # Process bookkeeping (no provenance).
 BOOKKEEPING_TABLES = ("open_questions", "conflicts", "spikes", "findings", "gate_results")
 COUNTED_TABLES = CLAIM_TABLES + BOOKKEEPING_TABLES
+
+# A claim row is active until superseded or retired; everything that reasons
+# about the plan (gates, sweeps, next_gap, duplicate checks) sees active rows
+# only. Superseded/retired rows stay as the audit trail.
+ACTIVE = "superseded_by IS NULL AND retired = 0"
+
+
+def active(alias: str) -> str:
+    """The ACTIVE predicate qualified for a table alias in a join."""
+    return f"{alias}.superseded_by IS NULL AND {alias}.retired = 0"
+
+
+def is_active(row: sqlite3.Row | dict) -> bool:
+    return row["superseded_by"] is None and not row["retired"]
 
 
 def connect(db_path: str | Path) -> sqlite3.Connection:
@@ -63,7 +83,11 @@ def insert_row(conn: sqlite3.Connection, table: str, values: dict) -> int:
 
 
 def table_counts(conn: sqlite3.Connection) -> dict[str, int]:
+    """Active-row counts for claim tables (superseded/retired rows are audit
+    trail, not plan size); raw counts for bookkeeping."""
     return {
-        t: conn.execute(f"SELECT count(*) FROM {t}").fetchone()[0]
+        t: conn.execute(
+            f"SELECT count(*) FROM {t} WHERE {ACTIVE}" if t in CLAIM_TABLES
+            else f"SELECT count(*) FROM {t}").fetchone()[0]
         for t in COUNTED_TABLES
     }

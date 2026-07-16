@@ -27,6 +27,15 @@ the model.
 ```
 
 ## Build status
-Session A of 5 (spec §9): schema v1, `plan_start` / `plan_status` / `next_gap` (naive) /
-`submit_requirements` / `submit_entities`. Remaining submit surface, gates, spikes, export,
-and the dogfood rewrite come in sessions B–E.
+Sessions A–D of 5 (spec §9) are in:
+- **A** — schema v1, `plan_start` / `plan_status` / `next_gap`, first submit tools.
+- **B** — the full submit surface (use cases, CRUD, state machines, components, contracts,
+  dependencies, failure modes, decisions, questions, conflicts).
+- **C** — enforcement: gates 1–6, spikes, engine conflict sweeps, plan.yaml export/reimport.
+- **D** — the dogfood harvest: supersede/retire/confirm correction path with lineage
+  (claim rows are never mutated or duplicated), dangling-ref checking on every batch
+  submit, `plan_status` digest + `get_rows` targeted reads, `dismiss_gap`, and the
+  interview-conduct rewrites (divergence rounds, recorded challenges, file-question-first).
+
+Session E (red-team script, `get_plan_pack`, stages 7–8 gates, `export_plan`,
+`freeze_plan`) closes stage 1.

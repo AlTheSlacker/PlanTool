@@ -136,6 +136,10 @@ def make_stage2_pass(conn):
 
 
 def make_stage3_pass(conn):
+    # The requirement links use_cases:1, and dangling refs are rejected since
+    # Session D — make sure the use case exists for standalone callers.
+    if not conn.execute("SELECT 1 FROM use_cases LIMIT 1").fetchone():
+        make_stage2_pass(conn)
     _ok(submits.submit_requirements(conn, [valid_requirement(links=["use_cases:1"])]))
 
 

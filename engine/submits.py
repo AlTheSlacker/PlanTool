@@ -11,7 +11,6 @@ savepoint guarantees no partial insert survives.
 from __future__ import annotations
 
 import json
-import sqlite3
 
 from . import conflicts as conflict_detect
 from . import db
@@ -234,18 +233,46 @@ def _links_error(row: dict) -> str | None:
 
 
 def _dangling_refs_error(conn, refs, offending) -> str | None:
-    """Refs (already format-validated) must point at existing rows."""
-    missing = []
+    """Refs (already format-validated) must point at existing, active rows."""
+    problems = []
     for ref in refs or []:
         table, rid = _parse_ref(ref)
-        if not conn.execute(f"SELECT 1 FROM {table} WHERE id = ?", (rid,)).fetchone():
-            missing.append(ref)
-    if missing:
+        row = conn.execute(f"SELECT * FROM {table} WHERE id = ?", (rid,)).fetchone()
+        if row is None:
+            problems.append(f"{ref} matches nothing in this plan")
+        elif table in db.CLAIM_TABLES and not db.is_active(row):
+            if row["superseded_by"]:
+                problems.append(
+                    f"{ref} was superseded — link its successor {table}:{row['superseded_by']}")
+            else:
+                problems.append(
+                    f"{ref} was retired (\"{row['superseded_reason']}\") — that fact no longer "
+                    "stands; link an active row instead")
+    if problems:
         return (
-            f"Rule: refs must point at existing rows — {missing} match nothing in this plan. "
-            f"Offending input: {_fmt(offending)}."
+            "Rule: refs must point at existing, active rows — a row must be recorded before "
+            "anything links to it (submit the referenced row first; if a wrong row blocks you, "
+            f"supersede_row or retire_row is the remedy, never a forward reference). "
+            f"Problems: {'; '.join(problems)}. Offending input: {_fmt(offending)}."
         )
     return None
+
+
+def _all_links(value) -> list[str]:
+    """Every format-valid row ref in this row's links, including nested
+    children's links (steps, extensions, cells)."""
+    refs = []
+    if isinstance(value, dict):
+        links = value.get("links")
+        if isinstance(links, list):
+            refs += [x for x in links if isinstance(x, str) and _parse_ref(x)]
+        for key, v in value.items():
+            if key != "links" and isinstance(v, (dict, list)):
+                refs += _all_links(v)
+    elif isinstance(value, list):
+        for v in value:
+            refs += _all_links(v)
+    return refs
 
 
 def _envelope_error(row: dict) -> str | None:
@@ -315,18 +342,28 @@ def _child_envelope(plan, child: dict, parent_env: dict) -> dict:
 def _id_lookup_error(conn, row: dict, field: str, table: str,
                      label_expr: str = "name") -> str | None:
     rid = row.get(field)
-    if isinstance(rid, bool) or not isinstance(rid, int) or not conn.execute(
-            f"SELECT 1 FROM {table} WHERE id = ?", (rid,)).fetchone():
-        known = {r["id"]: r["label"] for r in conn.execute(
-            f"SELECT id, {label_expr} AS label FROM {table} ORDER BY id")}
-        return (
-            f"Rule: {field} is the integer id of an existing {table} row. "
-            f"Known {table} (id: label): {_fmt(known)}. Offending row: {_fmt(row)}."
-        )
-    return None
+    valid_id = not isinstance(rid, bool) and isinstance(rid, int)
+    if valid_id and conn.execute(
+            f"SELECT 1 FROM {table} WHERE id = ? AND {db.ACTIVE}", (rid,)).fetchone():
+        return None
+    note = ""
+    if valid_id:
+        stale = conn.execute(f"SELECT * FROM {table} WHERE id = ?", (rid,)).fetchone()
+        if stale is not None:
+            note = (f" Note: {table}:{rid} exists but was superseded by "
+                    f"{table}:{stale['superseded_by']} — use the successor."
+                    if stale["superseded_by"] else
+                    f" Note: {table}:{rid} exists but was retired "
+                    f"(\"{stale['superseded_reason']}\").")
+    known = {r["id"]: r["label"] for r in conn.execute(
+        f"SELECT id, {label_expr} AS label FROM {table} WHERE {db.ACTIVE} ORDER BY id")}
+    return (
+        f"Rule: {field} is the integer id of an existing active {table} row. "
+        f"Known {table} (id: label): {_fmt(known)}.{note} Offending row: {_fmt(row)}."
+    )
 
 
-def _fetch(conn, table: str, rid: int) -> sqlite3.Row:
+def _fetch(conn, table: str, rid: int) -> db.Row:
     return conn.execute(f"SELECT * FROM {table} WHERE id = ?", (rid,)).fetchone()
 
 
@@ -345,7 +382,10 @@ def _submit_batch(conn, rows, validate, insert) -> dict:
     verdicts = []
     for i, raw in enumerate(rows):
         row = _clean(dict(raw))
-        err = validate(row)
+        # Envelope validation format-checks links; resolving them (no dangling
+        # or inactive targets — the F5 hole) runs here so every batch surface
+        # gets it, nested children included.
+        err = validate(row) or _dangling_refs_error(conn, _all_links(row), row)
         if err is None:
             conn.execute("SAVEPOINT submit_row")
             try:
@@ -355,7 +395,7 @@ def _submit_batch(conn, rows, validate, insert) -> dict:
                 verdict.update(result if isinstance(result, dict) else {"id": result})
                 verdicts.append(verdict)
                 continue
-            except sqlite3.IntegrityError as exc:
+            except db.IntegrityError as exc:
                 conn.execute("ROLLBACK TO submit_row")
                 conn.execute("RELEASE submit_row")
                 err = f"Rule: database constraint '{exc}'. Offending row: {_fmt(row)}."
@@ -428,7 +468,7 @@ def _validate_requirement(row: dict) -> str | None:
     return None
 
 
-def submit_requirements(conn: sqlite3.Connection, rows: list[dict]) -> dict:
+def _requirement_handlers(conn):
     def insert(row, plan):
         return db.insert_row(conn, "requirements", {
             "ears_type": _text(row, "ears_type"),
@@ -443,12 +483,16 @@ def submit_requirements(conn: sqlite3.Connection, rows: list[dict]) -> dict:
             **_envelope(plan, row),
         })
 
-    return _submit_batch(conn, rows, _validate_requirement, insert)
+    return _validate_requirement, insert
+
+
+def submit_requirements(conn: db.Connection, rows: list[dict]) -> dict:
+    return _submit_batch(conn, rows, *_requirement_handlers(conn))
 
 
 # --- entities (stage 4) ------------------------------------------------------
 
-def submit_entities(conn: sqlite3.Connection, rows: list[dict]) -> dict:
+def _entity_handlers(conn):
     seen_names: set[str] = set()
 
     def validate(row: dict) -> str | None:
@@ -460,7 +504,7 @@ def submit_entities(conn: sqlite3.Connection, rows: list[dict]) -> dict:
             return f"Rule: every entity needs a non-empty name. Offending row: {_fmt(row)}."
         key = name.lower()
         exists = key in seen_names or conn.execute(
-            "SELECT 1 FROM entities WHERE lower(name) = ?", (key,)
+            f"SELECT 1 FROM entities WHERE lower(name) = ? AND {db.ACTIVE}", (key,)
         ).fetchone()
         if exists:
             return (
@@ -494,7 +538,11 @@ def submit_entities(conn: sqlite3.Connection, rows: list[dict]) -> dict:
             **_envelope(plan, row),
         })
 
-    return _submit_batch(conn, rows, validate, insert)
+    return validate, insert
+
+
+def submit_entities(conn: db.Connection, rows: list[dict]) -> dict:
+    return _submit_batch(conn, rows, *_entity_handlers(conn))
 
 
 # --- use cases (stage 2) -----------------------------------------------------
@@ -551,7 +599,7 @@ def _step_error(step, step_no: int) -> str | None:
     return None
 
 
-def submit_use_cases(conn: sqlite3.Connection, rows: list[dict]) -> dict:
+def submit_use_cases(conn: db.Connection, rows: list[dict]) -> dict:
     seen_titles: set[str] = set()
 
     def validate(row: dict) -> str | None:
@@ -571,7 +619,8 @@ def submit_use_cases(conn: sqlite3.Connection, rows: list[dict]) -> dict:
             )
         key = title.lower()
         if key in seen_titles or conn.execute(
-                "SELECT 1 FROM use_cases WHERE lower(title) = ?", (key,)).fetchone():
+                f"SELECT 1 FROM use_cases WHERE lower(title) = ? AND {db.ACTIVE}",
+                (key,)).fetchone():
             return (
                 f"Rule: one row per use case — '{title}' already exists in this plan (or earlier "
                 f"in this batch). Offending row: {_fmt(row)}."
@@ -613,7 +662,7 @@ def submit_use_cases(conn: sqlite3.Connection, rows: list[dict]) -> dict:
     return _with_crud_sweep(conn, _submit_batch(conn, rows, validate, insert))
 
 
-def submit_uc_extensions(conn: sqlite3.Connection, rows: list[dict]) -> dict:
+def _uc_extension_handlers(conn):
     def validate(row: dict) -> str | None:
         err = (_unknown_fields_error(row, UC_EXT_FIELDS) or _envelope_error(row)
                or _id_lookup_error(conn, row, "step_id", "uc_steps", "substr(text, 1, 60)"))
@@ -624,8 +673,9 @@ def submit_uc_extensions(conn: sqlite3.Connection, rows: list[dict]) -> dict:
             return (
                 f"Rule: step uc_steps:{step['id']} is recorded as unable to fail "
                 f"(no_extension_reason: \"{step['no_extension_reason']}\") — adding an extension "
-                "contradicts that. If the recorded reason is now wrong, file_conflict "
-                f"referencing uc_steps:{step['id']} so the user can adjudicate. "
+                "contradicts that. If the recorded reason is now wrong, supersede the step "
+                f"(supersede_row(\"uc_steps\", {step['id']}, {{\"no_extension_reason\": null}}, "
+                "reason)) and resubmit this extension against the successor. "
                 f"Offending row: {_fmt(row)}."
             )
         return _extension_body_error(row)
@@ -638,12 +688,16 @@ def submit_uc_extensions(conn: sqlite3.Connection, rows: list[dict]) -> dict:
             "handling": _text(row, "handling"),
             **_envelope(plan, row)})
 
-    return _with_crud_sweep(conn, _submit_batch(conn, rows, validate, insert))
+    return validate, insert
+
+
+def submit_uc_extensions(conn: db.Connection, rows: list[dict]) -> dict:
+    return _with_crud_sweep(conn, _submit_batch(conn, rows, *_uc_extension_handlers(conn)))
 
 
 # --- CRUD grid (stage 4) -----------------------------------------------------
 
-def submit_crud(conn: sqlite3.Connection, rows: list[dict]) -> dict:
+def _crud_handlers(conn):
     seen: set[tuple] = set()
 
     def validate(row: dict) -> str | None:
@@ -694,12 +748,13 @@ def submit_crud(conn: sqlite3.Connection, rows: list[dict]) -> dict:
             )
         key = (row["entity_id"], op)
         if key in seen or conn.execute(
-                "SELECT 1 FROM crud_grid WHERE entity_id = ? AND op = ?", key).fetchone():
+                f"SELECT 1 FROM crud_grid WHERE entity_id = ? AND op = ? AND {db.ACTIVE}",
+                key).fetchone():
             return (
                 f"Rule: one row per entity x op — cell (entity {row['entity_id']}, {op}) is "
                 f"already recorded in this plan (or earlier in this batch). Offending row: "
-                f"{_fmt(row)}. If the recorded cell is wrong, file_conflict referencing it so "
-                "the user can adjudicate."
+                f"{_fmt(row)}. If the recorded cell is wrong, correct it with supersede_row "
+                "(or retire_row) instead of a duplicate."
             )
         seen.add(key)
         return None
@@ -711,7 +766,11 @@ def submit_crud(conn: sqlite3.Connection, rows: list[dict]) -> dict:
             "children_on_delete": _text(row, "children_on_delete"),
             **_envelope(plan, row)})
 
-    return _with_crud_sweep(conn, _submit_batch(conn, rows, validate, insert))
+    return validate, insert
+
+
+def submit_crud(conn: db.Connection, rows: list[dict]) -> dict:
+    return _with_crud_sweep(conn, _submit_batch(conn, rows, *_crud_handlers(conn)))
 
 
 # --- state machines (stage 4) ------------------------------------------------
@@ -784,7 +843,7 @@ def _cell_values(cell: dict) -> dict:
     }
 
 
-def submit_states(conn: sqlite3.Connection, rows: list[dict]) -> dict:
+def submit_states(conn: db.Connection, rows: list[dict]) -> dict:
     seen_entities: set[int] = set()
 
     def validate(row: dict) -> str | None:
@@ -797,11 +856,13 @@ def submit_states(conn: sqlite3.Connection, rows: list[dict]) -> dict:
             return (
                 f"Rule: state machines belong to lifecycle entities only — '{entity['name']}' "
                 f"has has_lifecycle=false (reason: \"{entity['lifecycle_reason']}\"). If that "
-                f"judgment is now wrong, file_conflict referencing entities:{entity['id']} so "
-                f"the user can adjudicate. Offending row: {_fmt(row)}."
+                f"judgment is now wrong, supersede the entity (supersede_row(\"entities\", "
+                f"{entity['id']}, {{\"has_lifecycle\": true}}, reason)) with the user's "
+                f"confirmation, then submit the machine against the successor. "
+                f"Offending row: {_fmt(row)}."
             )
         if row["entity_id"] in seen_entities or conn.execute(
-                "SELECT 1 FROM state_machines WHERE entity_id = ?",
+                f"SELECT 1 FROM state_machines WHERE entity_id = ? AND {db.ACTIVE}",
                 (row["entity_id"],)).fetchone():
             return (
                 f"Rule: one state machine per entity — '{entity['name']}' already has one. "
@@ -848,16 +909,20 @@ def submit_states(conn: sqlite3.Connection, rows: list[dict]) -> dict:
     return _submit_batch(conn, rows, validate, insert)
 
 
-def submit_state_cells(conn: sqlite3.Connection, rows: list[dict]) -> dict:
+def _state_cell_handlers(conn):
     seen: set[tuple] = set()
+
+    def _machine_for(row):
+        return conn.execute(
+            f"SELECT * FROM state_machines WHERE entity_id = ? AND {db.ACTIVE}",
+            (row["entity_id"],)).fetchone()
 
     def validate(row: dict) -> str | None:
         err = (_unknown_fields_error(row, SM_CELL_FIELDS) or _envelope_error(row)
                or _id_lookup_error(conn, row, "entity_id", "entities"))
         if err:
             return err
-        machine = conn.execute(
-            "SELECT * FROM state_machines WHERE entity_id = ?", (row["entity_id"],)).fetchone()
+        machine = _machine_for(row)
         if machine is None:
             return (
                 f"Rule: entity entities:{row['entity_id']} has no state machine yet — create it "
@@ -868,29 +933,32 @@ def submit_state_cells(conn: sqlite3.Connection, rows: list[dict]) -> dict:
             return err
         key = (machine["id"], _text(row, "state"), _text(row, "event"))
         if key in seen or conn.execute(
-                "SELECT 1 FROM sm_cells WHERE machine_id = ? AND state = ? AND event = ?",
-                key).fetchone():
+                f"SELECT 1 FROM sm_cells WHERE machine_id = ? AND state = ? AND event = ? "
+                f"AND {db.ACTIVE}", key).fetchone():
             return (
                 f"Rule: one cell per state x event — ({key[1]}, {key[2]}) is already recorded "
                 f"for this machine (or earlier in this batch). Offending row: {_fmt(row)}. If "
-                "the recorded cell is wrong, file_conflict referencing it so the user can "
-                "adjudicate."
+                "the recorded cell is wrong, correct it with supersede_row (or retire_row) "
+                "instead of a duplicate."
             )
         seen.add(key)
         return None
 
     def insert(row, plan):
-        machine = conn.execute(
-            "SELECT id FROM state_machines WHERE entity_id = ?", (row["entity_id"],)).fetchone()
+        machine = _machine_for(row)
         return db.insert_row(conn, "sm_cells", {
             "machine_id": machine["id"], **_cell_values(row), **_envelope(plan, row)})
 
-    return _submit_batch(conn, rows, validate, insert)
+    return validate, insert
+
+
+def submit_state_cells(conn: db.Connection, rows: list[dict]) -> dict:
+    return _submit_batch(conn, rows, *_state_cell_handlers(conn))
 
 
 # --- components & contracts (stage 6) ----------------------------------------
 
-def submit_components(conn: sqlite3.Connection, rows: list[dict]) -> dict:
+def _component_handlers(conn):
     seen: set[str] = set()
 
     def validate(row: dict) -> str | None:
@@ -909,7 +977,8 @@ def submit_components(conn: sqlite3.Connection, rows: list[dict]) -> dict:
             )
         key = name.lower()
         if key in seen or conn.execute(
-                "SELECT 1 FROM components WHERE lower(name) = ?", (key,)).fetchone():
+                f"SELECT 1 FROM components WHERE lower(name) = ? AND {db.ACTIVE}",
+                (key,)).fetchone():
             return (
                 f"Rule: one row per component — '{name}' already exists in this plan (or earlier "
                 f"in this batch). Offending row: {_fmt(row)}."
@@ -922,7 +991,11 @@ def submit_components(conn: sqlite3.Connection, rows: list[dict]) -> dict:
             "name": _text(row, "name"), "responsibility": _text(row, "responsibility"),
             **_envelope(plan, row)})
 
-    return _submit_batch(conn, rows, validate, insert)
+    return validate, insert
+
+
+def submit_components(conn: db.Connection, rows: list[dict]) -> dict:
+    return _submit_batch(conn, rows, *_component_handlers(conn))
 
 
 def _param_error(p) -> str | None:
@@ -955,7 +1028,7 @@ def _error_item_error(e) -> str | None:
     return None
 
 
-def submit_contracts(conn: sqlite3.Connection, rows: list[dict]) -> dict:
+def _contract_handlers(conn):
     seen: set[tuple] = set()
 
     def validate(row: dict) -> str | None:
@@ -974,8 +1047,8 @@ def submit_contracts(conn: sqlite3.Connection, rows: list[dict]) -> dict:
             return f"Rule: kind is one of {list(CONTRACT_KINDS)}. Offending row: {_fmt(row)}."
         key = (row["component_id"], name.lower())
         if key in seen or conn.execute(
-                "SELECT 1 FROM contracts WHERE component_id = ? AND lower(name) = ?",
-                key).fetchone():
+                f"SELECT 1 FROM contracts WHERE component_id = ? AND lower(name) = ? "
+                f"AND {db.ACTIVE}", key).fetchone():
             return (
                 f"Rule: one row per contract — '{name}' already exists on component "
                 f"components:{row['component_id']} (or earlier in this batch). "
@@ -1063,10 +1136,14 @@ def submit_contracts(conn: sqlite3.Connection, rows: list[dict]) -> dict:
             "is_external": 1 if row.get("is_external") else 0,
             **_envelope(plan, row)})
 
-    return _submit_batch(conn, rows, validate, insert)
+    return validate, insert
 
 
-def submit_contract_deps(conn: sqlite3.Connection, rows: list[dict]) -> dict:
+def submit_contracts(conn: db.Connection, rows: list[dict]) -> dict:
+    return _submit_batch(conn, rows, *_contract_handlers(conn))
+
+
+def _contract_dep_handlers(conn):
     def validate(row: dict) -> str | None:
         err = _unknown_fields_error(row, CONTRACT_DEP_FIELDS) or _envelope_error(row)
         if err:
@@ -1101,12 +1178,16 @@ def submit_contract_deps(conn: sqlite3.Connection, rows: list[dict]) -> dict:
             "provider_contract_id": row["provider_contract_id"],
             **_envelope(plan, row)})
 
-    return _submit_batch(conn, rows, validate, insert)
+    return validate, insert
+
+
+def submit_contract_deps(conn: db.Connection, rows: list[dict]) -> dict:
+    return _submit_batch(conn, rows, *_contract_dep_handlers(conn))
 
 
 # --- dependencies & failure modes (stage 5) -----------------------------------
 
-def submit_dependencies(conn: sqlite3.Connection, rows: list[dict]) -> dict:
+def _dependency_handlers(conn):
     seen: set[str] = set()
 
     def validate(row: dict) -> str | None:
@@ -1127,7 +1208,8 @@ def submit_dependencies(conn: sqlite3.Connection, rows: list[dict]) -> dict:
             )
         key = name.lower()
         if key in seen or conn.execute(
-                "SELECT 1 FROM dependencies WHERE lower(name) = ?", (key,)).fetchone():
+                f"SELECT 1 FROM dependencies WHERE lower(name) = ? AND {db.ACTIVE}",
+                (key,)).fetchone():
             return (
                 f"Rule: one row per dependency — '{name}' already exists in this plan (or "
                 f"earlier in this batch). Offending row: {_fmt(row)}."
@@ -1140,10 +1222,14 @@ def submit_dependencies(conn: sqlite3.Connection, rows: list[dict]) -> dict:
             "name": _text(row, "name"), "kind": _text(row, "kind"),
             "notes": _text(row, "notes"), **_envelope(plan, row)})
 
-    return _submit_batch(conn, rows, validate, insert)
+    return validate, insert
 
 
-def submit_dep_failure_modes(conn: sqlite3.Connection, rows: list[dict]) -> dict:
+def submit_dependencies(conn: db.Connection, rows: list[dict]) -> dict:
+    return _submit_batch(conn, rows, *_dependency_handlers(conn))
+
+
+def _dep_fm_handlers(conn):
     seen: set[tuple] = set()
 
     def validate(row: dict) -> str | None:
@@ -1166,12 +1252,13 @@ def submit_dep_failure_modes(conn: sqlite3.Connection, rows: list[dict]) -> dict
             )
         key = (row["dep_id"], mode)
         if key in seen or conn.execute(
-                "SELECT 1 FROM dep_failure_modes WHERE dep_id = ? AND mode = ?", key).fetchone():
+                f"SELECT 1 FROM dep_failure_modes WHERE dep_id = ? AND mode = ? AND {db.ACTIVE}",
+                key).fetchone():
             return (
                 f"Rule: one row per dependency x mode — (dep {row['dep_id']}, {mode}) is already "
                 f"recorded (or earlier in this batch). Offending row: {_fmt(row)}. If the "
-                "recorded handling is wrong, file_conflict referencing it so the user can "
-                "adjudicate."
+                "recorded handling is wrong, correct it with supersede_row instead of a "
+                "duplicate."
             )
         seen.add(key)
         return None
@@ -1181,12 +1268,16 @@ def submit_dep_failure_modes(conn: sqlite3.Connection, rows: list[dict]) -> dict
             "dep_id": row["dep_id"], "mode": _text(row, "mode"),
             "handling": _text(row, "handling"), **_envelope(plan, row)})
 
-    return _submit_batch(conn, rows, validate, insert)
+    return validate, insert
+
+
+def submit_dep_failure_modes(conn: db.Connection, rows: list[dict]) -> dict:
+    return _submit_batch(conn, rows, *_dep_fm_handlers(conn))
 
 
 # --- questions, conflicts, decisions (bookkeeping + ADRs) ---------------------
 
-def file_question(conn: sqlite3.Connection, text: str, owner: str | None = None,
+def file_question(conn: db.Connection, text: str, owner: str | None = None,
                   links: list[str] | None = None) -> dict:
     args = _clean({"text": text, "owner": owner, "links": links})
     if _text(args, "text") is None:
@@ -1203,7 +1294,7 @@ def file_question(conn: sqlite3.Connection, text: str, owner: str | None = None,
     return {"id": qid, "state": "open"}
 
 
-def resolve_question(conn: sqlite3.Connection, question_id: int,
+def resolve_question(conn: db.Connection, question_id: int,
                      resolution: str | None = None, defer: bool = False) -> dict:
     question = None
     if isinstance(question_id, int) and not isinstance(question_id, bool):
@@ -1234,7 +1325,7 @@ def resolve_question(conn: sqlite3.Connection, question_id: int,
     return {"id": question["id"], "state": state, "resolution": res}
 
 
-def file_conflict(conn: sqlite3.Connection, description: str, refs: list[str]) -> dict:
+def file_conflict(conn: db.Connection, description: str, refs: list[str]) -> dict:
     args = _clean({"description": description, "refs": refs})
     if _text(args, "description") is None:
         return {"error": (
@@ -1259,7 +1350,7 @@ def file_conflict(conn: sqlite3.Connection, description: str, refs: list[str]) -
             "note": "Filed. It sits at next_gap() priority 1 until resolved with the user."}
 
 
-def resolve_conflict(conn: sqlite3.Connection, conflict_id: int, resolution: str) -> dict:
+def resolve_conflict(conn: db.Connection, conflict_id: int, resolution: str) -> dict:
     conflict = None
     if isinstance(conflict_id, int) and not isinstance(conflict_id, bool):
         conflict = _fetch(conn, "conflicts", conflict_id)
@@ -1285,58 +1376,69 @@ def resolve_conflict(conn: sqlite3.Connection, conflict_id: int, resolution: str
     return {"id": conflict["id"], "state": "resolved", "resolution": res}
 
 
-def record_decision(conn: sqlite3.Connection, text: str, provenance: str,
+def _decision_values(conn, args: dict) -> tuple[str, None] | tuple[None, dict]:
+    """Validate a cleaned decision-args dict; return (error, None) or
+    (None, column values sans envelope/bookkeeping). Shared by record_decision
+    and the supersede path."""
+    if _text(args, "text") is None:
+        return f"Rule: a decision needs non-empty text. Offending input: {_fmt(args)}.", None
+    err = _envelope_error(args) or _dangling_refs_error(conn, args.get("links"), args)
+    if err:
+        return err, None
+    alternatives = args.get("alternatives") or []
+    if not isinstance(alternatives, list):
+        return (
+            "Rule: alternatives is an array of {alternative, rejected_because}. Offending "
+            f"input: {_fmt(args)}. Compliant example: {_fmt(DECISION_EXAMPLE['alternatives'])}."
+        ), None
+    for alt in alternatives:
+        if not isinstance(alt, dict) or set(alt) - ALTERNATIVE_FIELDS \
+                or _strip(alt.get("alternative")) is None \
+                or _strip(alt.get("rejected_because")) is None:
+            return (
+                "Rule: each alternative carries 'alternative' and a one-line 'rejected_because'. "
+                f"Offending alternative: {_fmt(alt)}. Compliant example: "
+                f"{_fmt(DECISION_EXAMPLE['alternatives'])}."), None
+    challenge = args.get("challenge")
+    if challenge is not None:
+        if not isinstance(challenge, dict) or set(challenge) - CHALLENGE_FIELDS \
+                or _strip(challenge.get("text")) is None \
+                or challenge.get("outcome") not in CHALLENGE_OUTCOMES:
+            return (
+                "Rule: challenge is null or {text, outcome} with outcome 'overridden' (the user "
+                "heard the challenge and kept their call) or 'revised' (the decision changed). "
+                f"Offending challenge: {_fmt(challenge)}."), None
+    linked_tables = {_parse_ref(ref)[0] for ref in args.get("links") or []}
+    significant = bool(linked_tables & SIGNIFICANT_LINK_TABLES)
+    if significant and not alternatives:
+        return (
+            "Rule: this decision links to a component or contract, so the significance "
+            "heuristic (code-enforced — coarse but ungameable) marks it significant, and "
+            "significant decisions record the alternatives considered, each with a one-line "
+            f"rejection reason. Offending input: {_fmt(args)}. Compliant example: "
+            f"{_fmt(DECISION_EXAMPLE)}."), None
+    alternatives = [{"alternative": _strip(a["alternative"]),
+                     "rejected_because": _strip(a["rejected_because"])} for a in alternatives]
+    return None, {
+        "text": _text(args, "text"), "rationale": _text(args, "rationale"),
+        "alternatives": json.dumps(alternatives) if alternatives else None,
+        "challenge": json.dumps({"text": _strip(challenge["text"]),
+                                 "outcome": challenge["outcome"]}) if challenge else None,
+        "significant": 1 if significant else 0,
+    }
+
+
+def record_decision(conn: db.Connection, text: str, provenance: str,
                     rationale: str | None = None, links: list[str] | None = None,
                     alternatives: list[dict] | None = None, challenge: dict | None = None,
                     assumption_kind: str | None = None) -> dict:
     args = _clean({"text": text, "provenance": provenance, "assumption_kind": assumption_kind,
                    "rationale": rationale, "links": links,
                    "alternatives": alternatives, "challenge": challenge})
-    if _text(args, "text") is None:
-        return {"error": f"Rule: a decision needs non-empty text. Offending input: {_fmt(args)}."}
-    err = _envelope_error(args) or _dangling_refs_error(conn, args.get("links"), args)
+    err, values = _decision_values(conn, args)
     if err:
         return {"error": err}
-    alternatives = args.get("alternatives") or []
-    if not isinstance(alternatives, list):
-        return {"error": (
-            "Rule: alternatives is an array of {alternative, rejected_because}. Offending "
-            f"input: {_fmt(args)}. Compliant example: {_fmt(DECISION_EXAMPLE['alternatives'])}.")}
-    for alt in alternatives:
-        if not isinstance(alt, dict) or set(alt) - ALTERNATIVE_FIELDS \
-                or _strip(alt.get("alternative")) is None \
-                or _strip(alt.get("rejected_because")) is None:
-            return {"error": (
-                "Rule: each alternative carries 'alternative' and a one-line 'rejected_because'. "
-                f"Offending alternative: {_fmt(alt)}. Compliant example: "
-                f"{_fmt(DECISION_EXAMPLE['alternatives'])}.")}
-    challenge = args.get("challenge")
-    if challenge is not None:
-        if not isinstance(challenge, dict) or set(challenge) - CHALLENGE_FIELDS \
-                or _strip(challenge.get("text")) is None \
-                or challenge.get("outcome") not in CHALLENGE_OUTCOMES:
-            return {"error": (
-                "Rule: challenge is null or {text, outcome} with outcome 'overridden' (the user "
-                "heard the challenge and kept their call) or 'revised' (the decision changed). "
-                f"Offending challenge: {_fmt(challenge)}.")}
-    linked_tables = {_parse_ref(ref)[0] for ref in args.get("links") or []}
-    significant = bool(linked_tables & SIGNIFICANT_LINK_TABLES)
-    if significant and not alternatives:
-        return {"error": (
-            "Rule: this decision links to a component or contract, so the significance "
-            "heuristic (code-enforced — coarse but ungameable) marks it significant, and "
-            "significant decisions record the alternatives considered, each with a one-line "
-            f"rejection reason. Offending input: {_fmt(args)}. Compliant example: "
-            f"{_fmt(DECISION_EXAMPLE)}.")}
-    alternatives = [{"alternative": _strip(a["alternative"]),
-                     "rejected_because": _strip(a["rejected_because"])} for a in alternatives]
     plan = db.get_plan(conn)
-    did = db.insert_row(conn, "decisions", {
-        "text": _text(args, "text"), "rationale": _text(args, "rationale"),
-        "alternatives": json.dumps(alternatives) if alternatives else None,
-        "challenge": json.dumps({"text": _strip(challenge["text"]),
-                                 "outcome": challenge["outcome"]}) if challenge else None,
-        "significant": 1 if significant else 0,
-        **_envelope(plan, args)})
+    did = db.insert_row(conn, "decisions", {**values, **_envelope(plan, args)})
     conn.commit()
-    return {"id": did, "significant": significant}
+    return {"id": did, "significant": bool(values["significant"])}

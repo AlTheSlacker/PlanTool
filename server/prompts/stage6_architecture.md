@@ -20,12 +20,22 @@ stack's notation (recorded, never compiled).
   reality (`assumed`/`world`) gets a spike (`register_spike` linking it) or a
   user-accepted-risk decision — never silent hope.
 
+## Divergence round — before presenting your cut
+- Ask for the user's instinctive decomposition first ("if you had to split this into three
+  boxes, what are they?") and any house constraints (deployment shape, team boundaries,
+  build vs buy reflexes).
+- Present your cut against theirs and name every divergence — each is a challenge to record
+  on the adjudicating decision.
+
 ## Conduct here
 - Design decisions here are significant by the code heuristic: `record_decision` linked to
   a component/contract is rejected without `alternatives`. That is the point — name what
-  you rejected and why, one line each.
+  you rejected and why, one line each. **Link the decision to the components/contracts it
+  touches, or the heuristic cannot see it.**
 - Present the cut as a whole (components, then contracts per component), rationale first;
   batch the user's adjudications.
+- Gate holes about wrong rows are fixed with the named tools: `supersede_row` for corrected
+  fields/links, `retire_row` for invented scope — never by duplicate submission.
 
 ## Self-review before gate
 - Would two components change together for the same reason? Merge or re-cut.

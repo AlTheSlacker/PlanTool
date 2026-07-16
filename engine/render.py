@@ -12,7 +12,6 @@ Also runnable directly:
 """
 from __future__ import annotations
 
-import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -28,11 +27,12 @@ TABLE_ORDER = (
     "plans", "spikes", "use_cases", "uc_steps", "uc_extensions", "requirements",
     "entities", "crud_grid", "state_machines", "sm_cells", "components", "contracts",
     "contract_deps", "dependencies", "dep_failure_modes", "decisions",
-    "open_questions", "conflicts", "findings", "gate_results", "pack_manifests",
+    "open_questions", "conflicts", "findings", "gate_results", "gap_dismissals",
+    "pack_manifests",
 )
 
 
-def export_data(conn: sqlite3.Connection) -> dict:
+def export_data(conn: db.Connection) -> dict:
     plan = db.get_plan(conn)
     return {
         "plantool_export": EXPORT_FORMAT,
@@ -45,7 +45,7 @@ def export_data(conn: sqlite3.Connection) -> dict:
     }
 
 
-def export_yaml(conn: sqlite3.Connection, yaml_path: str | Path) -> dict:
+def export_yaml(conn: db.Connection, yaml_path: str | Path) -> dict:
     data = export_data(conn)
     Path(yaml_path).write_text(
         yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8")
@@ -55,7 +55,7 @@ def export_yaml(conn: sqlite3.Connection, yaml_path: str | Path) -> dict:
     }
 
 
-def import_data(conn: sqlite3.Connection, data: dict) -> dict:
+def import_data(conn: db.Connection, data: dict) -> dict:
     """Insert exported rows into a freshly created (empty) DB. Rows keep their
     ids; columns unknown to the current schema are dropped and reported."""
     if data.get("plantool_export") != EXPORT_FORMAT:

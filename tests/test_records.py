@@ -39,7 +39,7 @@ def test_question_defer_and_unknown_id(conn):
 def test_question_rejects_empty_text_and_dangling_links(conn):
     assert "non-empty text" in submits.file_question(conn, "  ")["error"]
     out = submits.file_question(conn, "Linked?", links=["requirements:5"])
-    assert "match nothing" in out["error"]
+    assert "matches nothing" in out["error"]
 
 
 # --- conflicts -------------------------------------------------------------------
@@ -67,7 +67,7 @@ def test_conflict_lifecycle_and_gap_priority(conn):
 
 def test_conflict_requires_existing_refs(conn):
     assert "non-empty array" in submits.file_conflict(conn, "vague unease", refs=[])["error"]
-    assert "match nothing" in submits.file_conflict(
+    assert "matches nothing" in submits.file_conflict(
         conn, "points at ghosts", refs=["decisions:7"])["error"]
     assert "table:id" in submits.file_conflict(
         conn, "bad shape", refs=["decision 7"])["error"]
@@ -129,7 +129,7 @@ def test_decision_validation_is_pedagogic(conn):
     assert ok["significant"] is False
 
     dangling = submits.record_decision(conn, "x", "decided", links=["contracts:99"])
-    assert "match nothing" in dangling["error"]
+    assert "matches nothing" in dangling["error"]
 
     bad_alt = submits.record_decision(
         conn, "x", "decided", links=["contracts:1"],

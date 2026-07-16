@@ -19,11 +19,18 @@ failure handling; the user adjudicates trade-offs (cost of resilience vs. blast 
   migration (how existing data moves), observability (what is logged/metered so the failure
   handling can be seen working).
 
+## Divergence round — before presenting your failure design
+- Ask what has actually broken for them before (in this system's predecessors or their
+  operational history) — real outages beat imagined ones as design inputs.
+- Negative space: which dependency are they not thinking of as a dependency (the
+  filesystem, the clock, DNS, the human in the loop)?
+
 ## Conduct here
 - Proposal-first: "for Stripe-unavailable I propose queue-and-retry with a 24h TTL because
   orders are idempotent (D-12) — objections?"
 - Handling that depends on unverified vendor behaviour is a world-assumption: spike it
   (`register_spike`) rather than asking the user to guess.
+- Wrong handling already recorded is superseded (`supersede_row`), never duplicated.
 
 ## Self-review before gate
 - For each *slow* handling: is there an actual timeout number, traceable to an NFR?

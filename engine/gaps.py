@@ -18,7 +18,6 @@ next_gap prefers stage order but follows the conversation.
 from __future__ import annotations
 
 import json
-import sqlite3
 
 from . import db
 
@@ -29,8 +28,16 @@ GUIDANCE = (
     "Address these as one coherent exchange with the user: form proposals with rationale "
     "wherever you can (proposal-first — ask for objection, not an open question), reserve "
     "blank questions for genuine intent-unknowns, then submit the accepted facts as batched "
-    "rows with provenance."
+    "rows with provenance. A hole or assumption gap the user deliberately sets aside can be "
+    "silenced with dismiss_gap(kind, table, row_id, reason) — gates ignore dismissals, so a "
+    "dismissed gate hole still blocks the gate."
 )
+
+# Gap kinds with their own resolution flow are never dismissible.
+UNDISMISSABLE = {
+    "conflict": "resolve_conflict is the only way past a conflict",
+    "open_question": "resolve_question (or its defer=true) parks a question deliberately",
+}
 
 
 def _gap(priority: int, kind: str, table: str, stage: int | None, ask: str,
@@ -67,11 +74,12 @@ def _stage_holes(conn, stage: int):
                 "script from plan_status).",
             )
     elif stage == 2:
-        steps = _rows(conn, """
+        steps = _rows(conn, f"""
             SELECT s.id, s.step_no, s.text, u.id AS uc_id, u.title
             FROM uc_steps s JOIN use_cases u ON u.id = s.use_case_id
-            WHERE s.no_extension_reason IS NULL
-              AND NOT EXISTS (SELECT 1 FROM uc_extensions e WHERE e.step_id = s.id)
+            WHERE s.no_extension_reason IS NULL AND {db.active('s')} AND {db.active('u')}
+              AND NOT EXISTS (SELECT 1 FROM uc_extensions e
+                              WHERE e.step_id = s.id AND {db.active('e')})
             ORDER BY u.id, s.step_no""")
         for s in steps:
             yield _gap(
@@ -82,39 +90,44 @@ def _stage_holes(conn, stage: int):
                 row_id=s["id"], entity=s["title"],
                 context={"step": s},
             )
-        if not _rows(conn, "SELECT id FROM use_cases LIMIT 1"):
+        if not _rows(conn, f"SELECT id FROM use_cases WHERE {db.ACTIVE} LIMIT 1"):
             yield _gap(2, "hole:no_use_cases", "use_cases", 2,
                        "No use cases yet. Elicit them Cockburn-style: primary actor, trigger, "
                        "numbered main scenario, extensions per step.")
     elif stage == 3:
-        if not _rows(conn, "SELECT id FROM requirements LIMIT 1"):
+        if not _rows(conn, f"SELECT id FROM requirements WHERE {db.ACTIVE} LIMIT 1"):
             yield _gap(2, "hole:no_requirements", "requirements", 3,
                        "No requirements yet. Derive EARS-typed requirements from the use cases; "
                        "quantify NFRs with Planguage (scale/meter/target).")
-        for u in _rows(conn, """
+        for u in _rows(conn, f"""
             SELECT u.id, u.title FROM use_cases u
-            WHERE NOT EXISTS (SELECT 1 FROM requirements r
-                              WHERE r.links LIKE '%"use_cases:' || u.id || '"%')"""):
+            WHERE {db.active('u')}
+              AND NOT EXISTS (SELECT 1 FROM requirements r
+                              WHERE r.links LIKE '%"use_cases:' || u.id || '"%'
+                                AND {db.active('r')})"""):
             yield _gap(
                 2, "hole:use_case_untraced", "use_cases", 3,
                 f"Use case '{u['title']}' (use_cases:{u['id']}) traces to no requirement. Derive "
                 "its requirements and link them (links: [\"use_cases:" + str(u["id"]) + "\"]).",
                 row_id=u["id"], entity=u["title"], context={"use_case": u},
             )
-        for r in _rows(conn, """
-            SELECT * FROM requirements WHERE is_nfr = 1 AND (planguage_scale IS NULL
-                OR planguage_meter IS NULL OR planguage_target IS NULL)"""):
+        for r in _rows(conn, f"""
+            SELECT * FROM requirements WHERE is_nfr = 1 AND {db.ACTIVE}
+                AND (planguage_scale IS NULL
+                     OR planguage_meter IS NULL OR planguage_target IS NULL)"""):
             yield _gap(2, "hole:nfr_unquantified", "requirements", 3,
                        f"NFR requirements:{r['id']} lacks a full Planguage triad.",
                        row_id=r["id"], context={"requirement": r})
     elif stage == 4:
-        entities = _rows(conn, "SELECT * FROM entities ORDER BY id")
+        entities = _rows(conn, f"SELECT * FROM entities WHERE {db.ACTIVE} ORDER BY id")
         if not entities:
             yield _gap(2, "hole:no_entities", "entities", 4,
                        "No domain entities yet. Synthesize mode: propose the domain model "
                        "(entities with lifecycle judgments) and let the user adjudicate.")
         for e in entities:
-            ops = {r["op"] for r in _rows(conn, "SELECT op FROM crud_grid WHERE entity_id = ?", (e["id"],))}
+            ops = {r["op"] for r in _rows(
+                conn, f"SELECT op FROM crud_grid WHERE entity_id = ? AND {db.ACTIVE}",
+                (e["id"],))}
             missing = [op for op in "CRUD" if op not in ops]
             if missing:
                 yield _gap(
@@ -125,7 +138,8 @@ def _stage_holes(conn, stage: int):
                     row_id=e["id"], entity=e["name"], context={"entity": e, "missing_ops": missing},
                 )
             if e["has_lifecycle"]:
-                machine = _rows(conn, "SELECT * FROM state_machines WHERE entity_id = ?", (e["id"],))
+                machine = _rows(conn, f"SELECT * FROM state_machines WHERE entity_id = ? "
+                                      f"AND {db.ACTIVE}", (e["id"],))
                 if not machine:
                     yield _gap(
                         2, "hole:missing_state_machine", "state_machines", 4,
@@ -139,7 +153,8 @@ def _stage_holes(conn, stage: int):
                     states = json.loads(m["states"])
                     events = json.loads(m["events"])
                     have = {(c["state"], c["event"]) for c in
-                            _rows(conn, "SELECT state, event FROM sm_cells WHERE machine_id = ?", (m["id"],))}
+                            _rows(conn, f"SELECT state, event FROM sm_cells "
+                                        f"WHERE machine_id = ? AND {db.ACTIVE}", (m["id"],))}
                     undefined = [[s, ev] for s in states for ev in events if (s, ev) not in have]
                     if undefined:
                         yield _gap(
@@ -151,14 +166,16 @@ def _stage_holes(conn, stage: int):
                             context={"entity": e, "machine": m, "undefined_cells": undefined},
                         )
     elif stage == 5:
-        deps = _rows(conn, "SELECT * FROM dependencies ORDER BY id")
+        deps = _rows(conn, f"SELECT * FROM dependencies WHERE {db.ACTIVE} ORDER BY id")
         if not deps:
             yield _gap(2, "hole:no_dependencies", "dependencies", 5,
                        "No external dependencies registered. Register each (service, library, "
                        "api, filesystem, ...) — or record an explicit 'no external dependencies' "
                        "decision.")
         for d in deps:
-            modes = {r["mode"] for r in _rows(conn, "SELECT mode FROM dep_failure_modes WHERE dep_id = ?", (d["id"],))}
+            modes = {r["mode"] for r in _rows(
+                conn, f"SELECT mode FROM dep_failure_modes WHERE dep_id = ? AND {db.ACTIVE}",
+                (d["id"],))}
             missing = [m for m in ("unavailable", "slow", "malformed", "auth", "partial") if m not in modes]
             if missing:
                 yield _gap(
@@ -168,27 +185,31 @@ def _stage_holes(conn, stage: int):
                     row_id=d["id"], entity=d["name"], context={"dependency": d, "missing_modes": missing},
                 )
     elif stage == 6:
-        if not _rows(conn, "SELECT id FROM components LIMIT 1"):
+        if not _rows(conn, f"SELECT id FROM components WHERE {db.ACTIVE} LIMIT 1"):
             yield _gap(2, "hole:no_components", "components", 6,
                        "No components yet. Synthesize mode: design the component cut and "
                        "contracts to structured-signature level; the user adjudicates.")
-        for c in _rows(conn, """
+        for c in _rows(conn, f"""
             SELECT c.* FROM components c
-            WHERE NOT EXISTS (SELECT 1 FROM contracts k WHERE k.component_id = c.id)"""):
+            WHERE {db.active('c')}
+              AND NOT EXISTS (SELECT 1 FROM contracts k
+                              WHERE k.component_id = c.id AND {db.active('k')})"""):
             yield _gap(2, "hole:component_without_contract", "contracts", 6,
                        f"Component '{c['name']}' has no contract. Every deliverable component "
                        "needs one (params typed or explicit none, return, >=1 named error or "
                        "cannot_fail + reason).",
                        row_id=c["id"], entity=c["name"], context={"component": c})
-        for k in _rows(conn, """
+        for k in _rows(conn, f"""
             SELECT k.*, c.name AS component_name FROM contracts k
             JOIN components c ON c.id = k.component_id
-            WHERE k.is_external = 0
-              AND NOT EXISTS (SELECT 1 FROM contract_deps d WHERE d.provider_contract_id = k.id)"""):
+            WHERE k.is_external = 0 AND {db.active('k')}
+              AND NOT EXISTS (SELECT 1 FROM contract_deps d
+                              WHERE d.provider_contract_id = k.id AND {db.active('d')})"""):
             yield _gap(2, "hole:contract_without_consumer", "contract_deps", 6,
                        f"Contract '{k['name']}' on component '{k['component_name']}' has no "
                        "consumer and is not marked external — untraceable contracts are "
-                       "invented scope. Record its consumer edge or mark it external.",
+                       "invented scope. Record its consumer edge (submit_contract_deps), mark "
+                       "it external (supersede_row), or cut it (retire_row).",
                        row_id=k["id"], entity=k["component_name"], context={"contract": k})
 
 
@@ -223,21 +244,24 @@ _ASSUMED_SCANS = [
 
 def _assumed_gaps(conn, kind: str, priority: int, current_stage: int):
     for table, alias, stage, sql in _ASSUMED_SCANS:
-        filtered = f"{sql} WHERE {alias}.provenance = 'assumed' AND {alias}.assumption_kind = ?"
+        filtered = (f"{sql} WHERE {alias}.provenance = 'assumed' "
+                    f"AND {alias}.assumption_kind = ? AND {db.active(alias)}")
         for r in _rows(conn, filtered, (kind,)):
             full = _rows(conn, f"SELECT * FROM {table} WHERE id = ?", (r["id"],))[0]
             if kind == "world":
                 ask = (
                     f"World-assumption pending verification — {table}:{r['id']} \"{r['label']}\". "
-                    "Resolve by experiment against the real dependency, never by asking the user. "
-                    "(Spike tools arrive in a later build session; until then, flag it to the "
-                    "user as an unverified risk.)"
+                    "Resolve by experiment against the real dependency, never by asking the "
+                    "user: register_spike (linking this row), run the probe, "
+                    "record_spike_result — a confirmed verdict upgrades it to verified."
                 )
             else:
                 ask = (
                     f"Intent-assumption awaiting the user — {table}:{r['id']} \"{r['label']}\". "
                     "Only the user can upgrade this: present it (proposal-first, with your "
-                    "rationale) and record their answer."
+                    f"rationale). If they confirm, confirm_assumption(\"{table}\", {r['id']}, "
+                    "evidence) with their answer quoted; if they correct it, supersede_row "
+                    "with the corrected fields."
                 )
             yield _gap(priority, f"assumed_{kind}", table, stage or current_stage, ask,
                        row_id=r["id"], entity=r["entity"], context={"row": full})
@@ -288,7 +312,12 @@ def _cluster(candidates: list[dict]) -> list[dict]:
     return picked
 
 
-def next_gap(conn: sqlite3.Connection) -> dict:
+def _dismissed_keys(conn) -> set[tuple]:
+    return {(r["kind"], r["ref_table"], r["row_id"]) for r in
+            conn.execute("SELECT kind, ref_table, row_id FROM gap_dismissals")}
+
+
+def next_gap(conn: db.Connection) -> dict:
     plan = db.get_plan(conn)
     stage = plan["current_stage"]
     candidates = [
@@ -298,16 +327,18 @@ def next_gap(conn: sqlite3.Connection) -> dict:
         *(_assumed_gaps(conn, "intent", 4, stage)),
         *(_question_gaps(conn)),
     ]
+    dismissed = _dismissed_keys(conn)
+    candidates = [g for g in candidates
+                  if (g["kind"], g["table"], g["row_id"]) not in dismissed]
     if not candidates:
         return {
             "status": "stage_clear",
             "current_stage": stage,
             "message": (
                 f"No open gaps detected for stage {stage}. Run the stage script's self-review "
-                f"checklist, then advance via run_gate({stage}) — which verifies completeness "
-                "and delivers the next stage's script. (run_gate arrives in a later build "
-                "session; until then continue enriching the plan or start the next stage's "
-                "topics — submits for any stage are always accepted.)"
+                f"checklist, then advance via run_gate({stage}) — it verifies completeness "
+                "and, on a pass, delivers the next stage's script. (Submits for any stage are "
+                "always accepted; next_gap prefers stage order but follows the conversation.)"
             ),
         }
     cluster = _cluster(candidates)
@@ -319,3 +350,38 @@ def next_gap(conn: sqlite3.Connection) -> dict:
         "open_gap_total": len(candidates),
         "guidance": GUIDANCE,
     }
+
+
+def dismiss_gap(conn: db.Connection, kind: str, table: str, row_id: int | None,
+                reason: str) -> dict:
+    """Deliberately set a surfaced gap aside (dogfood F4: next_gap nagged
+    items the user had answered). Identity is (kind, table, row_id) exactly as
+    the gap carried them. next_gap stops surfacing it; gates are unaffected."""
+    if kind in UNDISMISSABLE:
+        return {"error": (
+            f"Rule: '{kind}' gaps cannot be dismissed — {UNDISMISSABLE[kind]}.")}
+    reason = (reason or "").strip() if isinstance(reason, str) else None
+    if not reason:
+        return {"error": (
+            "Rule: dismissing records why the gap was set aside (reason) — usually the "
+            "user's words.")}
+    plan = db.get_plan(conn)
+    stage = plan["current_stage"]
+    live = {(g["kind"], g["table"], g["row_id"])
+            for g in (*_stage_holes(conn, stage),
+                      *_assumed_gaps(conn, "world", 3, stage),
+                      *_assumed_gaps(conn, "intent", 4, stage))}
+    key = (kind, table, row_id)
+    if key in _dismissed_keys(conn):
+        return {"error": f"Rule: gap {key} is already dismissed."}
+    if key not in live:
+        return {"error": (
+            f"Rule: (kind, table, row_id) must identify a currently-surfaced gap — "
+            f"{key} matches none. Live gap identities: {sorted(live)}.")}
+    did = db.insert_row(conn, "gap_dismissals", {
+        "plan_id": plan["id"], "kind": kind, "ref_table": table,
+        "row_id": row_id, "reason": reason})
+    conn.commit()
+    return {"id": did, "dismissed": {"kind": kind, "table": table, "row_id": row_id},
+            "note": ("next_gap will no longer surface this; gates still see the underlying "
+                     "row, so a gate hole stays a gate hole.")}

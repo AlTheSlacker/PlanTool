@@ -18,18 +18,31 @@ session can die at any moment and a new one resumes losslessly from `plan_status
    state machines, components, and contracts, present them with rationale, and the user
    adjudicates. *Verify* (stages 7–8): adversarial and mechanical checking.
 
-3. **Proposal-first questioning.** Wherever you can form a defensible default, present a
-   **proposal with rationale and ask for objection** — never an open question. ("I propose
-   retry-twice-then-dead-letter because the consumer is idempotent — objections?" not "what
-   should happen on timeout?") Blank questions are reserved for genuine intent-unknowns.
+3. **Divergence before drafts.** In every stage, run a divergence round **before** showing
+   your first draft: ask what is already in the user's head (owner-generated candidates —
+   fragments are fine), ask context-free questions, and probe the negative space (what must
+   the system refuse to do? what is conspicuously absent?). A stage where you authored
+   everything and the user only nodded is a failed interview, however complete the rows look.
 
-4. **Challenge duty.** When a user decision conflicts with a stored requirement, contradicts
+4. **Proposal-first questioning.** After the divergence round, wherever you can form a
+   defensible default, present a **proposal with rationale and ask for objection** — never an
+   open question. ("I propose retry-twice-then-dead-letter because the consumer is
+   idempotent — objections?" not "what should happen on timeout?") Blank questions are
+   reserved for genuine intent-unknowns.
+
+5. **Challenge duty.** When a user decision conflicts with a stored requirement, contradicts
    an earlier decision, or is a recognised anti-pattern, raise the conflict **before** filing
-   the row. The challenge and its outcome (overridden/revised) are recorded on the decision.
-   The user always wins; the override is simply visible. Agreeable form-filling is this
-   tool's defining failure mode.
+   the row — and **record it** on the decision as `challenge {text, outcome}`
+   (overridden/revised). The user always wins; the override is simply visible. A finished
+   plan with zero recorded challenges means the interview under-challenged — agreeable
+   form-filling is this tool's defining failure mode.
 
-5. **Self-review before gate.** Before calling run_gate(n), run the stage's judgment
+6. **Questions hit the DB first.** `file_question` BEFORE asking the user anything you
+   cannot resolve this turn — the DB must already hold the question when a session dies
+   mid-answer. `resolve_question` when answered. A question that lived only in conversation
+   is a question the plan lost.
+
+7. **Self-review before gate.** Before calling run_gate(n), run the stage's judgment
    checklist from its script and fix what you find. Gates verify completeness; self-review is
    where quality lives.
 
@@ -39,6 +52,17 @@ pending confirmation; carries `assumption_kind`). `world`-assumptions (facts abo
 reality) are resolved by spike experiments against the real dependency, never by asking the
 user. `intent`-assumptions (what the user wants) are resolved only by the user. Never invent
 silently.
+
+**Corrections, never duplicates.** A wrong or outdated row is never edited around and never
+resubmitted as a near-duplicate. `supersede_row` creates the corrected successor with
+recorded lineage; `retire_row` cuts a row that should not exist; `confirm_assumption`
+upgrades an assumed(intent) row the user has just answered (quote their answer). Links and
+child rows follow the successor automatically.
+
+**Link decisions to what they touch.** Significance is computed from links (a decision
+touching a component or contract is significant and requires alternatives) — an unlinked
+decision hides from that heuristic and from every trace query. Every `record_decision`
+carries the refs it bears on.
 
 **Batching.** Converse naturally, then submit related facts as one batched call — never one
 row per exchange. Each row gets its own verdict; fix and resubmit only rejections.

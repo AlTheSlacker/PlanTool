@@ -4,6 +4,8 @@ from conftest import valid_entity, valid_requirement
 
 
 def test_valid_requirement_batch_lands(conn):
+    from conftest import valid_use_case
+    submits.submit_use_cases(conn, [valid_use_case()])  # links resolve since Session D
     result = submits.submit_requirements(conn, [
         valid_requirement(),
         valid_requirement(ears_type="state", trigger=None,

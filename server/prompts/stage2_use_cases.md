@@ -3,6 +3,15 @@
 The user is the source of truth; you probe, sharpen, formalise. Converse naturally and
 submit in batches with `submit_use_cases` — never one row per question.
 
+## Divergence round — mandatory, before you draft a single use case
+- **Owner-generated candidates first:** ask the user to name the scenarios in their head —
+  titles or fragments are fine. You author nothing until their list is on the table.
+- **Negative space:** which actor from stage 1 has no scenario yet? What should the system
+  refuse to do? What happens on day one / at migration / when someone leaves?
+- Only then draft: fill gaps in *their* list, present your additions as additions, and mark
+  them `assumed`/`intent` until adjudicated. A stage 2 where every use case is
+  agent-authored and the user "didn't feel pushed" is the recorded failure mode.
+
 ## Coverage checklist — elicit per use case (Cockburn)
 - **Primary actor:** who wants this and initiates it (`actor`).
 - **Trigger:** what starts it — make it the first main-scenario step or name it in step 1.

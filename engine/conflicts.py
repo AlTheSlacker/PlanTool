@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import json
 import re
-import sqlite3
 
 from . import db
 
@@ -42,7 +41,7 @@ def _mentions_op(text: str, op: str) -> bool:
     return any(re.search(rf"\b{stem}\w*", text, re.IGNORECASE) for stem in VERB_STEMS[op])
 
 
-def file_engine_conflict(conn: sqlite3.Connection, description: str,
+def file_engine_conflict(conn: db.Connection, description: str,
                          refs: list[str]) -> dict | None:
     """Insert an engine-filed conflict unless one with these refs exists."""
     refs_json = json.dumps(refs)
@@ -56,18 +55,19 @@ def file_engine_conflict(conn: sqlite3.Connection, description: str,
     return {"id": cid, "description": description, "refs": refs}
 
 
-def sweep_crud_contradictions(conn: sqlite3.Connection) -> list[dict]:
+def sweep_crud_contradictions(conn: db.Connection) -> list[dict]:
     """File a conflict for every n/a CRUD cell a use-case step appears to
     contradict. Idempotent: already-filed pairs are skipped."""
-    cells = [dict(r) for r in conn.execute("""
+    cells = [dict(r) for r in conn.execute(f"""
         SELECT g.id, g.op, g.na_reason, e.name AS entity
         FROM crud_grid g JOIN entities e ON e.id = g.entity_id
-        WHERE g.na = 1 ORDER BY g.id""")]
+        WHERE g.na = 1 AND {db.active('g')} AND {db.active('e')} ORDER BY g.id""")]
     if not cells:
         return []
-    steps = [dict(r) for r in conn.execute("""
+    steps = [dict(r) for r in conn.execute(f"""
         SELECT s.id, s.text, u.title
-        FROM uc_steps s JOIN use_cases u ON u.id = s.use_case_id ORDER BY s.id""")]
+        FROM uc_steps s JOIN use_cases u ON u.id = s.use_case_id
+        WHERE {db.active('s')} AND {db.active('u')} ORDER BY s.id""")]
     filed = []
     for cell in cells:
         for step in steps:
@@ -88,7 +88,7 @@ def sweep_crud_contradictions(conn: sqlite3.Connection) -> list[dict]:
     return filed
 
 
-def check_resolved_question_staleness(conn: sqlite3.Connection,
+def check_resolved_question_staleness(conn: db.Connection,
                                       changed_refs: list[str]) -> list[dict]:
     """File a conflict for every resolved question linked to a row that just
     changed — its resolution may no longer hold."""

@@ -21,10 +21,18 @@ The user is the source of truth; you formalise behaviour into EARS-typed slots w
 **target** (the number to hit). "Fast" is not a requirement; "p95 order-submit latency,
 measured at the gateway, ≤ 300 ms" is.
 
+## Divergence round — before drafting
+- Ask which behaviours the user considers non-negotiable, in their words — candidates for
+  `unwanted` and NFR rows you would not have invented.
+- Negative space: what must the system never do to its data? What is the user assuming
+  "obviously" happens (auth, audit, retention) that no scenario states?
+
 ## Conduct here
 - Derive requirements from the recorded use cases and extensions first, then probe for
-  cross-cutting ones (auth, audit, retention) the scenarios don't surface.
+  cross-cutting ones the scenarios don't surface.
 - Restate the user's fuzzy wording in slot form and read it back before filing.
+- Challenge conflicts with recorded rows before filing; record the challenge on the
+  decision that resolves it.
 
 ## Self-review before gate
 - Can an acceptance test be written from each requirement alone?

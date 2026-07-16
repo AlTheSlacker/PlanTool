@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from pydantic import BaseModel, ConfigDict
 from mcp.server.fastmcp import FastMCP
 
-from engine import db, gaps, gates, spikes, submits
+from engine import db, gaps, gates, lineage, spikes, status, submits
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
 DB_FILENAME = "plan.db"
@@ -296,14 +296,9 @@ def plan_status_impl() -> dict:
         plan = db.get_plan(conn)
         if plan is None:
             return {**NO_PLAN, "mandate": _mandate()}
-        gates = [dict(r) for r in conn.execute(
-            """SELECT stage, passed, holes, max(run_at) AS run_at
-               FROM gate_results GROUP BY stage ORDER BY stage""")]
         return {
             "status": "ok",
-            "plan": dict(plan),
-            "counts": db.table_counts(conn),
-            "gates": gates,
+            **status.digest(conn),
             "mandate": _mandate(),
             "stage_script": _stage_script(plan["current_stage"]),
             "next": "Call next_gap() for the next 3-5 related gaps to work with the user.",
@@ -439,6 +434,29 @@ def record_spike_result_impl(spike_id: int, verdict: str, evidence_summary: str,
                              evidence_path: str | None = None) -> dict:
     return _record_impl(spikes.record_spike_result, spike_id, verdict,
                         evidence_summary, evidence_path)
+
+
+def supersede_row_impl(table: str, row_id: int, replacement_fields: dict,
+                       reason: str) -> dict:
+    return _record_impl(lineage.supersede_row, table, row_id, replacement_fields, reason)
+
+
+def retire_row_impl(table: str, row_id: int, reason: str) -> dict:
+    return _record_impl(lineage.retire_row, table, row_id, reason)
+
+
+def confirm_assumption_impl(table: str, row_id: int, evidence: str) -> dict:
+    return _record_impl(lineage.confirm_assumption, table, row_id, evidence)
+
+
+def get_rows_impl(table: str, ids: list[int] | None = None,
+                  filters: dict | None = None, include_inactive: bool = False,
+                  limit: int = status.DEFAULT_ROWS) -> dict:
+    return _record_impl(status.get_rows, table, ids, filters, include_inactive, limit)
+
+
+def dismiss_gap_impl(kind: str, table: str, row_id: int | None, reason: str) -> dict:
+    return _record_impl(gaps.dismiss_gap, kind, table, row_id, reason)
 
 
 def record_decision_impl(text: str, provenance: str, rationale: str | None = None,
@@ -659,6 +677,62 @@ def record_decision(text: str, provenance: str, rationale: str | None = None,
         alternatives=[a.model_dump() for a in alternatives] if alternatives else None,
         challenge=challenge.model_dump() if challenge else None,
         assumption_kind=assumption_kind)
+
+
+@mcp.tool(description=(
+    "Correct a wrong or outdated claim row by superseding it: a successor row is created with "
+    "replacement_fields applied over the original (explicit null clears a field; everything "
+    "else carries over), validated by the same rules as a fresh submit. Lineage is "
+    "bidirectional (supersedes / superseded_by) and the reason is recorded; child rows "
+    "re-point to the successor and links in active rows are rewritten, so nothing dangles. "
+    "The original stays as audit trail but gates, sweeps, and next_gap treat it as gone. "
+    "Claim tables only — questions/conflicts have resolve_*; a wrong row with no replacement "
+    "is retire_row."
+))
+def supersede_row(table: str, row_id: int, replacement_fields: dict, reason: str) -> dict:
+    return supersede_row_impl(table, row_id, replacement_fields, reason)
+
+
+@mcp.tool(description=(
+    "Cut a claim row that no longer stands and has no replacement ('link it or cut it' — this "
+    "is the cut). The row is marked retired with the reason; rows that structurally hang off "
+    "it (steps, extensions, cells, contracts, failure modes, dependency edges) retire with "
+    "it. Gates, sweeps, and next_gap stop seeing it; the audit trail keeps it."
+))
+def retire_row(table: str, row_id: int, reason: str) -> dict:
+    return retire_row_impl(table, row_id, reason)
+
+
+@mcp.tool(description=(
+    "Upgrade an assumed(intent) row to decided in place once the user has actually answered — "
+    "quote their answer as evidence (recorded in provenance_note). The one sanctioned "
+    "in-place provenance mutation: content stays identical, only certainty changes. "
+    "assumed(world) rows are upgraded by spikes (register_spike / record_spike_result), "
+    "never by this tool; content corrections are supersede_row."
+))
+def confirm_assumption(table: str, row_id: int, evidence: str) -> dict:
+    return confirm_assumption_impl(table, row_id, evidence)
+
+
+@mcp.tool(description=(
+    "Read specific rows: by ids, or by equality filters ({column: value}), or both. "
+    "Claim tables return active rows only unless include_inactive=true (superseded/retired "
+    "rows carry their lineage columns). The targeted-read companion to plan_status's digest — "
+    "use it instead of ever dumping the DB."
+))
+def get_rows(table: str, ids: list[int] | None = None, filters: dict | None = None,
+             include_inactive: bool = False, limit: int = status.DEFAULT_ROWS) -> dict:
+    return get_rows_impl(table, ids, filters, include_inactive, limit)
+
+
+@mcp.tool(description=(
+    "Deliberately set aside a gap next_gap keeps surfacing, identified by its (kind, table, "
+    "row_id) exactly as the gap carried them, with the user's reason. Holes and assumption "
+    "gaps only — conflicts and questions have resolve_*. Dismissals silence next_gap; gates "
+    "are unaffected, so a dismissed gate hole still blocks that gate."
+))
+def dismiss_gap(kind: str, table: str, row_id: int | None, reason: str) -> dict:
+    return dismiss_gap_impl(kind, table, row_id, reason)
 
 
 @mcp.tool(description=(

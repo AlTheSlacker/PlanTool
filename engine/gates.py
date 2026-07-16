@@ -19,7 +19,6 @@ text contains that phrase.
 from __future__ import annotations
 
 import json
-import sqlite3
 
 from . import db
 
@@ -43,19 +42,19 @@ def _hole(table: str, problem: str, fix: str, *, row_id: int | None = None,
 
 
 def goal_decisions(conn) -> list[dict]:
-    return _rows(conn, f"SELECT * FROM decisions WHERE {GOAL_WHERE} ORDER BY id")
+    return _rows(conn, f"SELECT * FROM decisions WHERE {GOAL_WHERE} AND {db.ACTIVE} ORDER BY id")
 
 
 def non_goal_decisions(conn) -> list[dict]:
-    return _rows(conn, f"SELECT * FROM decisions WHERE {NON_GOAL_WHERE} ORDER BY id")
+    return _rows(conn, f"SELECT * FROM decisions WHERE {NON_GOAL_WHERE} AND {db.ACTIVE} ORDER BY id")
 
 
 def stack_decisions(conn) -> list[dict]:
-    return _rows(conn, f"SELECT * FROM decisions WHERE {STACK_WHERE} ORDER BY id")
+    return _rows(conn, f"SELECT * FROM decisions WHERE {STACK_WHERE} AND {db.ACTIVE} ORDER BY id")
 
 
 def no_deps_decisions(conn) -> list[dict]:
-    return _rows(conn, f"SELECT * FROM decisions WHERE {NO_DEPS_WHERE} ORDER BY id")
+    return _rows(conn, f"SELECT * FROM decisions WHERE {NO_DEPS_WHERE} AND {db.ACTIVE} ORDER BY id")
 
 
 # --- stage 1: context & goals --------------------------------------------------
@@ -73,7 +72,8 @@ def gate_stage1(conn) -> list[dict]:
             holes.append(_hole(
                 "decisions", f"goal decisions:{g['id']} (\"{g['text']}\") has no success criterion",
                 "a goal's rationale carries the measurable success criterion an acceptance test "
-                "could check", row_id=g["id"]))
+                f"could check — supersede_row(\"decisions\", {g['id']}, {{\"rationale\": "
+                "\"...\"}}, reason) adds it", row_id=g["id"]))
     if not non_goal_decisions(conn):
         holes.append(_hole(
             "decisions", "no non-goals recorded",
@@ -91,40 +91,43 @@ def gate_stage1(conn) -> list[dict]:
 
 def gate_stage2(conn) -> list[dict]:
     holes = []
-    if not _rows(conn, "SELECT id FROM use_cases LIMIT 1"):
+    if not _rows(conn, f"SELECT id FROM use_cases WHERE {db.ACTIVE} LIMIT 1"):
         holes.append(_hole(
             "use_cases", "no use cases recorded",
             "elicit them Cockburn-style with submit_use_cases: primary actor, numbered main "
             "scenario, extensions per step"))
-    for s in _rows(conn, """
+    for s in _rows(conn, f"""
         SELECT s.id, s.step_no, s.text, u.title
         FROM uc_steps s JOIN use_cases u ON u.id = s.use_case_id
-        WHERE s.no_extension_reason IS NULL
-          AND NOT EXISTS (SELECT 1 FROM uc_extensions e WHERE e.step_id = s.id)
+        WHERE s.no_extension_reason IS NULL AND {db.active('s')} AND {db.active('u')}
+          AND NOT EXISTS (SELECT 1 FROM uc_extensions e
+                          WHERE e.step_id = s.id AND {db.active('e')})
         ORDER BY u.id, s.step_no"""):
         holes.append(_hole(
             "uc_steps",
             f"step {s['step_no']} of '{s['title']}' (uc_steps:{s['id']} — \"{s['text']}\") has "
             "no extensions and no no_extension_reason",
             "add what can fail or vary here with submit_uc_extensions, or record why genuinely "
-            "nothing can", row_id=s["id"], entity=s["title"]))
+            f"nothing can (supersede_row(\"uc_steps\", {s['id']}, "
+            "{\"no_extension_reason\": \"...\"}, reason))",
+            row_id=s["id"], entity=s["title"]))
     return holes
 
 
 # --- stage 3: requirements -----------------------------------------------------
 
-_SLOT_HOLES_SQL = """
-    SELECT id, ears_type FROM requirements WHERE
+_SLOT_HOLES_SQL = f"""
+    SELECT id, ears_type FROM requirements WHERE {db.ACTIVE} AND (
         (ears_type = 'ubiquitous' AND system_response IS NULL)
      OR (ears_type IN ('event', 'unwanted') AND (trigger_text IS NULL OR system_response IS NULL))
      OR (ears_type = 'state' AND (precondition IS NULL OR system_response IS NULL))
-     OR (ears_type = 'optional' AND (feature IS NULL OR system_response IS NULL))
+     OR (ears_type = 'optional' AND (feature IS NULL OR system_response IS NULL)))
     ORDER BY id"""
 
 
 def gate_stage3(conn) -> list[dict]:
     holes = []
-    if not _rows(conn, "SELECT id FROM requirements LIMIT 1"):
+    if not _rows(conn, f"SELECT id FROM requirements WHERE {db.ACTIVE} LIMIT 1"):
         holes.append(_hole(
             "requirements", "no requirements recorded",
             "derive EARS-typed requirements from the use cases with submit_requirements, "
@@ -135,17 +138,20 @@ def gate_stage3(conn) -> list[dict]:
             f"requirements:{r['id']} does not satisfy its ears_type '{r['ears_type']}' slots",
             "every requirement is slot-structured — fill the type's required slots "
             "(free prose is never accepted)", row_id=r["id"]))
-    for r in _rows(conn, """
-        SELECT id FROM requirements WHERE is_nfr = 1 AND (planguage_scale IS NULL
-            OR planguage_meter IS NULL OR planguage_target IS NULL) ORDER BY id"""):
+    for r in _rows(conn, f"""
+        SELECT id FROM requirements WHERE is_nfr = 1 AND {db.ACTIVE}
+            AND (planguage_scale IS NULL
+                 OR planguage_meter IS NULL OR planguage_target IS NULL) ORDER BY id"""):
         holes.append(_hole(
             "requirements", f"NFR requirements:{r['id']} lacks a full Planguage triad",
             "quantify every NFR with planguage_scale, planguage_meter, and planguage_target",
             row_id=r["id"]))
-    for u in _rows(conn, """
+    for u in _rows(conn, f"""
         SELECT u.id, u.title FROM use_cases u
-        WHERE NOT EXISTS (SELECT 1 FROM requirements r
-                          WHERE r.links LIKE '%"use_cases:' || u.id || '"%')
+        WHERE {db.active('u')}
+          AND NOT EXISTS (SELECT 1 FROM requirements r
+                          WHERE r.links LIKE '%"use_cases:' || u.id || '"%'
+                            AND {db.active('r')})
         ORDER BY u.id"""):
         holes.append(_hole(
             "use_cases", f"use case '{u['title']}' (use_cases:{u['id']}) traces to no requirement",
@@ -158,7 +164,7 @@ def gate_stage3(conn) -> list[dict]:
 
 def gate_stage4(conn) -> list[dict]:
     holes = []
-    entities = _rows(conn, "SELECT * FROM entities ORDER BY id")
+    entities = _rows(conn, f"SELECT * FROM entities WHERE {db.ACTIVE} ORDER BY id")
     if not entities:
         holes.append(_hole(
             "entities", "no domain entities recorded",
@@ -166,7 +172,7 @@ def gate_stage4(conn) -> list[dict]:
             "with submit_entities and let the user adjudicate"))
     for e in entities:
         ops = {r["op"] for r in _rows(
-            conn, "SELECT op FROM crud_grid WHERE entity_id = ?", (e["id"],))}
+            conn, f"SELECT op FROM crud_grid WHERE entity_id = ? AND {db.ACTIVE}", (e["id"],))}
         missing = [op for op in CRUD_OPS if op not in ops]
         if missing:
             holes.append(_hole(
@@ -183,7 +189,8 @@ def gate_stage4(conn) -> list[dict]:
                     "record why this entity has no lifecycle worth modelling "
                     "(lifecycle_reason)", row_id=e["id"], entity=e["name"]))
             continue
-        machines = _rows(conn, "SELECT * FROM state_machines WHERE entity_id = ?", (e["id"],))
+        machines = _rows(conn, f"SELECT * FROM state_machines WHERE entity_id = ? AND {db.ACTIVE}",
+                         (e["id"],))
         if not machines:
             holes.append(_hole(
                 "state_machines",
@@ -195,7 +202,8 @@ def gate_stage4(conn) -> list[dict]:
         m = machines[0]
         states, events = json.loads(m["states"]), json.loads(m["events"])
         have = {(c["state"], c["event"]) for c in _rows(
-            conn, "SELECT state, event FROM sm_cells WHERE machine_id = ?", (m["id"],))}
+            conn, f"SELECT state, event FROM sm_cells WHERE machine_id = ? AND {db.ACTIVE}",
+            (m["id"],))}
         undefined = [[s, ev] for s in states for ev in events if (s, ev) not in have]
         if undefined:
             holes.append(_hole(
@@ -211,7 +219,7 @@ def gate_stage4(conn) -> list[dict]:
 
 def gate_stage5(conn) -> list[dict]:
     holes = []
-    deps = _rows(conn, "SELECT * FROM dependencies ORDER BY id")
+    deps = _rows(conn, f"SELECT * FROM dependencies WHERE {db.ACTIVE} ORDER BY id")
     if not deps and not no_deps_decisions(conn):
         holes.append(_hole(
             "dependencies",
@@ -222,7 +230,8 @@ def gate_stage5(conn) -> list[dict]:
             "dependencies') with the rationale"))
     for d in deps:
         modes = {r["mode"] for r in _rows(
-            conn, "SELECT mode FROM dep_failure_modes WHERE dep_id = ?", (d["id"],))}
+            conn, f"SELECT mode FROM dep_failure_modes WHERE dep_id = ? AND {db.ACTIVE}",
+            (d["id"],))}
         missing = [m for m in FAILURE_MODES if m not in modes]
         if missing:
             holes.append(_hole(
@@ -238,51 +247,59 @@ def gate_stage5(conn) -> list[dict]:
 
 def gate_stage6(conn) -> list[dict]:
     holes = []
-    if not _rows(conn, "SELECT id FROM components LIMIT 1"):
+    if not _rows(conn, f"SELECT id FROM components WHERE {db.ACTIVE} LIMIT 1"):
         holes.append(_hole(
             "components", "no components recorded",
             "synthesize mode: design the component cut with submit_components and contracts "
             "to structured-signature level; the user adjudicates"))
-    for c in _rows(conn, """
+    for c in _rows(conn, f"""
         SELECT c.id, c.name FROM components c
-        WHERE NOT EXISTS (SELECT 1 FROM contracts k WHERE k.component_id = c.id)
+        WHERE {db.active('c')}
+          AND NOT EXISTS (SELECT 1 FROM contracts k
+                          WHERE k.component_id = c.id AND {db.active('k')})
         ORDER BY c.id"""):
         holes.append(_hole(
             "components", f"component '{c['name']}' (components:{c['id']}) has no contract",
             "every deliverable component gets >=1 contract via submit_contracts",
             row_id=c["id"], entity=c["name"]))
-    for k in _rows(conn, """
+    for k in _rows(conn, f"""
         SELECT k.id, k.name, c.name AS component FROM contracts k
         JOIN components c ON c.id = k.component_id
-        WHERE k.params IS NULL OR k.returns IS NULL
-           OR (k.cannot_fail = 1 AND k.cannot_fail_reason IS NULL)
-           OR (k.cannot_fail = 0 AND (k.errors IS NULL OR k.errors = '[]'))
+        WHERE {db.active('k')}
+          AND (k.params IS NULL OR k.returns IS NULL
+               OR (k.cannot_fail = 1 AND k.cannot_fail_reason IS NULL)
+               OR (k.cannot_fail = 0 AND (k.errors IS NULL OR k.errors = '[]')))
         ORDER BY k.id"""):
         holes.append(_hole(
             "contracts",
             f"contract '{k['name']}' (contracts:{k['id']}) on '{k['component']}' is "
             "structurally incomplete",
-            "params typed (or explicitly []), a return type_expr, and >=1 named error with "
-            "semantics or cannot_fail + reason", row_id=k["id"], entity=k["component"]))
-    for k in _rows(conn, """
+            "supersede it with the completed signature (supersede_row) — params typed (or "
+            "explicitly []), a return type_expr, and >=1 named error with semantics or "
+            "cannot_fail + reason", row_id=k["id"], entity=k["component"]))
+    for k in _rows(conn, f"""
         SELECT k.id, k.name, c.name AS component FROM contracts k
         JOIN components c ON c.id = k.component_id
-        WHERE k.is_external = 0
-          AND NOT EXISTS (SELECT 1 FROM contract_deps d WHERE d.provider_contract_id = k.id)
+        WHERE k.is_external = 0 AND {db.active('k')}
+          AND NOT EXISTS (SELECT 1 FROM contract_deps d
+                          WHERE d.provider_contract_id = k.id AND {db.active('d')})
         ORDER BY k.id"""):
         holes.append(_hole(
             "contracts",
             f"contract '{k['name']}' (contracts:{k['id']}) has no consumer and is not marked "
             "external — an untraceable contract is invented scope",
-            "record its consumer edge with submit_contract_deps, mark it is_external, or cut it",
+            "record its consumer edge with submit_contract_deps, mark it external "
+            f"(supersede_row(\"contracts\", {k['id']}, {{\"is_external\": true}}, reason)), or "
+            f"cut it (retire_row(\"contracts\", {k['id']}, reason))",
             row_id=k["id"], entity=k["component"]))
-    for k in _rows(conn, """
+    for k in _rows(conn, f"""
         SELECT k.id, k.name FROM contracts k
-        WHERE k.provenance = 'assumed' AND k.assumption_kind = 'world'
+        WHERE k.provenance = 'assumed' AND k.assumption_kind = 'world' AND {db.active('k')}
           AND NOT EXISTS (SELECT 1 FROM spikes s
                           WHERE s.links LIKE '%"contracts:' || k.id || '"%')
           AND NOT EXISTS (SELECT 1 FROM decisions d
-                          WHERE d.links LIKE '%"contracts:' || k.id || '"%')
+                          WHERE d.links LIKE '%"contracts:' || k.id || '"%'
+                            AND {db.active('d')})
         ORDER BY k.id"""):
         holes.append(_hole(
             "contracts",
@@ -290,27 +307,34 @@ def gate_stage6(conn) -> list[dict]:
             "world-assumption",
             "spike it against the real dependency (register_spike with links to this contract), "
             "or record a user-accepted-risk decision linking it", row_id=k["id"]))
-    for r in _rows(conn, """
+    for r in _rows(conn, f"""
         SELECT r.id FROM requirements r
-        WHERE NOT EXISTS (SELECT 1 FROM contracts k
-                          WHERE k.links LIKE '%"requirements:' || r.id || '"%')
+        WHERE {db.active('r')}
+          AND NOT EXISTS (SELECT 1 FROM contracts k
+                          WHERE k.links LIKE '%"requirements:' || r.id || '"%'
+                            AND {db.active('k')})
           AND NOT EXISTS (SELECT 1 FROM decisions d
-                          WHERE d.links LIKE '%"requirements:' || r.id || '"%')
+                          WHERE d.links LIKE '%"requirements:' || r.id || '"%'
+                            AND {db.active('d')})
         ORDER BY r.id"""):
         holes.append(_hole(
             "requirements",
             f"requirements:{r['id']} traces to no contract and is not explicitly deferred",
-            "link a contract to it (contract links: [\"requirements:" + str(r["id"]) + "\"]) or "
-            "record a deferral decision linking it with the rationale", row_id=r["id"]))
-    for k in _rows(conn, """
+            "link a contract to it (supersede_row the contract adding links: "
+            f"[\"requirements:{r['id']}\"]), record a deferral decision linking it with the "
+            f"rationale, or retire_row(\"requirements\", {r['id']}, reason) if it no longer "
+            "stands", row_id=r["id"]))
+    for k in _rows(conn, f"""
         SELECT k.id, k.name FROM contracts k
-        WHERE k.links IS NULL OR k.links NOT LIKE '%"requirements:%'
+        WHERE (k.links IS NULL OR k.links NOT LIKE '%"requirements:%') AND {db.active('k')}
         ORDER BY k.id"""):
         holes.append(_hole(
             "contracts",
             f"contract '{k['name']}' (contracts:{k['id']}) traces to no requirement — "
             "invented scope",
-            "link it to the requirement(s) it satisfies (links: [\"requirements:N\"]) or cut it",
+            f"link it to the requirement(s) it satisfies (supersede_row(\"contracts\", "
+            f"{k['id']}, {{\"links\": [\"requirements:N\"]}}, reason)) or cut it "
+            f"(retire_row(\"contracts\", {k['id']}, reason))",
             row_id=k["id"]))
     return holes
 
@@ -319,7 +343,7 @@ GATES = {1: gate_stage1, 2: gate_stage2, 3: gate_stage3,
          4: gate_stage4, 5: gate_stage5, 6: gate_stage6}
 
 
-def run_gate(conn: sqlite3.Connection, stage) -> dict:
+def run_gate(conn: db.Connection, stage) -> dict:
     """Evaluate a stage gate, record the result, advance the plan on a pass
     at its current stage. Returns pass/fail with the specific row-level holes."""
     if isinstance(stage, bool) or not isinstance(stage, int) or not 1 <= stage <= 8:

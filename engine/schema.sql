@@ -10,8 +10,17 @@
 -- Provenance rules (enforced here and at write time):
 --   * assumed rows must carry assumption_kind (world|intent)
 --   * verified rows must carry spike_id (only a spike upgrades to verified)
--- Bookkeeping tables (questions, conflicts, spikes, findings, gate_results)
--- record process, not plan facts, and skip provenance.
+-- Lineage (Session D): claim rows are never mutated in place — supersede_row
+-- creates a successor carrying `supersedes`; the original gains
+-- `superseded_by` + `superseded_reason` (bidirectional, machine-checkable).
+-- retire_row marks a row wrong-with-no-replacement (`retired` + reason).
+-- A row is ACTIVE iff superseded_by IS NULL AND retired = 0; gates, sweeps,
+-- next_gap, and duplicate checks see active rows only, so natural-key
+-- uniqueness lives in partial indexes over active rows. `provenance_note`
+-- records in-place provenance upgrades (confirm_assumption: assumed->decided
+-- with the user's answer quoted; spikes still own assumed->verified).
+-- Bookkeeping tables (questions, conflicts, spikes, findings, gate_results,
+-- gap_dismissals) record process, not plan facts, and skip provenance.
 
 PRAGMA foreign_keys = ON;
 
@@ -52,9 +61,15 @@ CREATE TABLE use_cases (
     assumption_kind    TEXT CHECK (assumption_kind IN ('world', 'intent')),
     spike_id           INTEGER REFERENCES spikes(id),
     links              TEXT,
+    supersedes         INTEGER,
+    superseded_by      INTEGER,
+    superseded_reason  TEXT,
+    retired            INTEGER NOT NULL DEFAULT 0 CHECK (retired IN (0, 1)),
+    provenance_note    TEXT,
     created_at         TEXT NOT NULL DEFAULT (datetime('now')),
     CHECK (provenance <> 'assumed' OR assumption_kind IS NOT NULL),
-    CHECK (provenance <> 'verified' OR spike_id IS NOT NULL)
+    CHECK (provenance <> 'verified' OR spike_id IS NOT NULL),
+    CHECK (retired = 0 OR superseded_by IS NULL)
 );
 
 CREATE TABLE uc_steps (
@@ -70,11 +85,18 @@ CREATE TABLE uc_steps (
     assumption_kind     TEXT CHECK (assumption_kind IN ('world', 'intent')),
     spike_id            INTEGER REFERENCES spikes(id),
     links               TEXT,
+    supersedes          INTEGER,
+    superseded_by       INTEGER,
+    superseded_reason   TEXT,
+    retired             INTEGER NOT NULL DEFAULT 0 CHECK (retired IN (0, 1)),
+    provenance_note     TEXT,
     created_at          TEXT NOT NULL DEFAULT (datetime('now')),
-    UNIQUE (use_case_id, step_no),
     CHECK (provenance <> 'assumed' OR assumption_kind IS NOT NULL),
-    CHECK (provenance <> 'verified' OR spike_id IS NOT NULL)
+    CHECK (provenance <> 'verified' OR spike_id IS NOT NULL),
+    CHECK (retired = 0 OR superseded_by IS NULL)
 );
+CREATE UNIQUE INDEX uq_uc_steps_active ON uc_steps (use_case_id, step_no)
+    WHERE superseded_by IS NULL AND retired = 0;
 
 CREATE TABLE uc_extensions (
     id                 INTEGER PRIMARY KEY,
@@ -88,9 +110,15 @@ CREATE TABLE uc_extensions (
     assumption_kind    TEXT CHECK (assumption_kind IN ('world', 'intent')),
     spike_id           INTEGER REFERENCES spikes(id),
     links              TEXT,
+    supersedes         INTEGER,
+    superseded_by      INTEGER,
+    superseded_reason  TEXT,
+    retired            INTEGER NOT NULL DEFAULT 0 CHECK (retired IN (0, 1)),
+    provenance_note    TEXT,
     created_at         TEXT NOT NULL DEFAULT (datetime('now')),
     CHECK (provenance <> 'assumed' OR assumption_kind IS NOT NULL),
-    CHECK (provenance <> 'verified' OR spike_id IS NOT NULL)
+    CHECK (provenance <> 'verified' OR spike_id IS NOT NULL),
+    CHECK (retired = 0 OR superseded_by IS NULL)
 );
 
 -- EARS-typed requirements. Typed slots per ears_type; the engine assembles
@@ -118,9 +146,15 @@ CREATE TABLE requirements (
     assumption_kind    TEXT CHECK (assumption_kind IN ('world', 'intent')),
     spike_id           INTEGER REFERENCES spikes(id),
     links              TEXT,
+    supersedes         INTEGER,
+    superseded_by      INTEGER,
+    superseded_reason  TEXT,
+    retired            INTEGER NOT NULL DEFAULT 0 CHECK (retired IN (0, 1)),
+    provenance_note    TEXT,
     created_at         TEXT NOT NULL DEFAULT (datetime('now')),
     CHECK (provenance <> 'assumed' OR assumption_kind IS NOT NULL),
-    CHECK (provenance <> 'verified' OR spike_id IS NOT NULL)
+    CHECK (provenance <> 'verified' OR spike_id IS NOT NULL),
+    CHECK (retired = 0 OR superseded_by IS NULL)
 );
 
 CREATE TABLE entities (
@@ -136,10 +170,16 @@ CREATE TABLE entities (
     assumption_kind    TEXT CHECK (assumption_kind IN ('world', 'intent')),
     spike_id           INTEGER REFERENCES spikes(id),
     links              TEXT,
+    supersedes         INTEGER,
+    superseded_by      INTEGER,
+    superseded_reason  TEXT,
+    retired            INTEGER NOT NULL DEFAULT 0 CHECK (retired IN (0, 1)),
+    provenance_note    TEXT,
     created_at         TEXT NOT NULL DEFAULT (datetime('now')),
     CHECK (has_lifecycle = 1 OR lifecycle_reason IS NOT NULL),
     CHECK (provenance <> 'assumed' OR assumption_kind IS NOT NULL),
-    CHECK (provenance <> 'verified' OR spike_id IS NOT NULL)
+    CHECK (provenance <> 'verified' OR spike_id IS NOT NULL),
+    CHECK (retired = 0 OR superseded_by IS NULL)
 );
 
 CREATE TABLE crud_grid (
@@ -156,28 +196,44 @@ CREATE TABLE crud_grid (
     assumption_kind    TEXT CHECK (assumption_kind IN ('world', 'intent')),
     spike_id           INTEGER REFERENCES spikes(id),
     links              TEXT,
+    supersedes         INTEGER,
+    superseded_by      INTEGER,
+    superseded_reason  TEXT,
+    retired            INTEGER NOT NULL DEFAULT 0 CHECK (retired IN (0, 1)),
+    provenance_note    TEXT,
     created_at         TEXT NOT NULL DEFAULT (datetime('now')),
-    UNIQUE (entity_id, op),
     CHECK ((na = 1 AND na_reason IS NOT NULL) OR (na = 0 AND actor IS NOT NULL)),
     CHECK (provenance <> 'assumed' OR assumption_kind IS NOT NULL),
-    CHECK (provenance <> 'verified' OR spike_id IS NOT NULL)
+    CHECK (provenance <> 'verified' OR spike_id IS NOT NULL),
+    CHECK (retired = 0 OR superseded_by IS NULL)
 );
+CREATE UNIQUE INDEX uq_crud_grid_active ON crud_grid (entity_id, op)
+    WHERE superseded_by IS NULL AND retired = 0;
 
 CREATE TABLE state_machines (
     id                 INTEGER PRIMARY KEY,
     plan_id            INTEGER NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
     plan_version_added INTEGER NOT NULL,
-    entity_id          INTEGER NOT NULL UNIQUE REFERENCES entities(id) ON DELETE CASCADE,
+    entity_id          INTEGER NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
     states             TEXT NOT NULL,  -- JSON array of state names
     events             TEXT NOT NULL,  -- JSON array of event names
     provenance         TEXT NOT NULL CHECK (provenance IN ('decided', 'derived', 'assumed', 'verified')),
     assumption_kind    TEXT CHECK (assumption_kind IN ('world', 'intent')),
     spike_id           INTEGER REFERENCES spikes(id),
     links              TEXT,
+    supersedes         INTEGER,
+    superseded_by      INTEGER,
+    superseded_reason  TEXT,
+    retired            INTEGER NOT NULL DEFAULT 0 CHECK (retired IN (0, 1)),
+    provenance_note    TEXT,
     created_at         TEXT NOT NULL DEFAULT (datetime('now')),
     CHECK (provenance <> 'assumed' OR assumption_kind IS NOT NULL),
-    CHECK (provenance <> 'verified' OR spike_id IS NOT NULL)
+    CHECK (provenance <> 'verified' OR spike_id IS NOT NULL),
+    CHECK (retired = 0 OR superseded_by IS NULL)
 );
+
+CREATE UNIQUE INDEX uq_state_machines_active ON state_machines (entity_id)
+    WHERE superseded_by IS NULL AND retired = 0;
 
 -- Each state x event cell: a transition or an explicit impossible + reason.
 CREATE TABLE sm_cells (
@@ -194,12 +250,19 @@ CREATE TABLE sm_cells (
     assumption_kind    TEXT CHECK (assumption_kind IN ('world', 'intent')),
     spike_id           INTEGER REFERENCES spikes(id),
     links              TEXT,
+    supersedes         INTEGER,
+    superseded_by      INTEGER,
+    superseded_reason  TEXT,
+    retired            INTEGER NOT NULL DEFAULT 0 CHECK (retired IN (0, 1)),
+    provenance_note    TEXT,
     created_at         TEXT NOT NULL DEFAULT (datetime('now')),
-    UNIQUE (machine_id, state, event),
     CHECK ((impossible = 1 AND impossible_reason IS NOT NULL) OR (impossible = 0 AND transition_to IS NOT NULL)),
     CHECK (provenance <> 'assumed' OR assumption_kind IS NOT NULL),
-    CHECK (provenance <> 'verified' OR spike_id IS NOT NULL)
+    CHECK (provenance <> 'verified' OR spike_id IS NOT NULL),
+    CHECK (retired = 0 OR superseded_by IS NULL)
 );
+CREATE UNIQUE INDEX uq_sm_cells_active ON sm_cells (machine_id, state, event)
+    WHERE superseded_by IS NULL AND retired = 0;
 
 CREATE TABLE components (
     id                 INTEGER PRIMARY KEY,
@@ -211,9 +274,15 @@ CREATE TABLE components (
     assumption_kind    TEXT CHECK (assumption_kind IN ('world', 'intent')),
     spike_id           INTEGER REFERENCES spikes(id),
     links              TEXT,
+    supersedes         INTEGER,
+    superseded_by      INTEGER,
+    superseded_reason  TEXT,
+    retired            INTEGER NOT NULL DEFAULT 0 CHECK (retired IN (0, 1)),
+    provenance_note    TEXT,
     created_at         TEXT NOT NULL DEFAULT (datetime('now')),
     CHECK (provenance <> 'assumed' OR assumption_kind IS NOT NULL),
-    CHECK (provenance <> 'verified' OR spike_id IS NOT NULL)
+    CHECK (provenance <> 'verified' OR spike_id IS NOT NULL),
+    CHECK (retired = 0 OR superseded_by IS NULL)
 );
 
 -- Structured signatures, never prose. Type expressions are free text in the
@@ -236,9 +305,15 @@ CREATE TABLE contracts (
     assumption_kind    TEXT CHECK (assumption_kind IN ('world', 'intent')),
     spike_id           INTEGER REFERENCES spikes(id),
     links              TEXT,
+    supersedes         INTEGER,
+    superseded_by      INTEGER,
+    superseded_reason  TEXT,
+    retired            INTEGER NOT NULL DEFAULT 0 CHECK (retired IN (0, 1)),
+    provenance_note    TEXT,
     created_at         TEXT NOT NULL DEFAULT (datetime('now')),
     CHECK (provenance <> 'assumed' OR assumption_kind IS NOT NULL),
-    CHECK (provenance <> 'verified' OR spike_id IS NOT NULL)
+    CHECK (provenance <> 'verified' OR spike_id IS NOT NULL),
+    CHECK (retired = 0 OR superseded_by IS NULL)
 );
 
 -- Dependency edges: consumer contract/component -> provider contract. [S2]
@@ -253,10 +328,16 @@ CREATE TABLE contract_deps (
     assumption_kind       TEXT CHECK (assumption_kind IN ('world', 'intent')),
     spike_id              INTEGER REFERENCES spikes(id),
     links                 TEXT,
+    supersedes            INTEGER,
+    superseded_by         INTEGER,
+    superseded_reason     TEXT,
+    retired               INTEGER NOT NULL DEFAULT 0 CHECK (retired IN (0, 1)),
+    provenance_note       TEXT,
     created_at            TEXT NOT NULL DEFAULT (datetime('now')),
     CHECK (consumer_contract_id IS NOT NULL OR consumer_component_id IS NOT NULL),
     CHECK (provenance <> 'assumed' OR assumption_kind IS NOT NULL),
-    CHECK (provenance <> 'verified' OR spike_id IS NOT NULL)
+    CHECK (provenance <> 'verified' OR spike_id IS NOT NULL),
+    CHECK (retired = 0 OR superseded_by IS NULL)
 );
 
 -- External dependency of the planned system (the stage-5 gate object).
@@ -271,9 +352,15 @@ CREATE TABLE dependencies (
     assumption_kind    TEXT CHECK (assumption_kind IN ('world', 'intent')),
     spike_id           INTEGER REFERENCES spikes(id),
     links              TEXT,
+    supersedes         INTEGER,
+    superseded_by      INTEGER,
+    superseded_reason  TEXT,
+    retired            INTEGER NOT NULL DEFAULT 0 CHECK (retired IN (0, 1)),
+    provenance_note    TEXT,
     created_at         TEXT NOT NULL DEFAULT (datetime('now')),
     CHECK (provenance <> 'assumed' OR assumption_kind IS NOT NULL),
-    CHECK (provenance <> 'verified' OR spike_id IS NOT NULL)
+    CHECK (provenance <> 'verified' OR spike_id IS NOT NULL),
+    CHECK (retired = 0 OR superseded_by IS NULL)
 );
 
 -- Stage-5 gate: all five mode rows exist per dependency.
@@ -288,11 +375,18 @@ CREATE TABLE dep_failure_modes (
     assumption_kind    TEXT CHECK (assumption_kind IN ('world', 'intent')),
     spike_id           INTEGER REFERENCES spikes(id),
     links              TEXT,
+    supersedes         INTEGER,
+    superseded_by      INTEGER,
+    superseded_reason  TEXT,
+    retired            INTEGER NOT NULL DEFAULT 0 CHECK (retired IN (0, 1)),
+    provenance_note    TEXT,
     created_at         TEXT NOT NULL DEFAULT (datetime('now')),
-    UNIQUE (dep_id, mode),
     CHECK (provenance <> 'assumed' OR assumption_kind IS NOT NULL),
-    CHECK (provenance <> 'verified' OR spike_id IS NOT NULL)
+    CHECK (provenance <> 'verified' OR spike_id IS NOT NULL),
+    CHECK (retired = 0 OR superseded_by IS NULL)
 );
+CREATE UNIQUE INDEX uq_dep_failure_modes_active ON dep_failure_modes (dep_id, mode)
+    WHERE superseded_by IS NULL AND retired = 0;
 
 -- ADR-shaped decisions. `significant` is set by heuristic (links touch a
 -- component or contract), never by the model.
@@ -309,9 +403,15 @@ CREATE TABLE decisions (
     assumption_kind    TEXT CHECK (assumption_kind IN ('world', 'intent')),
     spike_id           INTEGER REFERENCES spikes(id),
     links              TEXT,
+    supersedes         INTEGER,
+    superseded_by      INTEGER,
+    superseded_reason  TEXT,
+    retired            INTEGER NOT NULL DEFAULT 0 CHECK (retired IN (0, 1)),
+    provenance_note    TEXT,
     created_at         TEXT NOT NULL DEFAULT (datetime('now')),
     CHECK (provenance <> 'assumed' OR assumption_kind IS NOT NULL),
-    CHECK (provenance <> 'verified' OR spike_id IS NOT NULL)
+    CHECK (provenance <> 'verified' OR spike_id IS NOT NULL),
+    CHECK (retired = 0 OR superseded_by IS NULL)
 );
 
 -- Bookkeeping tables (no provenance).
@@ -361,6 +461,20 @@ CREATE TABLE gate_results (
     passed  INTEGER NOT NULL CHECK (passed IN (0, 1)),
     holes   TEXT,   -- JSON array of row-level holes
     run_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- A deliberately-set-aside next_gap() gap: identified by (kind, ref_table,
+-- row_id). Dismissals silence next_gap surfacing only — gates never consult
+-- them. Re-arm is structural: a successor row has a new id, so its gaps
+-- surface fresh.
+CREATE TABLE gap_dismissals (
+    id         INTEGER PRIMARY KEY,
+    plan_id    INTEGER NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+    kind       TEXT NOT NULL,
+    ref_table  TEXT NOT NULL,
+    row_id     INTEGER,
+    reason     TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 -- [S2] task-pack manifests: table exists, unused in stage 1.
