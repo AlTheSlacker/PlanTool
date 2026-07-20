@@ -120,3 +120,51 @@ is itself rejected rather than filed with the link silently dropped.
 encoded the same blind spot as the plan, submitting rows in dependency order across
 separate batches. Worth remembering as a methodology point in its own right: a test
 written from a specification inherits the specification's gaps.
+
+---
+
+## F6 — `gap_id: int` cannot exist
+
+**Rows:** `contracts:66` (`dismiss_gap(gap_id: int, ...)`), `contracts:67`
+(`reopen_gap(gap_id: int, ...)`), against `crud_grid:9` and `requirements:78`.
+
+**Insufficient:** these two contracts take an integer gap id, but `crud_grid:9` makes
+gaps *computed* from plan state rather than stored, and `requirements:78` requires their
+overlay to be keyed by "gap-type plus the lineage root of the target row". An integer id
+is incompatible with both: there is no stored row to autoincrement from, and any id
+assigned at derivation time would change on the next derivation — exactly the
+re-surfacing and silent-detaching that requirements:78 exists to prevent.
+
+**Needed:** the parameter type should be the stable composite identity requirements:78
+already specifies.
+
+**Resolved:** invented — gaps carry a string key of `rule_id|lineage_root|discriminator`,
+and `dismiss_gap`/`reopen_gap` take that. The signature deviates from the contract; the
+behaviour matches requirements:78, which is the stronger row.
+
+**Class:** a signature written before the identity design landed, and never revisited
+when requirements:78 was added to fix findings:16. Worth a gate rule: *when a
+requirement changes an entity's identity, every contract signature naming that entity is
+a hole until re-checked.*
+
+---
+
+## F7 — Nothing defines the current stage
+
+**Rows:** `contracts:19` (`next_gaps`), `requirements:12`, `entities:1`.
+
+**Insufficient:** `next_gaps` returns gaps for "the current stage" and requirements:12
+recommends the gate "while the current stage has no open gaps", but nothing in the plan
+says how the current stage is determined. `entities:1` carries stage on the Plan and
+`crud_grid:3` says "System: stage advances" without stating the advance condition —
+whether it is gate-pass, owner instruction, or derived from content.
+
+**Needed:** a stated rule for what the current stage is and when it advances.
+
+**Resolved:** invented — the lowest stage with any open gap, else the highest stage. This
+is a guess. It happens to make submits-for-any-stage work naturally (v1's stated
+behaviour: "submits for any stage are always accepted; next_gap prefers stage order but
+follows the conversation"), but the plan does not say so.
+
+**Class:** same family as F2 and F4 — behaviour named in prose without the mechanism that
+produces it. Third instance, which strengthens the case for the gate rule proposed in F4.

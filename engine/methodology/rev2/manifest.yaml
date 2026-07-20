@@ -1,0 +1,67 @@
+# Methodology content asset — the stage list, modes, and script bindings.
+#
+# requirements:71 — the methodology ships as versioned content assets carrying a
+# content-revision stamp, with an update path that migrates a plan from one revision to
+# the next. decisions:61 — the successor vendors the PlanTool rev-2 methodology rather
+# than inventing one at build time; findings:4 is the red-team finding that made this
+# necessary.
+#
+# Provenance: vendored verbatim from PlanTool v1 (archive/v1/server/prompts/), spec
+# rev 2, 2026-07-15. The scripts still name v1's tool surface (submit_use_cases,
+# record_decision, ...). That is deliberate: the content is faithful to rev 2, and M5
+# introduces rev 3 with v2's tool names through the revision path this asset exists to
+# support.
+
+revision: 2
+revision_stamp: "plantool-rev2-2026-07-15"
+vendored_from: "PlanTool v1 (archive/v1/server/prompts/)"
+mandate: mandate.md
+
+# Mode governs who is the source of truth, and therefore how the interview runs
+# (mandate clause 2). Elicit stages carry mandatory divergence rounds
+# (requirements:16, decisions:36).
+stages:
+  - number: 1
+    name: "Context & goals"
+    mode: elicit
+    script: stage1_context.md
+    tables: [decisions, requirements, entities]
+  - number: 2
+    name: "Use cases"
+    mode: elicit
+    script: stage2_use_cases.md
+    tables: [use_cases, uc_steps, uc_extensions]
+  - number: 3
+    name: "Requirements"
+    mode: elicit
+    script: stage3_requirements.md
+    tables: [requirements]
+  - number: 4
+    name: "Domain model"
+    mode: synthesize
+    script: stage4_domain.md
+    tables: [entities, crud_grid, state_machines, sm_cells]
+  - number: 5
+    name: "External dependencies & failure modes"
+    mode: synthesize
+    script: stage5_errors_deps.md
+    tables: [dependencies, dep_failure_modes]
+  - number: 6
+    name: "Architecture"
+    mode: synthesize
+    script: stage6_architecture.md
+    tables: [components, contracts]
+  - number: 7
+    name: "Adversarial findings"
+    mode: verify
+    script: stage7_adversarial.md
+    tables: [findings]
+  - number: 8
+    name: "Freeze"
+    mode: verify
+    script: stage8_freeze.md
+    tables: []
+
+# Served alongside the stage script when a red-team session opens (use_cases:8).
+auxiliary:
+  redteam: redteam.md

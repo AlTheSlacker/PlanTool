@@ -110,6 +110,20 @@ CREATE TABLE IF NOT EXISTS source_sections (
 );
 
 CREATE INDEX IF NOT EXISTS idx_sections_hash ON source_sections (content_hash);
+
+-- The dismissed/resolved overlay on computed gaps (entities:3).
+--
+-- requirements:78 — keyed by gap-type plus the *lineage root* of the target row (the
+-- earliest ancestor in its supersession chain), so a dismissal survives both gap
+-- re-derivation and row supersession: it neither re-surfaces nor silently detaches.
+CREATE TABLE IF NOT EXISTS gap_overlay (
+    gap_key    TEXT PRIMARY KEY,
+    rule_id    TEXT NOT NULL,
+    root_ref   TEXT,
+    state      TEXT NOT NULL,            -- dismissed | resolved
+    reason     TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
 """
 
 # Lexical retrieval (V2_BUILD_PLAN.md 5.4). Separate because FTS5 is a compile-time
