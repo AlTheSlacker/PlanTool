@@ -1,0 +1,100 @@
+{
+ "label": "smoke",
+ "target": "C:\\Users\\Al\\AppData\\Local\\Temp\\spike2_smoke",
+ "started": "2026-07-17T12:43:06+00:00",
+ "config": {
+  "renew_s": 30.0,
+  "staleness_s": 600.0,
+  "phase_secs": 15.0,
+  "sample_every_s": 0.1,
+  "readers": 3,
+  "dweller_phaseB": true
+ },
+ "renewals": {
+  "all": {
+   "n": 1,
+   "max_gap": 30.313,
+   "max_dur": 0.313,
+   "max_attempts": 4,
+   "retried": 1
+  },
+  "phaseA_hardened": {
+   "n": 0
+  },
+  "phaseB_dweller": {
+   "n": 1,
+   "max_gap": 30.313,
+   "max_dur": 0.313,
+   "max_attempts": 4,
+   "retried": 1
+  }
+ },
+ "renew_giveups": [],
+ "streaks": {
+  "all": {
+   "n": 32,
+   "max_dur": 0.313,
+   "p50_dur": 0.204,
+   "total_fail_samples": 73
+  },
+  "phaseA_hardened": {
+   "n": 5,
+   "max_dur": 0.11,
+   "p50_dur": 0.109,
+   "total_fail_samples": 5
+  },
+  "phaseB_dweller": {
+   "n": 27,
+   "max_dur": 0.313,
+   "p50_dur": 0.297,
+   "total_fail_samples": 68
+  }
+ },
+ "sampler_totals": {
+  "ok": "217",
+  "fail": "73"
+ },
+ "worst_renewals": [
+  {
+   "i": 1,
+   "t": 30.3,
+   "attempts": 4,
+   "dur": 0.313,
+   "gap": 30.313
+  }
+ ],
+ "worst_streaks": [
+  {
+   "t": 16.4,
+   "dur": 0.313,
+   "n": 3
+  },
+  {
+   "t": 17.5,
+   "dur": 0.313,
+   "n": 3
+  },
+  {
+   "t": 25.2,
+   "dur": 0.313,
+   "n": 3
+  },
+  {
+   "t": 26.4,
+   "dur": 0.313,
+   "n": 3
+  },
+  {
+   "t": 28.0,
+   "dur": 0.313,
+   "n": 3
+  }
+ ],
+ "reader_lines": [
+  "READER reads=2547 errs=13",
+  "READER reads=2547 errs=11",
+  "READER reads=2549 errs=9"
+ ],
+ "dweller_line": "DWELLER holds=56 errs=0",
+ "finished": "2026-07-17T12:43:06+00:00"
+}
