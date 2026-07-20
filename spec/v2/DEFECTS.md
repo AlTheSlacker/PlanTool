@@ -168,3 +168,119 @@ follows the conversation"), but the plan does not say so.
 
 **Class:** same family as F2 and F4 — behaviour named in prose without the mechanism that
 produces it. Third instance, which strengthens the case for the gate rule proposed in F4.
+
+---
+
+## F8 — Gate criteria exist only as v1 code
+
+**Rows:** `contracts:22` (`run_gate`), `requirements:20`, `requirements:71`.
+
+**Insufficient:** `run_gate` returns "row-level holes (each naming table, row, problem,
+and fix)" and `requirements:20` says gates evaluate "only mechanical criteria" — but no
+row anywhere in the frozen plan states what any stage's criteria *are*. The plan
+specifies the shape of the answer and never the question. `requirements:71` does require
+the criteria to ship as a versioned content asset, which at least says where they live.
+
+**Needed:** the per-stage criteria themselves, as content.
+
+**Resolved:** vendored, not invented — `engine/methodology/rev2/gate_criteria.yaml`
+transcribes v1's `archive/v1/engine/gates.py` into declarative rules, per `decisions:61`
+and `findings:4`. v1 wrote one hand-coded SQL function per stage; the v2 asset expresses
+the same criteria as nine declarative types the gate-engine interprets.
+
+**Class:** distinct from F2/F4/F7 — this is not a missing mechanism but missing
+*content*, and the plan knew it (requirements:71 exists precisely because the
+methodology is the product's IP). Worth noting that the vendoring instruction is what
+made this recoverable: without decisions:61 an executor would have invented eight stages
+of gate criteria at build time, which findings:4 identifies as the failure mode the tool
+exists to prevent.
+
+---
+
+## F9 — Nothing raises a warning
+
+**Rows:** `contracts:23`/`24`/`25` (`active_warnings`, `suppress_warning`,
+`resolve_warning`), `requirements:21`, `decisions:31`, `state_machines:6`.
+
+**Insufficient:** the Warning entity has a full lifecycle — a state machine, a
+suppression path, a resurfacing rule, three contracts operating on `warning_id: int` —
+and no contract that *creates* one. `requirements:21` says the gate "shall list each as
+an explicit warning", which describes a report, not a write. Nothing states whether
+warnings are stored rows or derived views, yet the int id demands the former (the same
+tension F6 found in gaps, resolved the opposite way).
+
+**Needed:** a raise contract, and a statement of whether warnings are stored or derived.
+
+**Resolved:** invented — `WarningService.raise_warning`, idempotent on a stable
+`warning_key`, backed by a `warnings` table. gate-engine calls it. A second invented
+method, `settle_warning`, retires a warning whose condition cleared; `resolve_warning`
+could not serve because contracts:25 types its cause as a RowRef and a gap that stopped
+being derived has no such row.
+
+**Class:** F2, F4, F7 and now F9 — behaviour named in prose without the mechanism that
+produces it. **Fourth instance.** At four this is no longer a series of oversights but a
+characteristic failure of the planning method: the method interrogates entities and
+their lifecycles thoroughly, and does not interrogate *who performs each transition*.
+The countermeasure proposed at F4 (every named error needs a stated trigger) should be
+widened: **every state-machine event needs a named contract that fires it.** A state
+machine whose events no contract raises is an unimplementable entity, and it is
+mechanically checkable — which makes it a gate criterion, not just advice.
+
+---
+
+## F10 — "List each open gap as a warning" does not say which gaps
+
+**Rows:** `requirements:21`, `contracts:22`, `decisions:31`.
+
+**Insufficient:** "WHEN a gate passes while open gaps or unresolved assumptions exist,
+the system shall list each as an explicit warning." Read literally, *each* means every
+open gap in the plan. Built that way, the stage-1 gate of a four-row plan reported
+twelve warnings, ten of which said things like "No components yet" — true, and useless,
+because the plan was five stages away from needing components.
+
+**Needed:** the scope of "each" — plan-wide, or the stage being gated.
+
+**Resolved:** invented — raising is scoped to the gated stage plus the stage-agnostic
+rules (assumptions, reference coverage). Warnings raised at their own stage persist in
+the ledger and keep re-presenting, so nothing is passed over silently.
+
+**Discovered by:** driving the engine end-to-end. The test suite passed with the noisy
+behaviour, because the tests asserted that warnings *appeared* — which is what the
+requirement says — and no test could notice that the warnings were not worth reading.
+Second occurrence of the F5 lesson.
+
+**Class:** an unquantified "each". The same drive found the consequence compounding: an
+open assumption was raised twice (once as a gap, once as an assumption), so the owner's
+suppression silenced only one of the twins and the other kept nagging. A requirement
+that does not bound a set produces duplicates as readily as noise.
+
+---
+
+## F11 — The vendored gap rules and gate criteria disagree about stage 1
+
+**Rows:** `requirements:71`, `decisions:61`; assets `gap_rules.yaml` (M2) and
+`gate_criteria.yaml` (M3).
+
+**Insufficient:** not the frozen plan this time — the *vendored methodology*. v1 recorded
+goals, non-goals and target stack as `decisions` rows distinguished by a text prefix
+("Goal:", "Non-goal:", "Stack:"), a convention its gate SQL matched with `LIKE 'goal:%'`.
+v2's generic PlanRow store makes separate tables the natural encoding, and M2's
+`gap_rules.yaml` had already half-adopted it (`goal_without_success_criteria` reads a
+`goals` table) while `stage1_not_started` still tested `decisions` for emptiness. The two
+assets therefore disagreed about what stage 1 even fills.
+
+**Consequence:** a complete, passing stage 1 was permanently accompanied by the warning
+"Nothing recorded yet. Open the stage-1 interview."
+
+**Resolved:** `stage1_not_started` now tests `goals`. Recorded here rather than silently
+fixed because it is evidence about the *revision* path requirements:71 mandates: a
+methodology revision that changes how content is encoded has to be applied to every
+asset at once, and nothing checks that. M5 introduces rev 3 and will hit this again.
+
+**Discovered by:** the end-to-end drive, third time. The unit tests could not catch it —
+`tests/test_gaps.py` was written against `decisions` at M2 and so encoded the same
+disagreement, and it passed.
+
+**Class:** a cross-asset consistency hole. Worth a gate criterion in a future revision:
+*every table named in one methodology asset is named in the others that cover the same
+stage.*

@@ -50,6 +50,21 @@ def _age_seconds(stamp: str) -> float:
     return (datetime.now(UTC) - datetime.fromisoformat(stamp)).total_seconds()
 
 
+@dataclass(frozen=True, slots=True)
+class FromOp:
+    """A value borrowed from an earlier op's result, resolved at apply time.
+
+    Needed because an id assigned by an INSERT is only known mid-transaction, while a
+    batch's values are fixed before it starts. Without this, a parent row and its child
+    rows cannot be written in one transaction — and splitting them across two means a
+    crash in between leaves a parent with no children, which for conflict_refs would be
+    an open conflict that silently blocks nothing.
+    """
+
+    index: int
+    field: str = "id"
+
+
 @dataclass(slots=True)
 class Op:
     """One unit of work inside a batch.
@@ -303,7 +318,7 @@ class Storage:
             with self._immediate():
                 self._validate_lease(lease)
                 for op in batch:
-                    self._apply(op)
+                    self._apply(op, batch)
                 receipt = {
                     "idempotency_key": idempotency_key,
                     "written_at": now(),
@@ -371,17 +386,37 @@ class Storage:
                 lease_id=lease.lease_id,
             )
 
-    def _apply(self, op: Op) -> None:
+    @staticmethod
+    def _resolve(values: dict[str, Any], batch: list[Op]) -> dict[str, Any]:
+        if not any(isinstance(v, FromOp) for v in values.values()):
+            return values
+        resolved = {}
+        for key, value in values.items():
+            if not isinstance(value, FromOp):
+                resolved[key] = value
+                continue
+            source = batch[value.index]
+            if source.result is None or value.field not in source.result:
+                raise ValueError(
+                    f"op {value.index} produced no {value.field!r} to borrow"
+                )
+            resolved[key] = source.result[value.field]
+        return resolved
+
+    def _apply(self, op: Op, batch: list[Op] | None = None) -> None:
+        # Values are resolved into a local: `op` itself must stay the caller's object,
+        # since callers read the assigned ref back off op.result.
+        op_values = self._resolve(op.values, batch or [op])
         if op.kind == "insert_row":
             # Ordinals are per-table and must be assigned inside the transaction, or
             # two concurrent submissions race for the same ref.
-            table_name = op.values["table_name"]
+            table_name = op_values["table_name"]
             ordinal = self.conn.execute(
                 "SELECT COALESCE(MAX(ordinal), 0) + 1 AS n FROM plan_rows "
                 "WHERE table_name = ?",
                 (table_name,),
             ).fetchone()["n"]
-            values = {**op.values, "ordinal": ordinal}
+            values = {**op_values, "ordinal": ordinal}
             cols = ", ".join(values)
             marks = ", ".join("?" for _ in values)
             self.conn.execute(
@@ -390,21 +425,21 @@ class Storage:
             )
             op.result = {"ref": f"{table_name}:{ordinal}", "ordinal": ordinal}
         elif op.kind == "insert":
-            cols = ", ".join(op.values)
-            marks = ", ".join("?" for _ in op.values)
+            cols = ", ".join(op_values)
+            marks = ", ".join("?" for _ in op_values)
             cur = self.conn.execute(
                 f"INSERT INTO {op.table} ({cols}) VALUES ({marks})",  # noqa: S608
-                tuple(op.values.values()),
+                tuple(op_values.values()),
             )
             op.result = {"id": cur.lastrowid}
         elif op.kind == "update":
             if not op.where:
                 raise ValueError("update op requires a where clause")
-            sets = ", ".join(f"{k} = ?" for k in op.values)
+            sets = ", ".join(f"{k} = ?" for k in op_values)
             conds = " AND ".join(f"{k} = ?" for k in op.where)
             cur = self.conn.execute(
                 f"UPDATE {op.table} SET {sets} WHERE {conds}",  # noqa: S608
-                (*op.values.values(), *op.where.values()),
+                (*op_values.values(), *op.where.values()),
             )
             op.result = {"rows": cur.rowcount}
         else:
@@ -457,7 +492,13 @@ class Storage:
 
     def snapshot_version(self, reason: str) -> int:
         """An immutable snapshot (entities:11). Atomic: no partial snapshot survives."""
-        tables = ("plan", "plan_rows", "links", "source_texts", "source_sections")
+        tables = (
+            "plan", "plan_rows", "links", "source_texts", "source_sections",
+            # M3: overlays and ledgers that are not derivable from the rows. A snapshot
+            # that dropped these would silently unblock gates on restore (open conflicts
+            # gone) and re-surface dismissals the owner had already answered.
+            "gap_overlay", "conflicts", "conflict_refs", "warnings",
+        )
         # source_fts is a derived index, rebuilt from source_texts on restore.
         payload = {
             t: [dict(r) for r in self.query(f"SELECT * FROM {t}")]  # noqa: S608
@@ -515,7 +556,11 @@ class Storage:
 
         if strategy == "restart":
             with self._immediate():
-                for t in ("plan_rows", "links", "source_texts", "source_sections"):
+                # The ledgers go too: a conflict contesting a row that no longer exists
+                # would block gates forever with a reason nobody can act on, and a
+                # dismissal keyed to a deleted lineage root can never be reopened.
+                for t in ("plan_rows", "links", "source_texts", "source_sections",
+                          "gap_overlay", "conflicts", "conflict_refs", "warnings"):
                     self.conn.execute(f"DELETE FROM {t}")  # noqa: S608
             return RecoveryReport("restart", lost=report.readable + report.unreadable)
 

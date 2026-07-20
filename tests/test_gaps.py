@@ -21,7 +21,12 @@ def test_empty_plan_reports_stage_one_not_started(gaps):
 
 def test_gate_is_recommended_when_a_stage_is_clean(gaps, rows):
     """requirements:12 — while the stage has no open gaps, recommend the gate."""
-    rows.submit_rows([RowSubmission("decisions", {"text": "problem statement"})], "k")
+    # `goals`, not `decisions`: stage 1 fills goals/non_goals/stack in v2 (DEFECTS.md
+    # F11 — the vendored rule still tested v1's decisions-with-a-"Goal:"-prefix shape).
+    rows.submit_rows(
+        [RowSubmission("goals", {"title": "ship it", "success_criteria": "M7 lands"})],
+        "k",
+    )
     cluster = gaps.next_gaps(stage=1)
     assert cluster.recommend_gate is True
     assert "run the stage gate" in cluster.guidance.lower()

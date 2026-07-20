@@ -17,6 +17,11 @@ revision_stamp: "plantool-rev2-2026-07-15"
 vendored_from: "PlanTool v1 (archive/v1/server/prompts/)"
 mandate: mandate.md
 
+# The other content assets requirements:71 names. Both are loaded unconditionally by
+# engine/methodology/__init__.py; listed here so a revision is inspectable as a set.
+gap_rules: gap_rules.yaml
+gate_criteria: gate_criteria.yaml
+
 # Mode governs who is the source of truth, and therefore how the interview runs
 # (mandate clause 2). Elicit stages carry mandatory divergence rounds
 # (requirements:16, decisions:36).
