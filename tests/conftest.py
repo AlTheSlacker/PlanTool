@@ -1,11 +1,14 @@
 import pytest
 
 from engine.conflicts import ConflictService
+from engine.findings import FindingService
 from engine.gaps import GapEngine
 from engine.gates import GateEngine
+from engine.graph import LinkGraph
 from engine.references import ReferenceService
 from engine.rows import RowService
 from engine.storage import Storage
+from engine.validation import ValidationService
 from engine.warnings import WarningService
 
 
@@ -40,6 +43,21 @@ def gate(store, rows, conflicts, warns):
 @pytest.fixture
 def refs(store, rows):
     return ReferenceService(store, rows)
+
+
+@pytest.fixture
+def graph(store):
+    return LinkGraph(store)
+
+
+@pytest.fixture
+def validation(store, rows, graph, conflicts):
+    return ValidationService(store, rows, graph, conflicts)
+
+
+@pytest.fixture
+def findings(store, rows):
+    return FindingService(store, rows)
 
 
 PAPER = """A Study of Widget Settling

@@ -284,3 +284,115 @@ disagreement, and it passed.
 **Class:** a cross-asset consistency hole. Worth a gate criterion in a future revision:
 *every table named in one methodology asset is named in the others that cover the same
 stage.*
+
+---
+
+## F12 — Two spike events and one claim mechanism have no contract that fires them
+
+**Rows:** `state_machines:5` (with `sm_cells:62`, `:65`, `:72`), `requirements:4`,
+`requirements:41`.
+
+**Insufficient:** the fifth instance of the F9 pattern, and the first one caught *before*
+building rather than after — the pre-build state-machine audit the F9 countermeasure
+mandates is what found it.
+
+The Spike state machine has four events: start, block, unblock, conclude.
+validation-service has exactly two contracts that touch a spike, `register_spike`
+(contracts:29) and `record_spike_result` (contracts:30). `register_spike` creates the
+spike in `registered`; `record_spike_result` fires `conclude` or `block`. **Nothing fires
+`start`, and nothing fires `unblock`.** But `sm_cells:65` makes `registered --conclude->`
+impossible — "no result without execution". So every spike the system can create is
+trapped one transition away from every outcome except `blocked`: confirmed, refuted and
+inconclusive are all unreachable, which is to say the entire mechanism
+`requirements:25` describes could never run.
+
+`sm_cells:72` (`blocked --unblock-> executing`) is the same hole on the recovery path: a
+spike parked because its dependency was unreachable could never be resumed once the
+dependency came back, only concluded from `blocked`.
+
+Two smaller versions of the same thing sit in the claim mechanism. `requirements:41`
+routes a `both`-kind claim down two tracks and says neither alone closes it, but names no
+contract that records a track completing — so "both satisfied" is unrepresentable.
+`requirements:4` says research red flags block dependent planning "until resolved or
+fenced" and names no contract that fences one.
+
+**Resolved:** added four contracts not in the frozen plan — `start_spike`,
+`unblock_spike`, `satisfy_track`, `fence_claim` — each carrying a docstring pointing
+here. The alternative for the spike was to have `record_spike_result` silently
+auto-advance a `registered` spike through `start`, and that was rejected deliberately:
+`sm_cells:65` is an integrity rule, not an oversight. "No result without execution" is
+the thing that stops a spike being concluded by someone who never ran it, and
+auto-starting would erase exactly that guarantee to save one call.
+
+**Class:** F9's, unchanged and now five for five (F2, F4, F7, F9, F12) — behaviour named
+in prose without the mechanism that produces it. What is new is the *detection*: the F9
+countermeasure ("every state-machine event needs a named contract that fires it") was run
+as a pre-build checklist and paid for itself immediately, catching in ten minutes what
+had previously taken a full build-and-drive cycle to surface. Every remaining milestone
+should keep running it. Note also its limit: it catches missing *events*, and the claim
+half of this defect (a missing mechanism with no state machine attached) still needed
+reading the requirement prose to spot.
+
+---
+
+## F13 — The `withdrawn` finding outcome is unreachable
+
+**Rows:** `contracts:34`, `state_machines:7` (with `sm_cells:92`, `:97`).
+
+**Insufficient:** found by the same pre-build audit as F12, in the same pass.
+`contracts:34` offers three outcomes: `addressed`, `accepted_risk`, `withdrawn`.
+`sm_cells:92` makes `filed --withdraw->` impossible — "no dispute open" — so `withdraw`
+is legal only from `disputed`. And the Finding state machine's `dispute` and `uphold`
+events have no contract that fires them, `file_finding` and `resolve_finding` being the
+component's entire surface. A finding therefore can never be disputed, so it can never be
+withdrawn, so one of the three outcomes the contract advertises can never be used.
+
+**Resolved:** added `dispute_finding` and `uphold_finding`. The transition table is
+implemented exactly as `sm_cells:90-109` specifies, including the two cells that look
+like typos and are not: `disputed --withdraw-> addressed` (a withdrawn finding rests in
+`addressed`, with `withdrawn` recorded as the outcome — so the state says "no longer
+open" and the outcome says why), and `accepted_risk --dispute-> disputed`, which is what
+keeps `requirements:33`'s "visible at handoff" from quietly meaning "settled".
+
+**Class:** F9's again, with a sharper consequence than the others. F9 and F12 produce
+entities that cannot move; this one produces a *contract that lies* — the signature
+documents an outcome the state machine forbids. Worth adding to the pre-build checklist
+as its own question, because it is mechanically checkable and distinct from the event
+audit: **every outcome a contract's signature offers must be reachable from the states
+the entity can actually be in.**
+
+---
+
+## F14 — Two bugs the tests could not see: whose dependents, and whose rejection
+
+**Rows:** `requirements:43`, `requirements:25`, `contracts:11`.
+
+**Insufficient:** not the plan this time, but the build — both found by the mandatory
+end-to-end drive, and neither visible to the 203 tests that passed before it.
+
+`requirements:43` says a failed validation raises conflicts on "every row that depends on
+the failed claim", and the same sentence covers a refuted spike. It reads like one rule
+and is two, because the two cases root at opposite ends of the link. A spike roots at the
+*assumption*, which the spike resolves — so only the rows resting on it are contested. A
+claim roots at the rows resting on the claim — so those rows are themselves what
+`requirements:43` means. `LinkGraph.impact()` excludes its roots, so sharing one code
+path silently contested a failed claim's grandchildren while leaving its children
+untouched: the rows most obviously invalidated were the exact ones missed.
+
+Second, `contracts:11` hardcodes the retirement reason "assumption rejected by the
+owner". When validation-service closes a refuted world-assumption per
+`requirements:25`, no owner is involved — the evidence closed it. The audit trail
+recorded a decision nobody made. `resolve_assumption` now takes an optional
+`retire_reason`.
+
+**Resolved:** `_raise_dependent_conflicts` takes an explicit `include_roots`, set per
+caller with the reasoning in its docstring; regression tests cover both directions,
+including the mirror case (a refuted spike must *not* contest its own assumption).
+
+**Discovered by:** the end-to-end drive, fourth milestone running, fourth time it has
+caught something the suite could not. The mechanism is worth stating plainly now: the
+first bug is invisible to a test written from `requirements:43` because the requirement's
+own sentence conflates the two cases, and a test inherits that conflation — the same
+blind-spot inheritance recorded at F5 and F11. The drive catches it because reading
+"conflicts raised=(4,)" against a plan with two obviously-affected rows is a
+*quantitative* check the spec cannot bias.
