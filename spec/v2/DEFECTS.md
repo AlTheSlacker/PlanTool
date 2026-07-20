@@ -401,13 +401,18 @@ blind-spot inheritance recorded at F5 and F11. The drive catches it because read
 
 ## F15 — Stage-7 fixes cited as contract rows that were never written
 
-**Status: OPEN — logged on discovery (M5 pre-build audit, 2026-07-20), resolution
-deferred to build.** First defect in this log recorded before its fix rather than after.
-The distinction is deliberate: logging a defect is cheap and must never wait (the
-never-batch discipline of `requirements:56/57/60`), but the *resolution* of these is a
-build-time decision — what `contracts:59/60` must guard cannot be settled until the
-`state_machines:9` machine is being built in M5a. Resolving now would be inventing in a
-vacuum. So this entry gets a **Resolved:** line when M5a/M5b reach the blocked pieces.
+**Status: OPEN. Resolve-by gate: the M5a `state_machines:9` audit — HARD LOCK.** M5a is
+not passed while F15 is open, and because F15 is allocated to that gate it does not lock
+the others. (Per the outstanding-problem rule, 2026-07-20: an unresolved problem is either
+fixed now or bound to a named resolve-by gate; a gate cannot pass with an open problem
+allocated to it; an *un*allocated open problem locks every gate.)
+
+First defect in this log recorded before its fix rather than after. The distinction is
+deliberate: logging a defect is cheap and must never wait (the never-batch discipline of
+`requirements:56/57/60`), but the *resolution* of these is a build-time decision — what
+`contracts:59/60` must guard cannot be settled until the `state_machines:9` machine is
+being built in M5a. Resolving now would be inventing in a vacuum. This entry gets its
+**Resolved:** line at the M5a gate, which cannot be passed until it does.
 
 **Rows:** `contracts:52`, `contracts:56`, `contracts:59`, `contracts:61` — and, in the
 same class, the missing definition of `contracts:61` as the mechanism for `findings:10`

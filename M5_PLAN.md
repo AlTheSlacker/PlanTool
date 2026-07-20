@@ -4,8 +4,32 @@ Written 2026-07-20, at the end of the design session that un-deferred `task-grap
 This document is the resume point for the build. It is **self-sufficient after a context
 clear**: read this and `V2_BUILD_PLAN.md`, and you have what you need.
 
-Status: **designed, not started.** No code written. Branch `m5-surface` exists and is
-misnamed for what M5 now is — rename or recut when starting.
+Status: **designed, not started.** No code written. Branch is `m5-execution-module`.
+
+---
+
+## 0. The outstanding-problem rule (governs this whole build)
+
+Owner rule, 2026-07-20. Applies to the build process now; its product form is an open
+question (§4a).
+
+- **Resolved problems are metric-only.** They live in DEFECTS.md as the execution-sufficiency
+  measure; they are never surfaced as pending work. The active surface is outstanding-only.
+- **Every outstanding problem is either fixed immediately or bound to a named resolve-by
+  gate.** No floating "deferred to build". Deferral is legitimate *only* against a gate.
+- **Hard lock, both directions.** A gate cannot pass while a problem allocated to it is open;
+  and a problem with *no* allocated gate locks *every* gate until one is assigned. The second
+  clause removes the escape hatch of never allocating.
+
+Current outstanding items and their gates:
+
+| Problem | Resolve-by gate |
+|---|---|
+| F15 — undefined stage-7 fix contracts | **M5a `state_machines:9` audit** (hard-locks M5a) |
+| §4 Q1 — mandate/script by value or reference | M6 gate |
+| §4 Q2 — digest names what to fetch | M6 gate |
+
+Nothing is unallocated, so no global lock is in force.
 
 ---
 
@@ -205,23 +229,44 @@ not with code.**
 
 ---
 
-## 4. Open questions — owner input still needed
+## 4. Open questions — each bound to a resolve-by gate
 
-1. **Mandate and stage script: by value or by reference in the resume digest?**
-   `requirements:10` says return them on session open; they are the biggest single chunk,
-   bounded by methodology size rather than plan size. Serving by reference contradicts
+Per the outstanding-problem rule (§0): an open question is a problem; it is fixed now or
+bound to a named gate it must be resolved by, and that gate cannot pass while it is open.
+Both below are `plan_status`-shaped, so their gate is **M6** (surface). Neither blocks M5.
+
+1. **[resolve-by: M6 gate] Mandate and stage script: by value or by reference in the resume
+   digest?** `requirements:10` says return them on session open; they are the biggest single
+   chunk, bounded by methodology size rather than plan size. Serving by reference contradicts
    `requirements:10`'s plain reading; by value makes the digest permanently fat. A
    first-call-by-value/thereafter-by-reference scheme works but makes `plan_status` stateful
    within a session — the same call returning different things is a debugging hazard.
-   *Deferred to M6 (surface) — it is a `plan_status` question, not an execution-module one.*
 
-2. **Does the digest name what to fetch?** If it serves counts and ids, a resuming model may
-   simply not fetch and proceed confidently on the digest alone — silent, same class as F14.
-   Countermeasure is the digest naming its own next action, which is `requirements:58` doing
-   real work. *Also M6.*
+2. **[resolve-by: M6 gate] Does the digest name what to fetch?** If it serves counts and ids,
+   a resuming model may simply not fetch and proceed confidently on the digest alone —
+   silent, same class as F14. Countermeasure is the digest naming its own next action, which
+   is `requirements:58` doing real work.
 
 3. ~~Scope-level vocabulary.~~ **Settled 2026-07-20**: three levels, `session` dropped. See
    §2.3.
+
+## 4a. Open — is the §0 hard-lock the *product's* gate rule too?
+
+**[resolve-by: M6 gate — gate-engine is settled there]** The §0 rule is in force for the
+build process. Whether it is also a v2 *product* requirement is unsettled, and it is not a
+tweak — it contradicts the gate-engine as built.
+
+v2's gates **warn, they don't block** (DEVIATIONS.md D7; `decisions:31`'s keep-pushing
+policy; the warn-don't-block lineage flagged for red-teaming in the dogfood facts). The
+*only* hard block in the product today is `requirements:32` — `UnresolvedFindings` blocks
+`finalize_plan`, at finalization alone. The §0 rule is stronger and more general: a hard
+lock at *every* gate for problems allocated to it, plus a global lock for unallocated ones.
+
+If the owner wants §0 in the product, it is a real change to `gate-engine`/`finding-service`
+and must be reconciled with `decisions:31` and D7 — most likely logged as a new finding and
+a deviation, not smuggled in. **Recommendation:** keep §0 as build-process discipline now;
+settle the product form in M6 when gate-engine is open, on its own terms. Flagged so it is
+not lost. Owner to confirm scope.
 
 ---
 
