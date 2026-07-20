@@ -81,7 +81,11 @@ opinions" grows.
 
 ### 2.3 Scope levels
 
-Attachments carry a scope level: **project / session / milestone / packet**.
+Attachments carry a scope level: **project / milestone / packet**.
+
+(A `session` level was in the owner's original phrasing and was dropped on review: the other
+three are plan structure, whereas a session is an episode of work — and session-scoped
+attachment is what the journal already is. Settled 2026-07-20, do not reopen.)
 
 A packet's context is the union of its own attachments and those of every enclosing scope.
 
@@ -183,19 +187,21 @@ Task-graph coming into scope makes the old M5 (surface) dependency-wrong: `plan_
 digest depends on the scope-attachment bounds (§2.3) and its drift flags depend on a
 finalization baseline. Surface should follow the execution module, not precede it.
 
+Approved by the owner 2026-07-20, including the 5a/5b split. `V2_BUILD_PLAN.md` §3/§7/§9/§10
+have been updated to match — the two documents now tell the same story.
+
 | M | Was | Now |
 |---|---|---|
-| 5 | Surface | **Execution module**: scope-attachment framework, `finalize_plan`, `task-graph`, `brief-composer` + plan-time allocation |
+| 5a | Surface | **Execution module I**: scope-attachment framework, `finalize_plan`, `task-graph` |
+| 5b | — | **Execution module II**: `brief-composer` + plan-time allocation |
 | 6 | revision-service | **Surface**: `session-service`, `mcp-surface` on the §4.2 seam, + methodology rev 3 |
 | 7 | Dogfood | `revision-service`, reduced form (§4.1) |
-| 8 | — | Dogfood |
+| 8 | — | Dogfood: plan the GUI using v2 |
 
 Dependency order within M5: scope-attachment schema → `finalize_plan` → `task-graph` →
 `brief-composer` + allocation. The schema piece is first because nothing may write an
-attachment before the scope column exists.
-
-M5 is large. If it wants splitting, the seam is after `task-graph`: attachments + finalize +
-graph in one PR, brief-composer + allocation in a second.
+attachment before the scope column exists. **Start 5a with the `state_machines:9` audit (§5),
+not with code.**
 
 ---
 
@@ -214,10 +220,8 @@ graph in one PR, brief-composer + allocation in a second.
    Countermeasure is the digest naming its own next action, which is `requirements:58` doing
    real work. *Also M6.*
 
-3. **Scope-level vocabulary.** "project / session / milestone / packet" is the owner's
-   phrasing. `session` is odd company for the other three — the first three are plan
-   structure, `session` is an episode of work. Worth confirming whether session-scoped
-   attachments are really wanted, or whether that is what the journal already is.
+3. ~~Scope-level vocabulary.~~ **Settled 2026-07-20**: three levels, `session` dropped. See
+   §2.3.
 
 ---
 
