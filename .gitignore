@@ -5,3 +5,11 @@ __pycache__/
 *.db-wal
 *.db-shm
 .pytest_cache/
+
+# The frozen v2 spec is authoritative and must be tracked despite *.db above.
+!spec/v2/plan.db
+!spec/v2/*.bak
+
+# Reference source files (PDFs etc): large, usually copyrighted. Metadata,
+# hashes and extracts live in the plan DB; the files themselves stay local.
+refs/

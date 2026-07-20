@@ -1,7 +1,7 @@
 [project]
 name = "plantool"
-version = "2.0.0"
-description = "LLM-led project-planning tool, v2: interview engine, verified reference store, MCP surface"
+version = "0.1.0"
+description = "LLM-led project-planning tool: interview engine, MCP server, plan database (stage 1)"
 requires-python = ">=3.12"
 dependencies = ["mcp", "pyyaml"]
 

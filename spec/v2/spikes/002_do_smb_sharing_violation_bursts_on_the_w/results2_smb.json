@@ -1,0 +1,129 @@
+{
+ "label": "smb",
+ "target": "\\\\DISKSTATION\\homes\\Al\\plantool_spike2",
+ "started": "2026-07-17T13:07:45+00:00",
+ "config": {
+  "renew_s": 30.0,
+  "staleness_s": 600.0,
+  "phase_secs": 720.0,
+  "sample_every_s": 0.1,
+  "readers": 3,
+  "dweller_phaseB": true
+ },
+ "renewals": {
+  "all": {
+   "n": 48,
+   "max_gap": 37.937,
+   "max_dur": 7.937,
+   "max_attempts": 17,
+   "retried": 12
+  },
+  "phaseA_hardened": {
+   "n": 23,
+   "max_gap": 30.484,
+   "max_dur": 0.484,
+   "max_attempts": 4,
+   "retried": 2
+  },
+  "phaseB_dweller": {
+   "n": 25,
+   "max_gap": 37.937,
+   "max_dur": 7.937,
+   "max_attempts": 17,
+   "retried": 10
+  }
+ },
+ "renew_giveups": [],
+ "streaks": {
+  "all": {
+   "n": 142,
+   "max_dur": 0.438,
+   "p50_dur": 0.203,
+   "total_fail_samples": 156
+  },
+  "phaseA_hardened": {
+   "n": 142,
+   "max_dur": 0.438,
+   "p50_dur": 0.203,
+   "total_fail_samples": 156
+  },
+  "phaseB_dweller": {
+   "n": 0
+  }
+ },
+ "sampler_totals": {
+  "ok": "540",
+  "fail": "156"
+ },
+ "worst_renewals": [
+  {
+   "i": 36,
+   "t": 1102.2,
+   "attempts": 17,
+   "dur": 7.937,
+   "gap": 37.937
+  },
+  {
+   "i": 26,
+   "t": 789.5,
+   "attempts": 15,
+   "dur": 6.234,
+   "gap": 36.234
+  },
+  {
+   "i": 33,
+   "t": 1003.8,
+   "attempts": 11,
+   "dur": 3.5,
+   "gap": 33.5
+  },
+  {
+   "i": 22,
+   "t": 662.9,
+   "attempts": 4,
+   "dur": 0.484,
+   "gap": 30.484
+  },
+  {
+   "i": 37,
+   "t": 1132.7,
+   "attempts": 4,
+   "dur": 0.469,
+   "gap": 30.469
+  }
+ ],
+ "worst_streaks": [
+  {
+   "t": 4.6,
+   "dur": 0.438,
+   "n": 3
+  },
+  {
+   "t": 12.0,
+   "dur": 0.406,
+   "n": 2
+  },
+  {
+   "t": 79.6,
+   "dur": 0.36,
+   "n": 2
+  },
+  {
+   "t": 102.3,
+   "dur": 0.36,
+   "n": 2
+  },
+  {
+   "t": 43.4,
+   "dur": 0.359,
+   "n": 1
+  }
+ ],
+ "reader_lines": [
+  "READER reads=91334 errs=306",
+  "READER reads=91340 errs=308",
+  "READER reads=91332 errs=306"
+ ],
+ "dweller_line": "DWELLER holds=2586 errs=4",
+ "finished": "2026-07-17T13:07:45+00:00"
+}

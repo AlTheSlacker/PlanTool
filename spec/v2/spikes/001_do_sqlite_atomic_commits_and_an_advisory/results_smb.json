@@ -1,0 +1,86 @@
+{
+ "label": "smb",
+ "target": "\\\\DISKSTATION\\homes\\Al\\plantool_spike\\probe",
+ "started": "2026-07-17T11:18:59+00:00",
+ "kill": {
+  "delete": {
+   "actual_mode": "delete",
+   "kills": 12,
+   "violations": [],
+   "final": {
+    "integrity": "ok",
+    "orphan_batches": 0,
+    "short_batches": 0,
+    "committed_batches": 167
+   }
+  },
+  "wal": {
+   "actual_mode": "wal",
+   "kills": 12,
+   "violations": [],
+   "final": {
+    "integrity": "ok",
+    "orphan_batches": 0,
+    "short_batches": 0,
+    "committed_batches": 3876
+   }
+  }
+ },
+ "concurrent": {
+  "delete": {
+   "writer1": {
+    "committed": "12",
+    "busy": "0",
+    "p50": "0.0470",
+    "max": "7.4850"
+   },
+   "writer2": {
+    "committed": "165",
+    "busy": "0",
+    "p50": "0.0470",
+    "max": "0.1250"
+   },
+   "db": {
+    "integrity": "ok",
+    "orphan_batches": 0,
+    "short_batches": 0,
+    "committed_batches": 177
+   }
+  },
+  "wal": {
+   "writer1": {
+    "committed": "1792",
+    "busy": "0",
+    "p50": "0.0000",
+    "max": "5.3900"
+   },
+   "writer2": {
+    "committed": "3552",
+    "busy": "0",
+    "p50": "0.0000",
+    "max": "0.7970"
+   },
+   "db": {
+    "integrity": "ok",
+    "orphan_batches": 0,
+    "short_batches": 0,
+    "committed_batches": 5344
+   }
+  }
+ },
+ "lock": {
+  "race": {
+   "rounds": 20,
+   "double_claims": 0,
+   "no_winner": 0
+  },
+  "steal": {
+   "claimed_while_holder_alive": true,
+   "max_heartbeat_age_seen_while_alive": 6.24,
+   "claim_delay_after_kill": -0.44,
+   "stale_after": 6.0,
+   "read_errors": 3
+  }
+ },
+ "finished": "2026-07-17T11:22:06+00:00"
+}
