@@ -80,3 +80,34 @@ the session reads it, the tool records extracts with verified quotes.
 **Why:** the invariant ("no extract without a verifying quote") must exist before any rows
 do, because invariants cannot be retrofitted onto violating data. The pipeline is
 dependency-heavy and of unproven value, and the manual path works on day one.
+
+---
+
+## D5 — Writer lock is a database lease, not an O_EXCL lock file
+
+**Plan:** `contracts:63` — the writer lock is "claimed via atomic O_EXCL create", with
+`decisions:58` adding sharing-violation retries on network mounts, and
+`dep_failure_modes:12` ruling out a background heartbeat.
+
+**v2:** the lock is a row in a `writer_lease` table, claimed inside a `BEGIN IMMEDIATE`
+transaction. Renewal updates that row; every write validates its lease in the same
+transaction that applies it.
+
+**Why:** two reasons, and the first is evidence from this project's own spike.
+
+`spikes/001` found on real SMB that the file-based lock protocol fails: `os.replace`
+onto the lock file raises `PermissionError 13` when a reader holds it open, which
+silently killed the holder's heartbeat and let a live session's lock be stolen. The
+frozen plan absorbed this as a retry (`decisions:58`) rather than as a reason to change
+mechanism.
+
+Second, `requirements:68` demands that a stale holder's write be "rejected inside the
+same transaction that would apply it — no two sessions ever have writes applied under
+simultaneously valid leases". A lock *file* cannot participate in the database
+transaction that applies the write, so the file-based design cannot actually deliver the
+atomicity the requirement asks for. The database lease can, and does.
+
+This is a case where two rows of the frozen plan pull against each other and the
+requirement is the stronger one. Not logged as a defect: the plan is internally
+inconsistent rather than insufficient, and the resolution follows from its own
+evidence.
