@@ -343,12 +343,18 @@ class RowService:
         resolution: str,
         idempotency_key: str,
         lease=None,
+        retire_reason: str | None = None,
     ) -> PlanRow:
         """Upgrade the SAME row in place to decided, with the owner's answer quoted.
 
         requirements:18/19 — the gap clears immediately and no duplicate row appears.
         This fixes the friction recorded in decisions:28(a), where an assumption could
         only be resolved by creating a second row.
+
+        `retire_reason` overrides the default for a rejection. The owner is not the only
+        thing that can settle an assumption: validation-service closes world-assumptions
+        from spike evidence (requirements:25), and recording those as "rejected by the
+        owner" would put a falsehood in the audit trail. See DEFECTS.md F14.
         """
         ref = RowRef.coerce(ref)
         row = self._row(ref)
@@ -385,7 +391,7 @@ class RowService:
         }
         if resolution == "reject":
             values["retired_at"] = now()
-            values["retire_reason"] = "assumption rejected by the owner"
+            values["retire_reason"] = retire_reason or "assumption rejected by the owner"
 
         op = Op("update", "plan_rows", values,
                 where={"table_name": ref.table, "ordinal": ref.ordinal})

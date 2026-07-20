@@ -171,6 +171,90 @@ CREATE TABLE IF NOT EXISTS warnings (
 );
 
 CREATE INDEX IF NOT EXISTS idx_warnings_state ON warnings (state);
+
+-- An executable experiment against a real dependency (entities:5, state_machines:5).
+--
+-- requirements:3 confines probe code to a quarantine directory under spikes/ and never
+-- ships it. Only the `slug` is stored: the directory is `spikes/{id:03d}_{slug}`, fully
+-- determined by the id, so the path can never drift out of step with the record.
+CREATE TABLE IF NOT EXISTS spikes (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    assumption    TEXT    NOT NULL,     -- ref of the world-assumption it resolves
+    question      TEXT    NOT NULL,
+    hypothesis    TEXT    NOT NULL,
+    method        TEXT    NOT NULL,     -- how it probes the real dependency
+    budget        TEXT    NOT NULL,
+    slug          TEXT    NOT NULL,
+    state         TEXT    NOT NULL,     -- registered | executing | blocked | concluded
+    outcome       TEXT,                 -- confirmed | refuted | inconclusive | blocked
+    evidence      TEXT,                 -- what was observed
+    block_reason  TEXT,                 -- requirements:26, the unreachable dependency
+    created_at    TEXT    NOT NULL,
+    concluded_at  TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_spikes_assumption ON spikes (assumption);
+CREATE INDEX IF NOT EXISTS idx_spikes_state      ON spikes (state);
+
+-- A load-bearing technical assertion needing validation (entities:8, state_machines:8).
+CREATE TABLE IF NOT EXISTS technical_claims (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    text         TEXT    NOT NULL,
+    kind         TEXT    NOT NULL,      -- software | scientific | both
+    state        TEXT    NOT NULL,      -- identified | validating | validated | failed
+                                        -- | risk_accepted
+    outcome      TEXT,                  -- validated | failed | risk_accepted
+    evidence     TEXT,
+    red_flag     INTEGER NOT NULL DEFAULT 0,   -- requirements:4, blocks dependent planning
+    fenced       INTEGER NOT NULL DEFAULT 0,   -- red flag explicitly fenced off
+    created_at   TEXT    NOT NULL,
+    resolved_at  TEXT
+);
+
+-- The rows resting on a claim. Separate table for the same reason conflict_refs is:
+-- requirements:43 walks these on failure, and it must be one query.
+CREATE TABLE IF NOT EXISTS claim_refs (
+    claim_id INTEGER NOT NULL,
+    ref      TEXT    NOT NULL,
+    PRIMARY KEY (claim_id, ref)
+);
+
+CREATE INDEX IF NOT EXISTS idx_claim_refs_ref ON claim_refs (ref);
+
+-- The routing tracks a claim was sent down (requirements:41). `both` opens two rows and
+-- neither alone closes the claim, so the tracks are stored rather than derived from kind.
+CREATE TABLE IF NOT EXISTS claim_tracks (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    claim_id   INTEGER NOT NULL,
+    track      TEXT    NOT NULL,        -- spike | research
+    state      TEXT    NOT NULL,        -- open | satisfied
+    detail     TEXT    NOT NULL,
+    spike_id   INTEGER,                 -- set when the spike track registers one
+    updated_at TEXT    NOT NULL,
+    UNIQUE (claim_id, track)
+);
+
+-- A red-team result filed against specific rows (entities:7, state_machines:7).
+CREATE TABLE IF NOT EXISTS findings (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    description TEXT    NOT NULL,
+    severity    TEXT    NOT NULL,
+    state       TEXT    NOT NULL,       -- filed | disputed | addressed | accepted_risk
+    outcome     TEXT,                   -- addressed | accepted_risk | withdrawn
+    rationale   TEXT,                   -- for accepted_risk: the owner's acceptance
+    dispute     TEXT,                   -- the standing argument against the finding
+    created_at  TEXT    NOT NULL,
+    resolved_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS finding_refs (
+    finding_id INTEGER NOT NULL,
+    ref        TEXT    NOT NULL,
+    PRIMARY KEY (finding_id, ref)
+);
+
+CREATE INDEX IF NOT EXISTS idx_finding_refs_ref ON finding_refs (ref);
+CREATE INDEX IF NOT EXISTS idx_findings_state   ON findings (state);
 """
 
 # Lexical retrieval (V2_BUILD_PLAN.md 5.4). Separate because FTS5 is a compile-time
