@@ -58,6 +58,23 @@ class Rule:
 
 
 @dataclass(frozen=True, slots=True)
+class Criterion:
+    """One mechanical gate check (requirements:20).
+
+    `problem` and `fix` are templates: a hole formats them, so the wording that reaches
+    the agent is methodology content rather than engine code.
+    """
+
+    id: str
+    stage: int
+    type: str
+    problem: str
+    fix: str
+    cross_check: bool
+    spec: dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
 class Methodology:
     revision: int
     revision_stamp: str
@@ -66,7 +83,13 @@ class Methodology:
     mandate_file: str
     stages: tuple[Stage, ...]
     rules: tuple[Rule, ...]
+    criteria: tuple[Criterion, ...]
     auxiliary: dict[str, str]
+
+    def criteria_for(self, stage: int) -> tuple[Criterion, ...]:
+        """This stage's criteria in file order — requirements:46's determinism starts
+        here."""
+        return tuple(c for c in self.criteria if c.stage == stage)
 
     def stage(self, number: int) -> Stage:
         for stage in self.stages:
@@ -97,9 +120,11 @@ def load(revision: int = DEFAULT_REVISION) -> Methodology:
     root = ASSETS / f"rev{revision}"
     manifest_path = root / "manifest.yaml"
     rules_path = root / "gap_rules.yaml"
+    criteria_path = root / "gate_criteria.yaml"
     try:
         manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
         rules_doc = yaml.safe_load(rules_path.read_text(encoding="utf-8"))
+        criteria_doc = yaml.safe_load(criteria_path.read_text(encoding="utf-8"))
     except OSError as exc:
         raise MethodologyUnavailable(
             f"methodology revision {revision} is not installed"
@@ -130,6 +155,19 @@ def load(revision: int = DEFAULT_REVISION) -> Methodology:
         )
         for entry in rules_doc["rules"]
     )
+    criteria = tuple(
+        Criterion(
+            id=entry["id"],
+            stage=block["stage"],
+            type=entry["type"],
+            problem=" ".join(entry["problem"].split()),
+            fix=" ".join(entry["fix"].split()),
+            cross_check=bool(entry.get("cross_check")),
+            spec=entry,
+        )
+        for block in criteria_doc["stages"]
+        for entry in block["criteria"]
+    )
     return Methodology(
         revision=manifest["revision"],
         revision_stamp=manifest["revision_stamp"],
@@ -138,5 +176,6 @@ def load(revision: int = DEFAULT_REVISION) -> Methodology:
         mandate_file=manifest["mandate"],
         stages=stages,
         rules=rules,
+        criteria=criteria,
         auxiliary=manifest.get("auxiliary") or {},
     )

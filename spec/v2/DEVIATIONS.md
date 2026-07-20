@@ -111,3 +111,54 @@ This is a case where two rows of the frozen plan pull against each other and the
 requirement is the stronger one. Not logged as a defect: the plan is internally
 inconsistent rather than insufficient, and the resolution follows from its own
 evidence.
+
+---
+
+## D6 — Contradiction is declared by the session, not detected by the tool
+
+**Plan:** `contracts:9` raises `ConflictRequired` when "a submitted row contradicts a
+stored row", and `requirements:27` requires the conflict be raised and presented before
+the contradicting row can be filed. Neither says how contradiction is determined
+(DEFECTS.md F4).
+
+**v2:** the submitting session declares the contradiction by giving the row a
+`contradicts` edge to the row it contests. The tool then enforces, mechanically, that a
+conflict naming that contested row exists before the row may be filed. No conflict, no
+write.
+
+**Why:** the design spine — the tool records judgment, it never exercises it. Deciding
+that two statements contradict each other *is* judgment, and `decisions:12`/
+`requirements:75` put no model inside the tool that could exercise it. The alternatives
+were both worse: a lexical heuristic would produce false positives on rows that merely
+share vocabulary and false negatives on everything expressed differently, and it would
+be exercising judgment badly rather than not at all.
+
+What is preserved is the part that matters. requirements:27's guarantee is procedural —
+that no contradicting row is filed until a conflict has been raised *and presented* —
+and that is fully mechanical once the contradiction is declared. What the tool cannot
+guarantee is that a session declares one. That is the same trust boundary as provenance:
+nothing stops a session marking an assumption as decided either, and the plan accepts
+that everywhere else.
+
+Deliberately accepted, not resolved: a conflict raised and immediately resolved satisfies
+the check. requirements:27 asks that the conflict be presented, and presentation happens
+in the session, where the tool cannot observe it.
+
+---
+
+## D7 — Gate warnings are scoped to the stage being gated
+
+**Plan:** `requirements:21` — "WHEN a gate passes while open gaps or unresolved
+assumptions exist, the system shall list each as an explicit warning."
+
+**v2:** a gate *raises* warnings for open gaps in the stage being gated, plus the
+stage-agnostic rules (open assumptions, reference coverage). Warnings already in the
+ledger from earlier stages keep re-presenting until resolved or suppressed, so the
+result of any gate still shows everything outstanding.
+
+**Why:** the literal reading made the stage-1 gate report "No components yet" on a plan
+five stages from needing components — ten noise warnings out of twelve. `gap_rules.yaml`
+states the principle being violated: "a meter that cries wolf stops being read".
+decisions:31's keep-pushing policy depends entirely on warnings being read.
+
+See DEFECTS.md F10.

@@ -26,8 +26,13 @@ rules:
   - id: stage1_not_started
     priority: 2
     stage: 1
+    # `goals`, not `decisions`. v1 recorded goals as decisions prefixed "Goal:" and this
+    # rule was vendored with that shape; v2's gate criteria give goals, non-goals and
+    # stack their own tables, so the rule was testing a table stage 1 no longer fills.
+    # It fired "nothing recorded yet" at a complete, passing stage 1 until M3's
+    # end-to-end drive caught it (DEFECTS.md F11).
     type: empty_table
-    table: decisions
+    table: goals
     ask: >-
       Nothing recorded yet. Open the stage-1 interview: problem, users, goals with
       success criteria, non-goals, constraints, and target stack. Run the divergence

@@ -34,6 +34,19 @@ UNDISMISSABLE: dict[str, str] = {
 }
 
 
+def title_of(row: PlanRow) -> str:
+    """A row's human-readable handle, for gap asks and gate holes alike.
+
+    The store is schema-free by design (DEVIATIONS.md D3), so there is no title column
+    to read — this is the agreed order of preference across every table.
+    """
+    for key in ("title", "name", "text", "quote", "description"):
+        value = row.content.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()[:120]
+    return str(row.ref)
+
+
 class GapNotFound(PlanToolError):
     """contracts:66/67 — names the missing gap."""
 
@@ -131,14 +144,7 @@ class GapEngine:
         )
         return list(page.rows)
 
-    @staticmethod
-    def _title(row: PlanRow) -> str:
-        content = row.content
-        for key in ("title", "name", "text", "quote", "description"):
-            value = content.get(key)
-            if isinstance(value, str) and value.strip():
-                return value.strip()[:120]
-        return str(row.ref)
+    _title = staticmethod(title_of)
 
     def _linked(self, table: str, direction: str) -> set[str]:
         """Refs in `table` that participate in at least one link in `direction`."""
@@ -271,6 +277,30 @@ class GapEngine:
             for r in self.storage.query("SELECT * FROM gap_overlay")
         }
 
+    def open_gaps(self, stage: int | None = None) -> list[Gap]:
+        """Every open gap, prioritized — the whole list, not a cluster.
+
+        next_gaps returns a cluster sized for one exchange; gate-engine needs the
+        unabridged set to raise a warning per gap (requirements:21), because a gate
+        reporting only the first five would be passing the rest over silently.
+
+        `stage=None` means every stage rather than the current one. Passing a stage
+        keeps that stage's rules plus the stage-agnostic ones (open assumptions,
+        reference coverage), which are never scoped out.
+        """
+        overlay = self._overlay()
+        gaps: list[Gap] = []
+        for rule in self.methodology.rules:
+            if stage is not None and rule.stage is not None and rule.stage != stage:
+                continue
+            for gap in self._derive(rule):
+                entry = overlay.get(gap.key)
+                if entry is not None and entry["state"] in ("dismissed", "resolved"):
+                    continue
+                gaps.append(gap)
+        gaps.sort(key=lambda g: (g.priority, g.rule_id, str(g.target or "")))
+        return gaps
+
     # --- contracts:19 ---
 
     def next_gaps(self, limit: int = CLUSTER_MAX, stage: int | None = None) -> GapCluster:
@@ -288,19 +318,7 @@ class GapEngine:
             )
 
         current = stage if stage is not None else self.current_stage()
-        overlay = self._overlay()
-
-        derived: list[Gap] = []
-        for rule in self.methodology.rules:
-            if rule.stage is not None and rule.stage != current:
-                continue
-            for gap in self._derive(rule):
-                entry = overlay.get(gap.key)
-                if entry is not None and entry["state"] in ("dismissed", "resolved"):
-                    continue
-                derived.append(gap)
-
-        derived.sort(key=lambda g: (g.priority, g.rule_id, str(g.target or "")))
+        derived = self.open_gaps(stage=current)
         clustered = self._cluster(derived, limit)
 
         return GapCluster(

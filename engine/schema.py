@@ -124,6 +124,53 @@ CREATE TABLE IF NOT EXISTS gap_overlay (
     reason     TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+
+-- Contradictions between rows, or against new input (entities:5, state_machines:4).
+--
+-- A conflict is a permanent audit record: requirements:29 puts the outcome and the
+-- challenge text on the record for good, and contracts:27 refuses re-adjudication.
+CREATE TABLE IF NOT EXISTS conflicts (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    description    TEXT    NOT NULL,
+    recommendation TEXT    NOT NULL,     -- the engineering recommendation, both sides
+    state          TEXT    NOT NULL,     -- open | resolved_overridden | resolved_revised
+    outcome        TEXT,                 -- overridden | revised
+    adjudication   TEXT,                 -- the owner's decision, quoted
+    created_at     TEXT    NOT NULL,
+    resolved_at    TEXT
+);
+
+-- The contested rows. Separate so blocking_conflicts can intersect a gate's scope in
+-- one query instead of parsing a JSON blob per conflict.
+CREATE TABLE IF NOT EXISTS conflict_refs (
+    conflict_id INTEGER NOT NULL,
+    ref         TEXT    NOT NULL,
+    PRIMARY KEY (conflict_id, ref)
+);
+
+CREATE INDEX IF NOT EXISTS idx_conflict_refs_ref ON conflict_refs (ref);
+
+-- The keep-pushing warning ledger (entities:4, state_machines:6, decisions:31).
+--
+-- Warnings are stored rather than derived because their lifecycle is owner-visible:
+-- suppress_warning and resolve_warning take an int id (contracts:24/25), and a
+-- suppression must outlive the condition being re-derived. `warning_key` is the stable
+-- identity that makes re-raising idempotent — the same deficiency raised at three
+-- successive gates is one warning, re-presented, not three.
+CREATE TABLE IF NOT EXISTS warnings (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    warning_key  TEXT    NOT NULL UNIQUE,
+    kind         TEXT    NOT NULL,       -- open_gap | unresolved_assumption | ...
+    message      TEXT    NOT NULL,
+    source_ref   TEXT,                   -- the row the warning is about, if any
+    state        TEXT    NOT NULL,       -- active | suppressed | resolved
+    reason       TEXT,                   -- the owner's explicit suppression reason
+    resolved_by  TEXT,                   -- ref of the row whose fix resolved it
+    raised_at    TEXT    NOT NULL,
+    updated_at   TEXT    NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_warnings_state ON warnings (state);
 """
 
 # Lexical retrieval (V2_BUILD_PLAN.md 5.4). Separate because FTS5 is a compile-time

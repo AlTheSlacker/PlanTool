@@ -1,8 +1,12 @@
 import pytest
 
+from engine.conflicts import ConflictService
+from engine.gaps import GapEngine
+from engine.gates import GateEngine
 from engine.references import ReferenceService
 from engine.rows import RowService
 from engine.storage import Storage
+from engine.warnings import WarningService
 
 
 @pytest.fixture
@@ -16,6 +20,21 @@ def store(tmp_path):
 @pytest.fixture
 def rows(store):
     return RowService(store)
+
+
+@pytest.fixture
+def conflicts(store, rows):
+    return ConflictService(store, rows)
+
+
+@pytest.fixture
+def warns(store):
+    return WarningService(store)
+
+
+@pytest.fixture
+def gate(store, rows, conflicts, warns):
+    return GateEngine(store, rows, conflicts, warns, gaps=GapEngine(store, rows))
 
 
 @pytest.fixture
