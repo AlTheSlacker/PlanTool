@@ -204,3 +204,50 @@ rate) and mitigated by the asymmetric friction above. See `M5_PLAN.md` §2.5.
 A `session` scope level was in the owner's original phrasing and dropped on review: the
 other three are plan structure, whereas a session is an episode of work — and
 session-scoped attachment is what the journal already is.
+
+---
+
+## D9 — Gates hard-lock on outstanding problems (owner requirement)
+
+**Status: requirement logged 2026-07-20, built at M6.** Bound to the M6 gate under the
+outstanding-problem rule — M6 cannot pass with D9 unbuilt.
+
+**Plan:** gates in the frozen plan **warn, they do not block** — `decisions:31`'s
+keep-pushing policy and D7. The single hard block is `requirements:32`: `UnresolvedFindings`
+blocks `finalize_plan`, at finalization *alone*. Everywhere else, an outstanding problem can
+be walked past.
+
+**v2 (owner decision, 2026-07-20):** every outstanding problem is either resolved or bound
+to a named **resolve-by gate**, and gate passage is hard-locked:
+
+1. A gate cannot pass while a problem allocated to it remains unresolved.
+2. A problem with **no** allocated resolve-by gate locks **every** gate until one is
+   assigned. (Removes the escape hatch of never allocating so nothing ever blocks.)
+3. Resolved problems are metric-only — never surfaced as pending work.
+
+This generalises `requirements:32` from finalization-only to every gate, with an allocation
+model attached.
+
+**Why:** a keep-pushing *warning* is easy to walk past; "you cannot pass this gate until
+this is resolved or explicitly re-scheduled to a later gate" is what makes an outstanding
+problem impossible to lose. `decisions:14` (execution sufficiency: zero sub-tasks blocked by
+missing plan information) is only credible if problems cannot silently survive to execution.
+
+**The reconciliation M6 must build, not blur:** this must NOT resurrect the cry-wolf failure
+D7 fixed. Advisory **warnings** (open gaps in a stage, coverage meter) stay warn-don't-block
+per `decisions:31` — they inform, they do not lock. The hard-lock binds a distinct,
+higher-severity class: **outstanding findings** (`state_machines:7`) and, to be settled in
+M6, whether unresolved **conflicts** (`state_machines:4`) and open **assumptions** join them.
+The lock class must be genuinely narrow, or the tool becomes a nag that cannot be satisfied —
+the exact failure `decisions:31` guards against. Getting the severity line right *is* the M6
+design work; D9 fixes the requirement, not the entity list.
+
+**Open sub-questions for M6 (each resolve-by the M6 gate):**
+- which entity classes are lock-class vs advisory (findings yes; conflicts/assumptions TBD);
+- where the resolve-by-gate allocation is stored (rides on the finding/conflict row, keyed on
+  lineage root per `requirements:78`, like §D8 allocations);
+- how the global lock (clause 2) surfaces — it must name the unallocated problem, or it is an
+  opaque "everything is blocked" with no route out.
+
+**Contradicts:** `decisions:31`, D7 — logged here rather than folded in silently, because
+reopening the keep-pushing policy is a real design change and must read as one.

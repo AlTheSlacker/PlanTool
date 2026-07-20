@@ -250,23 +250,22 @@ Both below are `plan_status`-shaped, so their gate is **M6** (surface). Neither 
 3. ~~Scope-level vocabulary.~~ **Settled 2026-07-20**: three levels, `session` dropped. See
    §2.3.
 
-## 4a. Open — is the §0 hard-lock the *product's* gate rule too?
+## 4a. Settled — the §0 hard-lock IS a product requirement (build at M6)
 
-**[resolve-by: M6 gate — gate-engine is settled there]** The §0 rule is in force for the
-build process. Whether it is also a v2 *product* requirement is unsettled, and it is not a
-tweak — it contradicts the gate-engine as built.
+**Decided by owner 2026-07-20: yes.** The §0 rule is not only build-process discipline; it
+is a v2 product requirement, logged as **DEVIATIONS.md D9** and built in M6 (gate-engine).
+M6 cannot pass with D9 unbuilt (it is D9's own resolve-by gate).
 
-v2's gates **warn, they don't block** (DEVIATIONS.md D7; `decisions:31`'s keep-pushing
-policy; the warn-don't-block lineage flagged for red-teaming in the dogfood facts). The
-*only* hard block in the product today is `requirements:32` — `UnresolvedFindings` blocks
-`finalize_plan`, at finalization alone. The §0 rule is stronger and more general: a hard
-lock at *every* gate for problems allocated to it, plus a global lock for unallocated ones.
+It contradicts the gate-engine as designed — v2's gates **warn, they don't block**
+(`decisions:31` keep-pushing; D7), and the only hard block today is `requirements:32`
+(unresolved findings block `finalize_plan`, at finalization alone). D9 generalises that to
+every gate.
 
-If the owner wants §0 in the product, it is a real change to `gate-engine`/`finding-service`
-and must be reconciled with `decisions:31` and D7 — most likely logged as a new finding and
-a deviation, not smuggled in. **Recommendation:** keep §0 as build-process discipline now;
-settle the product form in M6 when gate-engine is open, on its own terms. Flagged so it is
-not lost. Owner to confirm scope.
+The load-bearing design work is left to M6 and must not be pre-empted here: **the lock class
+must be narrow.** Advisory warnings (open gaps, coverage) stay warn-don't-block, or D9
+resurrects the cry-wolf failure D7 fixed; the hard-lock binds outstanding *findings* and — to
+be settled in M6 — possibly conflicts and open assumptions. Full statement and the open
+sub-questions are in D9.
 
 ---
 
