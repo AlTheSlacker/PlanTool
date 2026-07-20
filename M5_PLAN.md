@@ -253,15 +253,21 @@ the missing thing is the *fix for a stage-7 finding*. **Log as a defect before b
 
 ---
 
-## 6. To log before/while building
+## 6. Logged (done 2026-07-20)
 
-- **DEFECTS.md** — stage-7 fix rows cited but never defined (`contracts:52/56/59/61`); the
-  undefined term "current working set" in `requirements:62`; the unbounded "accumulated
-  learnings" in `requirements:58`.
-- **DEVIATIONS.md** — scope-attachment framework (not in the frozen plan at all; introduced to
-  bound resume cost and support the GUI review surface); milestone recut §3.
-- **`V2_BUILD_PLAN.md`** — §3 (task-graph/brief-composer no longer deferred), §7 (milestone
-  table), §9 (execution module no longer open). Not yet updated.
+All of this session's findings are recorded; nothing is parked in this doc awaiting a write.
+
+- **DEFECTS.md F15** (OPEN) — stage-7 fix rows cited but never defined
+  (`contracts:52/56/59/61`). Resolution is build-time: the `state_machines:9` audit at the
+  top of M5a confirms each absence against the built engine and, per row, writes it (as F12
+  did for the spike events) or finds it subsumed. **This is the one live to-do.**
+- **DEFECTS.md F16** (resolved) — "current working set" (`requirements:62`) and "accumulated
+  learnings" (`requirements:58`) undefined; resolved by the §2 allocation design.
+- **DEVIATIONS.md D1** — amended: the execution-module deferral was reversed; only the
+  `revision-service` reduction remains a deviation.
+- **DEVIATIONS.md D8** — scope-attachment framework + plan-time allocation.
+- **`V2_BUILD_PLAN.md`** — §3 (15 components, module in scope), §7 (5a/5b/6/7/8), §9 (module
+  closed, GUI reframed), §10 (allocation model). Charter, this doc, and build memory agree.
 
 ---
 

@@ -396,3 +396,86 @@ own sentence conflates the two cases, and a test inherits that conflation — th
 blind-spot inheritance recorded at F5 and F11. The drive catches it because reading
 "conflicts raised=(4,)" against a plan with two obviously-affected rows is a
 *quantitative* check the spec cannot bias.
+
+---
+
+## F15 — Stage-7 fixes cited as contract rows that were never written
+
+**Status: OPEN — logged on discovery (M5 pre-build audit, 2026-07-20), resolution
+deferred to build.** First defect in this log recorded before its fix rather than after.
+The distinction is deliberate: logging a defect is cheap and must never wait (the
+never-batch discipline of `requirements:56/57/60`), but the *resolution* of these is a
+build-time decision — what `contracts:59/60` must guard cannot be settled until the
+`state_machines:9` machine is being built in M5a. Resolving now would be inventing in a
+vacuum. So this entry gets a **Resolved:** line when M5a/M5b reach the blocked pieces.
+
+**Rows:** `contracts:52`, `contracts:56`, `contracts:59`, `contracts:61` — and, in the
+same class, the missing definition of `contracts:61` as the mechanism for `findings:10`
+(workspace drift) and `contracts:59/60` for `findings:9` (delivery verification).
+
+**Insufficient:** four contract ids are cited as the fixes for stage-7 findings but have
+no definition row anywhere in the frozen plan. Verified by grepping for the definition
+form `` `contracts:N` · ``: `52`, `56`, `59`, `61` each appear *only* inside a findings
+fix-note, never as a defined contract. (Contracts 3, 4, 16, 36, 39, 47 are also absent
+but those are the *superseded originals*, correctly dropped from a live-rows export — a
+different thing.)
+
+Concretely, each missing row is load-bearing:
+
+- `contracts:59`/`contracts:60` are cited (F9's fix, `findings:9`) as the owner of
+  delivery verification and the sole enabler of the `in_progress → done` transition of
+  `state_machines:9`. If truly absent, the SubTask machine has no legal path to `done` —
+  the exact class as F12 (an event no contract fires), now on the entity M5 must build.
+- `contracts:61` is cited (`findings:10`'s fix) as the mechanism computing workspace-drift
+  flags from the `requirements:73` fingerprint. Without it `plan_status`'s drift flags
+  have a requirement and a fix-note but no computation.
+- `contracts:56` is cited (`findings:3`/`findings:18`) as the redesigned `compose_brief`
+  carrying the candidate-accounting rule.
+- `contracts:52` is cited (`findings:8`) in the lock-hardening set.
+
+**Class:** F9's, the running pattern (F2, F4, F7, F9, F12) — behaviour named in prose
+without the mechanism that produces it — now six for six. What is *new* and worth marking:
+in every prior instance the missing mechanism was named by a requirement or a state
+machine. Here the missing mechanism is named by a **stage-7 finding's own fix note** — the
+plan's adversarial pass asserted a fix ("Resolved: contracts:61 computes drift flags…")
+whose contract was never actually written. The fix note is prose that reads as
+resolution, which is a more camouflaged version of the pattern than any before it: the
+row that was supposed to *close* a finding is itself an F9 instance. The `state_machines:9`
+audit at the top of M5a must confirm each of these absences against the built engine and
+decide, per row, whether it is genuinely missing (→ write it, as F12 did for the spike
+events) or subsumed by an existing contract.
+
+---
+
+## F16 — Resume cost is bounded by undefined terms
+
+**Rows:** `requirements:62`, `requirements:58`.
+
+**Insufficient:** both load-bearing terms in the cold-resume design name a quantity the
+plan never defines.
+
+`requirements:62` requires resume to serve "a compact digest plus targeted row reads, so
+resume cost scales with the current working set rather than total plan size" — but no row
+defines what the **current working set** is. Left undefined, "working set" is whatever the
+implementer's heuristic decides, which is the tool exercising judgment about relevance —
+the thing the design spine forbids.
+
+`requirements:58` requires resume to present "accumulated learnings" and no row bounds the
+**accumulation**. Unbounded, resume cost scales with total session history — strictly
+worse than the plan-size scaling `requirements:62` exists to kill. Every arbitrary bound
+(last N, since-last-gate) is invention.
+
+**Resolved:** by the context-allocation design settled this session
+(`V2_BUILD_PLAN.md` §10, `M5_PLAN.md` §2). The working set stops being a read-time
+heuristic and becomes what plan-time allocation attached: a packet's context is the union
+of its own attachments and those of its enclosing scopes (project / milestone / packet).
+Accumulated learnings inherit the same bound — resume serves
+project ∪ current-milestone ∪ current-packet — so the bound is structural rather than a
+number someone picked. This is a **deviation** (the scope-attachment framework is not in
+the frozen plan at all) as well as a defect resolution; logged in DEVIATIONS.md.
+
+**Class:** not F9's. This is the other recurring shape — a requirement quantifying a cost
+against a term the plan leaves undefined, so the requirement is unfalsifiable as written.
+The resolution came from design discussion, not from a mechanical audit; worth noting that
+the pre-build audit catches missing *events* cleanly but says nothing about undefined
+*terms*, which still need reading the prose (the F12 limit, restated).

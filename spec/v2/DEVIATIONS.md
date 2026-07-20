@@ -8,28 +8,32 @@ Format: what the plan says · what v2 does · why.
 
 ---
 
-## D1 — Execution layer deferred
+## D1 — revision-service reduced (execution-coupled clauses only)
 
-**Plan:** `decisions:50` specifies fifteen components in four layers, the execution
-layer being `task-graph` (`components:11`), `brief-composer` (`components:12`) and
-`revision-service` (`components:13`).
+> **History:** this deviation originally deferred `task-graph` and `brief-composer`
+> entire. That deferral was **reversed on 2026-07-20** — the design discussion it was
+> waiting on happened (see D8 and `M5_PLAN.md`), and the deferral was also found to be
+> structurally unsound (it removed the only path out of `draft`; DEFECTS.md F15). Both
+> components are now built at M5. What remains a deviation is only the reduction of
+> `revision-service`, below.
 
-**v2:** `task-graph` and `brief-composer` are not built. `revision-service` is built in
-reduced form — the change-order loop (snapshot, version bump, impact walkthrough,
-per-item adjudication, atomic apply or clean rollback) is in scope; its execution-coupled
-clauses are not:
+**Plan:** `decisions:50` specifies fifteen components in four layers; `revision-service`
+(`components:13`) carries a change-order loop with execution-coupled clauses.
+
+**v2:** `revision-service` is built in reduced form — the change-order loop (snapshot,
+version bump, impact walkthrough, per-item adjudication, atomic apply or clean rollback)
+is in scope; its execution-coupled clauses are not:
 
 - freezing in-flight sub-tasks (`open_revision`)
 - regenerating affected briefs (`adjudicate_repercussion`)
 - flagging already-built work as needing rework at apply time (`adjudicate_repercussion`)
 
-**Why:** owner decision, 2026-07-20. v2 is an improvement of v1's plan-authoring loop,
-not an extension into driving execution. The execution module is to be designed in its
-own right, and `task-graph` in particular needs a design discussion that has not happened.
-
-`task-graph` and `brief-composer` defer together because they cannot be separated:
-`compose_brief(subtask_id, selection)` has no input without a graph producing sub-task
-ids, and `next_subtask` exists to feed it.
+**Why:** owner decision, 2026-07-20. These clauses couple to sub-task and brief state that
+only comes alive once a plan is being driven; the change-order loop itself is independently
+useful and stays in. (Note the earlier claim that the *whole* revision loop is useful with
+no execution layer was false — `open_revision` refuses draft plans, so with no finalize
+path nothing could open a revision at all; F15. That is why the execution module could not
+in fact be deferred, only these specific clauses.)
 
 ---
 
@@ -162,3 +166,41 @@ states the principle being violated: "a meter that cries wolf stops being read".
 decisions:31's keep-pushing policy depends entirely on warnings being read.
 
 See DEFECTS.md F10.
+
+---
+
+## D8 — Plan-time context allocation with scope-attachment framework
+
+**Plan:** the frozen plan has no concept of attaching a row, finding, or note to a scope.
+Context for a sub-task's brief is computed at brief-composition time from the link-graph
+closure (`requirements:36`), and "current working set" (`requirements:62`) / "accumulated
+learnings" (`requirements:58`) are named but undefined (DEFECTS.md F16).
+
+**v2:** context allocation is a **planning-time recorded judgment**. Attachments (base
+references, findings, journal notes) carry a scope level — **project / milestone / packet**
+— and a packet's context is the union of its own attachments and those of its enclosing
+scopes. Allocations key on target-row **lineage root** (the `requirements:78` primitive),
+so they survive supersession. An owner-facing review surface (the future GUI) can promote
+or narrow attachments, with **asymmetric friction**: promoting to a broader scope records a
+reason the owner sees, narrowing is free.
+
+Full design: `V2_BUILD_PLAN.md` §10 and `M5_PLAN.md` §2. Built at M5 alongside the
+execution module.
+
+**Why:** three converging reasons. (1) It resolves F16 — "current working set" and
+"accumulated learnings" become structural rather than heuristic or unbounded. (2) It keeps
+relevance a *recorded* judgment rather than a read-time heuristic the tool computes, which
+the design spine forbids (the tool records judgment, it never exercises it). (3) It bounds
+resume cost by outstanding work rather than plan size, the property `requirements:62` asks
+for. The framework is built now, not with the GUI, because retrofitting a scope column
+means back-filling a level for every attachment ever made — a judgment nobody could make
+retroactively. Same "bake in the invariant early" argument as D2 and the §5 citation rule.
+
+**Risk carried:** the scheme concentrates relevance into one judgment per finding (which
+level). Too-low is silent and surfaces at execution; too-high bloats every packet
+invisibly. Instrumented by `decisions:14` (execution sufficiency = the allocation miss
+rate) and mitigated by the asymmetric friction above. See `M5_PLAN.md` §2.5.
+
+A `session` scope level was in the owner's original phrasing and dropped on review: the
+other three are plan structure, whereas a session is an episode of work — and
+session-scoped attachment is what the journal already is.
