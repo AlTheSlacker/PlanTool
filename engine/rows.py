@@ -298,6 +298,30 @@ class RowService:
             raise RowNotFound("no such row", ref=str(ref))
         return self._hydrate(row)
 
+    def lineage_root(self, ref: RowRef | str) -> RowRef:
+        """The earliest ancestor in a row's supersession chain.
+
+        The supersession-stable identity primitive. A record keyed on a row ref detaches
+        silently the moment that row is superseded (findings:16); keyed on the lineage
+        root it does not, because the root never changes. requirements:78 established
+        this for gap dismissals; scope attachments take the same keying (M5_PLAN.md 2.4),
+        which makes this the second application and the reason it lives here rather than
+        on either caller.
+        """
+        current = RowRef.coerce(ref)
+        seen: set[str] = set()
+        while True:
+            if str(current) in seen:  # defensive: a cycle in lineage is corruption
+                return current
+            seen.add(str(current))
+            found = self.storage.query(
+                "SELECT supersedes FROM plan_rows WHERE table_name = ? AND ordinal = ?",
+                (current.table, current.ordinal),
+            )
+            if not found or not found[0]["supersedes"]:
+                return current
+            current = RowRef.parse(found[0]["supersedes"])
+
     def _row(self, ref: RowRef | str):
         ref = RowRef.coerce(ref)
         rows = self.storage.query(

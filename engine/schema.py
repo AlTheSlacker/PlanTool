@@ -255,6 +255,107 @@ CREATE TABLE IF NOT EXISTS finding_refs (
 
 CREATE INDEX IF NOT EXISTS idx_finding_refs_ref ON finding_refs (ref);
 CREATE INDEX IF NOT EXISTS idx_findings_state   ON findings (state);
+
+-- A node in the implementation task graph (entities:9, state_machines:9).
+--
+-- decisions:63 — one SubTask is the implementation unit of exactly one contract.
+--
+-- `state` deliberately omits `ready`. Under DEVIATIONS.md D10 readiness is a *predicate*
+-- over dependency state, recomputed on demand, not an edge event that is fired once and
+-- stored. Storing it would be a second source of truth for a fact the deps already
+-- determine, and the two would drift precisely when the graph is revised. `ready` is
+-- therefore derived (see tasks.readiness_of) and never written here.
+--
+-- `serve_epoch` counts how many times a brief has been served for this sub-task. It is
+-- what scopes a verification verdict to the serving episode that produced it: a verdict
+-- recorded under an earlier epoch cannot satisfy a later completion. See DEFECTS.md F19(b).
+CREATE TABLE IF NOT EXISTS subtasks (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    contract_ref  TEXT    NOT NULL UNIQUE,   -- the one contract this implements
+    title         TEXT    NOT NULL,
+    milestone     TEXT    NOT NULL DEFAULT '',
+    state         TEXT    NOT NULL,          -- pending | in_progress | blocked | done
+                                             -- | rework_flagged  (never 'ready')
+    serve_epoch   INTEGER NOT NULL DEFAULT 0,
+    detail        TEXT,                      -- last status note; never completion evidence
+    block_reason  TEXT,
+    superseded_by INTEGER,                   -- split_subtask lineage (M5b)
+    created_at    TEXT    NOT NULL,
+    updated_at    TEXT    NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_subtasks_state ON subtasks (state);
+
+-- Graph edges: this sub-task cannot start until `depends_on` is done.
+-- Derived at finalization from `depends_on`-typed links between contract rows
+-- (DEVIATIONS.md D11), never from untyped traceability links.
+CREATE TABLE IF NOT EXISTS subtask_deps (
+    subtask_id INTEGER NOT NULL,
+    depends_on INTEGER NOT NULL,
+    PRIMARY KEY (subtask_id, depends_on)
+);
+
+CREATE INDEX IF NOT EXISTS idx_subtask_deps_on ON subtask_deps (depends_on);
+
+-- Delivery verification (contracts:62). A passing verdict is the sole enabler of the
+-- in_progress -> done transition; report_status (contracts:60) refuses `done` without one.
+CREATE TABLE IF NOT EXISTS subtask_verifications (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    subtask_id   INTEGER NOT NULL,
+    serve_epoch  INTEGER NOT NULL,      -- the episode this verdict belongs to (F19b)
+    verdict      TEXT    NOT NULL,      -- pass | fail
+    evidence     TEXT    NOT NULL,      -- JSON: contract ref -> concrete artifact
+    unaccounted  TEXT,                  -- JSON list of contracts with no evidence, on fail
+    created_at   TEXT    NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_verifications_subtask
+    ON subtask_verifications (subtask_id, serve_epoch);
+
+-- Plan-time context allocation (DEVIATIONS.md D8, M5_PLAN.md section 2).
+--
+-- M5_PLAN 2.4: keyed on the target row's *lineage root*, not its ref, so an allocation
+-- survives supersession instead of silently detaching. Same primitive as requirements:78's
+-- gap-dismissal keying; this is its second application.
+--
+-- `promoted_from` carries M5_PLAN 2.5's asymmetric friction: broadening a scope records
+-- the level it came from and demands a reason the owner sees. Narrowing is free.
+--
+-- A target has exactly one *live* placement. Re-attaching supersedes the previous one
+-- rather than adding a second: without that, narrowing is a no-op — the old broader row
+-- stays live and the target remains in every packet forever, which is precisely the
+-- "too high" failure the friction exists to prevent, made unfixable by the free
+-- direction. Superseded placements are stamped rather than deleted, because the
+-- promotion history IS the owner's review surface.
+CREATE TABLE IF NOT EXISTS scope_attachments (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    scope_level   TEXT    NOT NULL,     -- project | milestone | packet
+    scope_key     TEXT    NOT NULL,     -- '' for project; milestone name; packet subtask id
+    target_root   TEXT    NOT NULL,     -- lineage root ref of the attached row
+    reason        TEXT    NOT NULL,
+    promoted_from TEXT,                 -- prior scope_level, when broadened
+    superseded_at TEXT,                 -- null == the live placement
+    created_at    TEXT    NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_attachments_live
+    ON scope_attachments (target_root, superseded_at);
+
+CREATE INDEX IF NOT EXISTS idx_attachments_scope
+    ON scope_attachments (scope_level, scope_key);
+
+-- requirements:73 — the drift baseline. Captured when the plan is finalized and at each
+-- brief issue; resume compares the current workspace against the most recent one.
+-- Without this nothing ever wrote a baseline and plan_status's drift flags could only
+-- ever report "no baseline" (M5_PLAN.md section 1.2).
+CREATE TABLE IF NOT EXISTS workspace_fingerprints (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    occasion     TEXT    NOT NULL,      -- finalization | brief_issue
+    plan_version INTEGER NOT NULL,
+    subtask_id   INTEGER,               -- set for brief_issue
+    fingerprint  TEXT    NOT NULL,      -- JSON
+    captured_at  TEXT    NOT NULL
+);
 """
 
 # Lexical retrieval (V2_BUILD_PLAN.md 5.4). Separate because FTS5 is a compile-time

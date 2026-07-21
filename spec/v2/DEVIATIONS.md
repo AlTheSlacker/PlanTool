@@ -8,28 +8,34 @@ Format: what the plan says · what v2 does · why.
 
 ---
 
-## D1 — Execution layer deferred
+## D1 — revision-service reduced (execution-coupled clauses only)
 
-**Plan:** `decisions:50` specifies fifteen components in four layers, the execution
-layer being `task-graph` (`components:11`), `brief-composer` (`components:12`) and
-`revision-service` (`components:13`).
+> **History:** this deviation originally deferred `task-graph` and `brief-composer`
+> entire. That deferral was **reversed on 2026-07-20** — the design discussion it was
+> waiting on happened (see D8 and `M5_PLAN.md`), and the deferral was also found to be
+> structurally unsound (it removed the only path out of `draft` — `M5_PLAN.md` §1.2, not
+> a numbered defect; this line previously miscited DEFECTS.md F15, which is a different
+> and since-withdrawn finding). Both
+> components are now built at M5. What remains a deviation is only the reduction of
+> `revision-service`, below.
 
-**v2:** `task-graph` and `brief-composer` are not built. `revision-service` is built in
-reduced form — the change-order loop (snapshot, version bump, impact walkthrough,
-per-item adjudication, atomic apply or clean rollback) is in scope; its execution-coupled
-clauses are not:
+**Plan:** `decisions:50` specifies fifteen components in four layers; `revision-service`
+(`components:13`) carries a change-order loop with execution-coupled clauses.
+
+**v2:** `revision-service` is built in reduced form — the change-order loop (snapshot,
+version bump, impact walkthrough, per-item adjudication, atomic apply or clean rollback)
+is in scope; its execution-coupled clauses are not:
 
 - freezing in-flight sub-tasks (`open_revision`)
 - regenerating affected briefs (`adjudicate_repercussion`)
 - flagging already-built work as needing rework at apply time (`adjudicate_repercussion`)
 
-**Why:** owner decision, 2026-07-20. v2 is an improvement of v1's plan-authoring loop,
-not an extension into driving execution. The execution module is to be designed in its
-own right, and `task-graph` in particular needs a design discussion that has not happened.
-
-`task-graph` and `brief-composer` defer together because they cannot be separated:
-`compose_brief(subtask_id, selection)` has no input without a graph producing sub-task
-ids, and `next_subtask` exists to feed it.
+**Why:** owner decision, 2026-07-20. These clauses couple to sub-task and brief state that
+only comes alive once a plan is being driven; the change-order loop itself is independently
+useful and stays in. (Note the earlier claim that the *whole* revision loop is useful with
+no execution layer was false — `open_revision` refuses draft plans, so with no finalize
+path nothing could open a revision at all; F15. That is why the execution module could not
+in fact be deferred, only these specific clauses.)
 
 ---
 
@@ -162,3 +168,189 @@ states the principle being violated: "a meter that cries wolf stops being read".
 decisions:31's keep-pushing policy depends entirely on warnings being read.
 
 See DEFECTS.md F10.
+
+---
+
+## D8 — Plan-time context allocation with scope-attachment framework
+
+**Plan:** the frozen plan has no concept of attaching a row, finding, or note to a scope.
+Context for a sub-task's brief is computed at brief-composition time from the link-graph
+closure (`requirements:36`), and "current working set" (`requirements:62`) / "accumulated
+learnings" (`requirements:58`) are named but undefined (DEFECTS.md F16).
+
+**v2:** context allocation is a **planning-time recorded judgment**. Attachments (base
+references, findings, journal notes) carry a scope level — **project / milestone / packet**
+— and a packet's context is the union of its own attachments and those of its enclosing
+scopes. Allocations key on target-row **lineage root** (the `requirements:78` primitive),
+so they survive supersession. An owner-facing review surface (the future GUI) can promote
+or narrow attachments, with **asymmetric friction**: promoting to a broader scope records a
+reason the owner sees, narrowing is free.
+
+Full design: `V2_BUILD_PLAN.md` §10 and `M5_PLAN.md` §2. Built at M5 alongside the
+execution module.
+
+**Why:** three converging reasons. (1) It resolves F16 — "current working set" and
+"accumulated learnings" become structural rather than heuristic or unbounded. (2) It keeps
+relevance a *recorded* judgment rather than a read-time heuristic the tool computes, which
+the design spine forbids (the tool records judgment, it never exercises it). (3) It bounds
+resume cost by outstanding work rather than plan size, the property `requirements:62` asks
+for. The framework is built now, not with the GUI, because retrofitting a scope column
+means back-filling a level for every attachment ever made — a judgment nobody could make
+retroactively. Same "bake in the invariant early" argument as D2 and the §5 citation rule.
+
+**Risk carried:** the scheme concentrates relevance into one judgment per finding (which
+level). Too-low is silent and surfaces at execution; too-high bloats every packet
+invisibly. Instrumented by `decisions:14` (execution sufficiency = the allocation miss
+rate) and mitigated by the asymmetric friction above. See `M5_PLAN.md` §2.5.
+
+A `session` scope level was in the owner's original phrasing and dropped on review: the
+other three are plan structure, whereas a session is an episode of work — and
+session-scoped attachment is what the journal already is.
+
+---
+
+## D9 — Gates hard-lock on outstanding problems (owner requirement)
+
+**Status: requirement logged 2026-07-20, built at M6.** Bound to the M6 gate under the
+outstanding-problem rule — M6 cannot pass with D9 unbuilt.
+
+**Plan:** gates in the frozen plan **warn, they do not block** — `decisions:31`'s
+keep-pushing policy and D7. The single hard block is `requirements:32`: `UnresolvedFindings`
+blocks `finalize_plan`, at finalization *alone*. Everywhere else, an outstanding problem can
+be walked past.
+
+**v2 (owner decision, 2026-07-20):** every outstanding problem is either resolved or bound
+to a named **resolve-by gate**, and gate passage is hard-locked:
+
+1. A gate cannot pass while a problem allocated to it remains unresolved.
+2. A problem with **no** allocated resolve-by gate locks **every** gate until one is
+   assigned. (Removes the escape hatch of never allocating so nothing ever blocks.)
+3. Resolved problems are metric-only — never surfaced as pending work.
+
+This generalises `requirements:32` from finalization-only to every gate, with an allocation
+model attached.
+
+**Why:** a keep-pushing *warning* is easy to walk past; "you cannot pass this gate until
+this is resolved or explicitly re-scheduled to a later gate" is what makes an outstanding
+problem impossible to lose. `decisions:14` (execution sufficiency: zero sub-tasks blocked by
+missing plan information) is only credible if problems cannot silently survive to execution.
+
+**The reconciliation M6 must build, not blur:** this must NOT resurrect the cry-wolf failure
+D7 fixed. Advisory **warnings** (open gaps in a stage, coverage meter) stay warn-don't-block
+per `decisions:31` — they inform, they do not lock. The hard-lock binds a distinct,
+higher-severity class: **outstanding findings** (`state_machines:7`) and, to be settled in
+M6, whether unresolved **conflicts** (`state_machines:4`) and open **assumptions** join them.
+The lock class must be genuinely narrow, or the tool becomes a nag that cannot be satisfied —
+the exact failure `decisions:31` guards against. Getting the severity line right *is* the M6
+design work; D9 fixes the requirement, not the entity list.
+
+**Open sub-questions for M6 (each resolve-by the M6 gate):**
+- which entity classes are lock-class vs advisory (findings yes; conflicts/assumptions TBD);
+- where the resolve-by-gate allocation is stored (rides on the finding/conflict row, keyed on
+  lineage root per `requirements:78`, like §D8 allocations);
+- how the global lock (clause 2) surfaces — it must name the unallocated problem, or it is an
+  opaque "everything is blocked" with no route out.
+
+**Contradicts:** `decisions:31`, D7 — logged here rather than folded in silently, because
+reopening the keep-pushing policy is a real design change and must read as one.
+
+---
+
+## D10 — SubTask readiness is a level-triggered predicate, not an edge-triggered event
+
+**Status: decided 2026-07-21 (owner approved), built at M5a.** Resolves DEFECTS.md F19(a)
+and sets the shape of F18's readiness contract.
+
+**Plan:** `state_machines:9` models readiness as an **event**: `deps_satisfied` fires and
+moves `pending → ready` (`sm_cells:130`), `rework_flagged → ready` (`sm_cells:160`). The
+plan never says what fires it, and no contract does (F18) — so it never says whether the
+event is raised once, when a predecessor transitions, or evaluated whenever asked.
+
+**v2 does:** readiness is a **predicate over dependency state**, recomputed on demand —
+whenever the graph is read, a status is reported, or a sub-task is requested. A sub-task is
+`ready` exactly when it is not `done`/`in_progress`/`blocked` and every dependency is
+`done`. `deps_satisfied` remains the named transition in the state machine (the recorded
+history stays faithful to `sm_cells:130`/`160`), but it is *derived* — the system evaluates
+the predicate and applies the transition; nothing external raises the event.
+
+**Why:**
+
+1. **The edge reading is broken, the level reading is not.** Under edge-triggering, a
+   `rework_flagged` node is trapped: it is entered from `done`, so all its predecessors are
+   already `done` and the `deps_satisfied` edge has fired for the last time. Its only other
+   exit is `block`, which reaches `ready` via `blocked → unblock` — arriving at the correct
+   state by declaring a block that does not exist. DEFECTS.md F19(a). Level-triggering makes
+   the `rework_flagged → ready` transition immediate and correct with no special case.
+2. **The alternative fix is worse.** The edge reading can be patched by adding a
+   rework-specific re-arm, but that is a second readiness mechanism existing only to serve
+   one state — and every future entry into `ready` from a non-`pending` state would need its
+   own. The predicate has no such surface.
+3. **`graph_status` already assumes it.** `contracts:38` returns "built, in-flight, blocked,
+   and stale sub-tasks" as a pure read, computing status at call time. A stored,
+   edge-maintained readiness flag would be a second source of truth for the same fact, and
+   the two would drift exactly when the graph is revised — the moment they most need to
+   agree.
+4. **It keeps readiness on the system's side of `crud_grid:35`.** The predicate is evaluated
+   from dependency states the system owns; nothing the code engine reports can assert
+   readiness directly. This is the same boundary F18 turns on: a gate the graded party can
+   open is not a gate.
+
+**One place this changes an outcome the plan's table names, deliberately:** `sm_cells:152`
+sends `blocked + unblock` straight to `ready`. Under the predicate, unblocking returns the
+sub-task to `pending` and it is *presented* as ready only if its dependencies actually
+allow. The table's version is safe only because it assumes the sub-task was servable when
+it blocked; a sub-task blocked from `pending` with unfinished dependencies would be handed
+back as ready and then served, which is `sm_cells:131` ("unbuildable work is never served")
+violated by its own state machine. The predicate cannot produce that state. Recorded rather
+than folded in silently, because it is a transition outcome differing from a named cell.
+
+**Cost, accepted:** readiness is recomputed rather than cached, so a graph read is O(edges)
+rather than O(1). At the scale the plan targets (one contract implementation unit per
+sub-task, `decisions:63`) this is not worth caching, and caching is what would reintroduce
+the drift in (3). If it ever matters, memoise per read — never persist.
+
+**Related:** DEFECTS.md F18 (the readiness contract this shapes), F19 (both halves).
+
+---
+
+## D11 — The provider/consumer dependency edge is a typed link
+
+**Status: decided 2026-07-21, built at M5a.** Resolves the engine half of DEFECTS.md F20;
+the methodology half is bound to M6.
+
+**Plan:** `decisions:63` derives task-graph edges "directly from **contract_deps**". No such
+thing exists in v2 — it was a v1 table with explicit provider/consumer columns, flattened
+into the generic `links` table (`entities:15`) by the stage-6 architecture. See F20.
+
+**v2 does:** the dependency is recorded as a **typed link**, `edge_type='depends_on'`,
+directed **consumer contract → provider contract**. `finalize_plan` derives sub-task edges
+from links of that type between two `contracts` rows, and from nothing else. Untyped
+(`'links'`) edges are traceability and never imply a build dependency.
+
+**Why:**
+
+1. **The information has to be typed somewhere, and the column already exists.**
+   `links.edge_type` is in the schema, `LinkSpec` takes it, `LinkGraph.closure` and
+   `find_cycles` already filter traversals by it, and `conflicts.py` already uses a second
+   type (`'contradicts'`) for exactly this reason — a different *kind* of relation that must
+   not be walked as if it were traceability. This is the second instance of that pattern,
+   not a new mechanism.
+2. **Direction is consumer → provider so the edge is owned by the row that knows it.**
+   Links are immutable and created with their source row (`entities:15`), so an edge can
+   only be written by the row that owns it. A contract knows what it consumes at the moment
+   it is written; a provider cannot know its future consumers without its links being
+   mutable, which `entities:15` forbids. Note this inverts the frozen plan's *presentation*,
+   which prints "consumed by:" on the provider — that is an export convenience, not a
+   storable direction.
+3. **It keeps derivation deterministic, which was `decisions:63`'s whole purpose.** Deriving
+   from untyped links would make every citation a build dependency: a contract citing a
+   requirement, a finding, or a sibling for context would acquire a spurious edge, and
+   `finalize_plan`'s `CycleDetected` would fire on traceability loops that mean nothing.
+
+**Cost, accepted:** rows already written by this build carry no `depends_on` edges, so a
+graph derived from the current store is all-roots — every sub-task ready at once. That is
+correct behaviour on data that declares no dependencies, not a silent failure, and
+`finalize_plan` reports the edge count so an all-roots graph is visible rather than assumed.
+Back-filling the edges for the dogfood plan is an M8 concern.
+
+**Related:** DEFECTS.md F20, `decisions:63`, `findings:11`.

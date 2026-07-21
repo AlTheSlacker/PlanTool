@@ -42,24 +42,34 @@ retrieval is lexical (SQLite FTS5) or structural (sections, links).
 
 ## 3. Scope
 
-### In — 13 components
+### In — 15 components
 
 Foundation: `storage-engine`, `row-service`, `link-graph`
 Planning: `guidance`, `gap-engine`, `gate-engine`, `warning-service`, `conflict-service`,
 `validation-service`, `finding-service`
+Execution: `task-graph`, `brief-composer` (in scope as of 2026-07-20, see below)
 Surface: `session-service`, `mcp-surface`
 Plus `revision-service` in reduced form (§4.1).
 
-### Deferred to a later "execution module"
+### The execution module — in scope as of 2026-07-20
 
-`task-graph` (`components:11`) and `brief-composer` (`components:12`), entire.
+`task-graph` (`components:11`) and `brief-composer` (`components:12`) were originally deferred
+pending a design discussion in their own right. **That discussion happened on 2026-07-20 and
+they are now in scope, built at M5.** Full design and build plan: `M5_PLAN.md` at the repo
+root; the context-allocation model it turns on is summarised at §10 below.
 
-These are one module, not two. `compose_brief(subtask_id, selection)` has no input without a
-graph producing sub-task ids, and `next_subtask` exists to feed it. The frozen plan groups
-them as an execution layer; splitting them would produce a component that cannot be called.
+Two things forced the change. First, plan-time context allocation and the task graph are too
+tightly integrated to design separately — allocation is *what a packet is for*. Second, the
+deferral was structurally unsound: `finalize_plan` (`contracts:35`) is the sole contract
+firing the `finalize` event of `state_machines:1` and it lives on `task-graph`, so with the
+module deferred no plan could ever leave `draft`. That silently took out the workspace-drift
+baseline (`requirements:73`) *and* all of `revision-service`, whose `open_revision` refuses
+draft plans — falsifying §4.1's claim that the revision loop is independently useful with no
+execution layer.
 
-This module is "how the plan drives development" and is to be designed in its own right —
-see §7, M7.
+These remain one module, not two. `compose_brief(subtask_id, selection)` has no input without
+a graph producing sub-task ids, and `next_subtask` exists to feed it. M5 splits into 5a/5b for
+review size, not because the components separate.
 
 ### Out entirely for now
 
@@ -225,9 +235,11 @@ Each is a branch and a PR. Al merges; no self-merges.
 | 2 | Interview core: `guidance`, `gap-engine`, **section coverage meter** |
 | 3 | Enforcement: `gate-engine`, `warning-service`, `conflict-service` |
 | 4 | Reality-testing: `validation-service`, `finding-service` |
-| 5 | Surface: `session-service`, `mcp-surface` on the pluggable seam (§4.2) |
-| 6 | `revision-service`, reduced form (§4.1) |
-| 7 | Dogfood: plan the execution module **using v2** |
+| 5a | Execution module I: scope-attachment framework, `finalize_plan`, `task-graph` |
+| 5b | Execution module II: `brief-composer` + plan-time context allocation (§10) |
+| 6 | Surface: `session-service`, `mcp-surface` on the pluggable seam (§4.2), + methodology rev 3 |
+| 7 | `revision-service`, reduced form (§4.1) |
+| 8 | Dogfood: plan the next body of work (GUI) **using v2** |
 
 Within each milestone, contracts are built in `contract_deps` order, one contract per unit of
 work.
@@ -238,8 +250,10 @@ cases], how are you sure you have captured all of them? I think the discussion a
 be expanded from the prototype."* Interview quality is worth more than any component beneath
 it.
 
-M7 is the payoff. The execution-module design discussion becomes v2's first real plan, which
-tests v2 the way the dogfood tested v1.
+M8 is the payoff: the next real body of work — the GUI (§10.4) — is planned **using v2**,
+which tests v2 the way the dogfood tested v1. The execution-module design that was originally
+going to serve this purpose was instead settled by discussion on 2026-07-20, because the
+deferral turned out to block M5 and M7 (see §3).
 
 ## 8. Success metric
 
@@ -252,6 +266,72 @@ Defects are recorded in `spec/v2/DEFECTS.md` with the contract or row that was i
 
 ## 9. Open
 
-- The execution module (`task-graph` + `brief-composer`) — design discussion pending, M7.
-- GUI — not started, no design.
+- GUI — no design yet, but no longer merely "out": it is the owner-facing review surface the
+  §10 allocation model depends on, and it is the intended subject of the M8 dogfood. The
+  framework it needs (scope levels on attachments) is built at M5; the GUI itself is not.
 - Plan extraction/rendering — "how we extract the plan most effectively", not started.
+
+Closed since the first draft: the execution module (`task-graph` + `brief-composer`), settled
+by design discussion on 2026-07-20 and now built at M5. See §3 and §10.
+
+## 10. Context allocation (design settled 2026-07-20)
+
+Full treatment in `M5_PLAN.md`. Summarised here because it changes what a component is *for*,
+and future sessions read this file first.
+
+### 10.1 Allocation is a planning-time act
+
+Context allocation happens once, at plan time, as a **recorded judgment** — not at retrieval
+time as a computed heuristic. When the master plan is built, the planning session decides the
+base reference set for every part of the plan; execution serves what was allocated. Findings
+arising during execution are placed once, carefully, at the right scope level, and are
+thereafter in the right places for the rest of the project.
+
+Deliberate trade: ramp up initial cost to control execution cost.
+
+A read-time relevance heuristic was considered and rejected. It would be **the tool exercising
+judgment**, violating the design spine — the tool records judgment, it never exercises it. That
+is not a stylistic preference; a relevance heuristic is the seed from which "the tool has
+opinions" grows.
+
+### 10.2 Scope levels
+
+Attachments carry a scope level: **project / milestone / packet**. A packet's context is the
+union of its own attachments and those of every enclosing scope.
+
+(A `session` level was considered and dropped: the first three are plan structure, whereas a
+session is an episode of work — and session-scoped attachment is what the journal already is.)
+
+Allocations key on target-row **lineage root, not row id**, so they survive supersession. This
+is the same primitive `requirements:78` uses for gap identity, for the same reason.
+
+This also bounds resume cost structurally rather than arbitrarily: `requirements:58` requires
+resume to present "accumulated learnings" and nothing in the frozen plan bounds that, so
+resume cost would otherwise scale with total session history. Scope levels make the bound
+project ∪ current-milestone ∪ current-packet.
+
+### 10.3 Packet boundaries: lowest-coupling, not smallest
+
+**Design rule: maximise crispness of the boundary, not minimise size.** Below a certain size,
+smaller packets cost *more* context — every packet pays the `decisions:16` overhead (its linked
+rows plus the governing big-picture rows), and cutting below a natural seam forces neighbours
+to be re-imported to keep the packet self-contained.
+
+Granularity is therefore `decisions:63` as already settled — one SubTask = one contract
+implementation unit, edges from `contract_deps`, with `split_subtask` as the escape hatch for a
+contract that is genuinely too big. Contracts are the seam *because* `contract_deps` already
+encodes the coupling.
+
+### 10.4 The risk this design concentrates
+
+The scheme rests on one judgment per finding: which level to attach at. Too low and the packet
+that needed it does not get it — silent, discovered at execution. Too high and it is in every
+packet forever, and nobody notices a cost spread evenly.
+
+Countermeasures: **asymmetric friction** (promoting to a broader scope requires a recorded
+reason the owner sees; narrowing is free — the `requirements:79` shape, where gaming the
+accounting requires lying in a log the owner reads), and **an owner-facing review surface**,
+which is the GUI's first real job.
+
+The too-low direction is already instrumented: `decisions:14` — execution sufficiency, zero
+sub-tasks blocked by missing plan information — *is* the allocation miss rate.
