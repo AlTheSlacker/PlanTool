@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from engine.errors import PlanToolError
 from engine.models import RowRef
 from engine.clock import now
+from engine.idempotency import key
 from engine.storage import FromOp, Op, Storage
 
 # --- state_machines:7, the Finding lifecycle ---
@@ -175,7 +176,7 @@ class FindingService:
             ],
         ]
         receipt = self.storage.write_atomic(
-            ops, f"file_finding:{stamp}:{','.join(str(r) for r in refs)}", lease=lease
+            ops, key("file_finding", ",".join(str(r) for r in refs)), lease=lease
         )
         return self.get(receipt["results"][0]["id"])
 
@@ -259,7 +260,7 @@ class FindingService:
         self.storage.write_atomic(
             [Op("update", "findings", {"state": target, **values},
                 where={"id": finding_id})],
-            f"finding:{finding_id}:{event}:{now()}",
+            key("finding", finding_id, event),
             lease=lease,
         )
         return self.get(finding_id)

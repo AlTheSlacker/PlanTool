@@ -37,6 +37,7 @@ from dataclasses import dataclass
 
 from engine.errors import PlanToolError
 from engine.clock import now
+from engine.idempotency import key
 from engine.storage import FromOp, Op, Storage
 
 BEHAVIOUR = "behaviour"
@@ -305,7 +306,7 @@ class ObligationService:
             "reason": reason,
             "created_at": stamp,
         }))
-        self.storage.write_atomic(ops, f"amend:{contract_ref}:{action}:{stamp}", lease=lease)
+        self.storage.write_atomic(ops, key("amend", contract_ref, action, obligation_id or 0), lease=lease)
 
     def amendments(self) -> list[dict]:
         """Every change ever made to a frozen enumeration, with its reason."""

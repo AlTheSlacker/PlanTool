@@ -21,6 +21,7 @@ from enum import StrEnum
 from engine.errors import PlanToolError
 from engine.models import RowRef
 from engine.clock import now
+from engine.idempotency import key
 from engine.storage import Op, Storage
 
 ACTIVE = "active"
@@ -113,7 +114,7 @@ class WarningService:
                     "created_at": stamp,
                     "updated_at": stamp,
                 })],
-                f"raise_warning:{warning_key}",
+                key("raise_warning", warning_key),
                 lease=lease,
             )
             return self._require_key(warning_key)
@@ -122,7 +123,7 @@ class WarningService:
             self.storage.write_atomic(
                 [Op("update", "warnings", {"message": message, "updated_at": stamp},
                     where={"id": existing.id})],
-                f"reword_warning:{existing.id}:{stamp}",
+                key("reword_warning", existing.id, message),
                 lease=lease,
             )
             return self._require_key(warning_key)
@@ -182,7 +183,7 @@ class WarningService:
             [Op("update", "warnings",
                 {"state": SUPPRESSED, "reason": reason, "updated_at": now()},
                 where={"id": warning_id})],
-            f"suppress_warning:{warning_id}",
+            key("suppress_warning", warning_id),
             lease=lease,
         )
         return self.get(warning_id)
@@ -207,7 +208,7 @@ class WarningService:
                 {"state": RESOLVED, "resolved_by": str(cause_ref),
                  "updated_at": now()},
                 where={"id": warning_id})],
-            f"resolve_warning:{warning_id}",
+            key("resolve_warning", warning_id),
             lease=lease,
         )
         return self.get(warning_id)
@@ -228,7 +229,7 @@ class WarningService:
             [Op("update", "warnings",
                 {"state": RESOLVED, "reason": note, "updated_at": now()},
                 where={"id": warning_id})],
-            f"settle_warning:{warning_id}:{now()}",
+            key("settle_warning", warning_id),
             lease=lease,
         )
         return self.get(warning_id)

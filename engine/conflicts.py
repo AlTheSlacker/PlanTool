@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from engine.errors import PlanToolError
 from engine.models import RowRef, RowSubmission
 from engine.clock import now
+from engine.idempotency import key
 from engine.storage import FromOp, Op, Storage
 
 #: The edge type by which a submitted row declares what it contradicts.
@@ -158,7 +159,7 @@ class ConflictService:
             ],
         ]
         receipt = self.storage.write_atomic(
-            ops, f"conflict:{stamp}:{','.join(str(r) for r in parsed)}", lease=lease
+            ops, key("conflict", ",".join(str(r) for r in parsed)), lease=lease
         )
         return self.get(receipt["results"][0]["id"])
 
@@ -202,7 +203,7 @@ class ConflictService:
                 "adjudication": adjudication,
                 "resolved_at": stamp,
             }, where={"id": conflict_id})],
-            f"resolve_conflict:{conflict_id}",
+            key("resolve_conflict", conflict_id),
             lease=lease,
         )
         return ConflictResolution(

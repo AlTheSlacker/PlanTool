@@ -22,6 +22,7 @@ from engine.models import PlanRow, RowRef, RowSelector
 from engine.references import EXTRACTS_TABLE, SOURCES_TABLE, ReferenceService
 from engine.rows import RowService
 from engine.clock import now
+from engine.idempotency import key
 from engine.storage import Op, Storage
 
 #: Vendored from v1 (archive/v1/engine/gaps.py): return a coherent batch per call so the
@@ -445,7 +446,7 @@ class GapEngine:
             [Op("update", "gap_overlay",
                 {"state": "open", "reason": reason, "updated_at": now()},
                 where={"gap_key": gap_key})],
-            f"reopen:{gap_key}:{now()}",
+            key("reopen", gap_key),
             lease=lease,
         )
         gap = self._find(gap_key, allow_missing=True)
@@ -468,7 +469,7 @@ class GapEngine:
                 "updated_at": now(),
             })
         )
-        self.storage.write_atomic([op], f"{state}:{gap.key}:{now()}", lease=lease)
+        self.storage.write_atomic([op], key(state, gap.key), lease=lease)
 
     def _find(self, gap_key: str, allow_missing: bool = False) -> Gap:
         rule_key = gap_key.split("|")[0]

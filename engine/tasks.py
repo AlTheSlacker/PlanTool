@@ -37,6 +37,7 @@ from engine.errors import PlanToolError
 from engine.models import RowRef
 from engine.obligations import ObligationService
 from engine.clock import age_seconds, now
+from engine.idempotency import key
 from engine.storage import FromOp, Op, Storage
 
 # --- state_machines:9, the SubTask lifecycle ---
@@ -327,7 +328,7 @@ class TaskGraphService:
         op = Op("insert", "packages", {
             "name": name, "intent": intent, "created_at": stamp, "updated_at": stamp,
         })
-        self.storage.write_atomic([op], f"package:{name}:{stamp}", lease=lease)
+        self.storage.write_atomic([op], key("package", name), lease=lease)
         return Package(id=op.result["id"], name=name, intent=intent, created_at=stamp)
 
     def assign_task(self, source_ref: RowRef | str, package_id: int, lease=None) -> Task:
@@ -355,13 +356,13 @@ class TaskGraphService:
             op = Op("update", "tasks",
                     {"package_id": package_id, "updated_at": stamp},
                     where={"id": existing[0]["id"]})
-            self.storage.write_atomic([op], f"task:{ref}:{package_id}:{stamp}", lease=lease)
+            self.storage.write_atomic([op], key("task", ref, package_id), lease=lease)
             return Task(existing[0]["id"], ref, name, package_id)
         op = Op("insert", "tasks", {
             "source_ref": ref, "name": name, "package_id": package_id,
             "created_at": stamp, "updated_at": stamp,
         })
-        self.storage.write_atomic([op], f"task:{ref}:{package_id}:{stamp}", lease=lease)
+        self.storage.write_atomic([op], key("task", ref, package_id), lease=lease)
         return Task(op.result["id"], ref, name, package_id)
 
     def _guard_packaging(self) -> None:
@@ -438,7 +439,7 @@ class TaskGraphService:
                 ))
             else:
                 unenumerated.append(str(ref))
-        self.storage.write_atomic(ops, f"finalize:nodes:{stamp}", lease=lease)
+        self.storage.write_atomic(ops, key("finalize", "nodes"), lease=lease)
 
         by_ref = {str(s.contract_ref): s.id for s in self._all()}
         dep_ops = [
@@ -449,7 +450,7 @@ class TaskGraphService:
             for consumer, provider in edges
         ]
         dep_ops.append(Op("update", "plan", {"state": "finalized"}, where={"guard": 1}))
-        self.storage.write_atomic(dep_ops, f"finalize:edges:{stamp}", lease=lease)
+        self.storage.write_atomic(dep_ops, key("finalize", "edges"), lease=lease)
 
         self._capture_fingerprint("finalization", lease=lease)
 
@@ -731,7 +732,7 @@ class TaskGraphService:
                 "serve_epoch": subtask.serve_epoch + 1,
                 "updated_at": stamp},
                where={"id": subtask_id}),
-        ], f"serve:{subtask_id}:{subtask.serve_epoch + 1}", lease=lease)
+        ], key("serve", subtask_id, subtask.serve_epoch + 1), lease=lease)
         self._capture_fingerprint("brief_issue", subtask_id=subtask_id, lease=lease)
         return self.get(subtask_id)
 
@@ -771,7 +772,7 @@ class TaskGraphService:
                 "unaccounted": json.dumps(list(unaccounted)) if unaccounted else None,
                 "created_at": now(),
             }),
-        ], f"verify:{subtask_id}:{subtask.serve_epoch}:{now()}", lease=lease)
+        ], key("verify", subtask_id, subtask.serve_epoch), lease=lease)
 
         if unaccounted:
             raise EvidenceIncomplete(
@@ -868,7 +869,7 @@ class TaskGraphService:
         values["block_reason"] = detail if status == "block" else None
         self.storage.write_atomic(
             [Op("update", "subtasks", values, where={"id": subtask_id})],
-            f"report:{subtask_id}:{status}:{values['updated_at']}",
+            key("report", subtask_id, status, subtask.state),
             lease=lease,
         )
         return self.get(subtask_id)
@@ -920,7 +921,7 @@ class TaskGraphService:
                 "fingerprint": json.dumps(fingerprint, sort_keys=True),
                 "created_at": stamp,
             }),
-        ], f"fingerprint:{occasion}:{subtask_id}:{stamp}", lease=lease)
+        ], key("fingerprint", occasion, subtask_id, handle.get("version") or 1), lease=lease)
 
     def _resurfaced_warnings(self) -> list[str]:
         """requirements:23 — finalization is a critical point, so suppressed warnings

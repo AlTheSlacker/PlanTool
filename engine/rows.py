@@ -37,6 +37,7 @@ from engine.models import (
     RowVerdict,
 )
 from engine.clock import now
+from engine.idempotency import key
 from engine.storage import FromOp, Op, Storage
 
 #: A contradiction detector: given a candidate submission and the store, return a
@@ -591,7 +592,7 @@ class RowService:
             where={"table_name": old.table, "ordinal": old.ordinal},
         )
         self.storage.write_atomic(
-            [stamp_old], f"{idempotency_key}:stamp", lease=lease
+            [stamp_old], key(idempotency_key, "stamp"), lease=lease
         )
         return {"old": old, "new": new_ref, "superseded_at": stamp}
 

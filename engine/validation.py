@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from engine.errors import PlanToolError
 from engine.models import Provenance, RowRef
 from engine.clock import now
+from engine.idempotency import key
 from engine.storage import FromOp, Op, Storage
 
 # --- state_machines:5, the Spike lifecycle ---
@@ -283,7 +284,7 @@ class ValidationService:
                 "state": REGISTERED,
                 "created_at": stamp,
             })],
-            f"register_spike:{ref}:{stamp}",
+            key("register_spike", ref),
             lease=lease,
         )
         spike = self.get_spike(receipt["results"][0]["id"])
@@ -461,7 +462,7 @@ class ValidationService:
             ],
         ]
         receipt = self.storage.write_atomic(
-            ops, f"file_claim:{stamp}:{','.join(str(r) for r in parsed)}", lease=lease
+            ops, key("file_claim", ",".join(str(r) for r in parsed)), lease=lease
         )
         return self.get_claim(receipt["results"][0]["id"])
 
@@ -479,7 +480,7 @@ class ValidationService:
         self.storage.write_atomic(
             [Op("update", "technical_claims",
                 {"fenced": 1, "evidence": rationale}, where={"id": claim.id})],
-            f"fence_claim:{claim_id}",
+            key("fence_claim", claim_id),
             lease=lease,
         )
         return self.get_claim(claim_id)
@@ -539,7 +540,7 @@ class ValidationService:
                 "evidence": evidence,
                 "resolved_at": stamp,
             }, where={"id": claim_id})],
-            f"record_claim_outcome:{claim_id}:{outcome}",
+            key("record_claim_outcome", claim_id, outcome),
             lease=lease,
         )
         raised: tuple[int, ...] = ()
@@ -580,7 +581,7 @@ class ValidationService:
                 "spike_id": spike_id,
                 "updated_at": now(),
             }, where={"claim_id": claim_id, "track": track})],
-            f"satisfy_track:{claim_id}:{track}",
+            key("satisfy_track", claim_id, track),
             lease=lease,
         )
         return self.get_claim(claim_id)
@@ -642,7 +643,7 @@ class ValidationService:
         self.storage.write_atomic(
             [Op("update", "spikes", {"state": target, **values},
                 where={"id": spike_id})],
-            f"spike:{spike_id}:{event}:{now()}",
+            key("spike", spike_id, event),
             lease=lease,
         )
         return self.get_spike(spike_id)
