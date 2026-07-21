@@ -7,21 +7,22 @@ Contracts: contracts:68 compose_brief, contracts:41 audit_brief, contracts:40 sp
 
 Three things here are not in the frozen plan, all logged:
 
-- **D12** — a split redistributes the original's *obligations*. `contracts:40`'s
-  `PartsDontCover` compares "the parts' contracts" against the original's, and under
-  `decisions:63` those are the same single contract for every sub-task a split produces, so
-  the check is vacuous (DEFECTS.md F23). Obligations are the denominator it was missing.
+- **D12** — a split redistributes the original's *obligations*. The frozen plan's check
+  compares the new sub-tasks' contracts against the original's, and under `decisions:63`
+  those are the same single contract for each of them, so it is vacuous (DEFECTS.md F23).
+  Obligations are the denominator it was missing.
 - **DEFECTS.md F25** — "superseding the original in the graph" is given a meaning: the
   original leaves the graph, and its dependants are rewired to the new sub-tasks. Without
   that a split silently deadlocks every consumer behind a node that can never complete.
 
-A note on `PartsDontCover`. **`part` is a retired word** (`GLOSSARY.md`): a "part" of a split
-is a **sub-task**, distinguished by which obligations it owns, not by being a different kind
-of thing. The class name survives only because `errors.py`'s convention is that a contract's
-error name *is* the class name, and `contracts:40` declares this one in a file that is
-read-only — so the name is a quotation, exactly like `components:N`. Nothing else in this
-module uses the word: the parameter is `into`, the ids are `new_ids`, and the sibling error
-this module invented is `ObligationsNotOwned`.
+**A renamed error, owner's decision 2026-07-21 (DEFECTS.md F27).** `contracts:40` declares
+this error as `PartsDontCover`, and `errors.py`'s convention is that a contract's error name
+is the class name. `GLOSSARY.md` wins: `part` is retired — what a split produces is a
+**sub-task**, distinguished by which obligations it owns, not a different kind of thing — so
+the class is `ObligationsNotCovered`, paired with its mirror `ObligationsNotOwned`. The
+convention is internal and has no consumer outside this repo, so keeping the plan's spelling
+would have bought nothing and cost a live retired word in the codebase. `contracts:40`'s own
+name is recorded on the class so a reader grepping the frozen plan still lands here.
 - **DEFECTS.md F26** — the candidate closure is frozen into the brief. `contracts:41` audits
   against a closure recomputed at audit time, but `decisions:3` makes the plan a living
   source of truth, so requirements:44's 100% accounting meter would drift on its own and
@@ -75,16 +76,16 @@ class OmissionNeedsReason(PlanToolError):
     reason". An unreasoned omission is the silent deprioritization the requirement names."""
 
 
-class PartsDontCover(PlanToolError):
+class ObligationsNotCovered(PlanToolError):
     """contracts:40 — the new sub-tasks do not jointly cover the original's obligations;
     names what is uncovered; nothing written.
 
-    The class name quotes `contracts:40`'s declared error name from the read-only frozen
-    plan. `part` is otherwise retired — see the module docstring."""
+    **Spelled `PartsDontCover` in the frozen plan** (`contracts:40`), renamed here because
+    `part` is retired — see the module docstring and DEFECTS.md F27."""
 
 
 class ObligationsNotOwned(PlanToolError):
-    """Not in the frozen plan. `PartsDontCover`'s mirror: a split that assigns obligations
+    """Not in the frozen plan. `ObligationsNotCovered`'s mirror: a split that assigns obligations
     the original never owed enlarges the denominator it is measured by, which is F23's
     disease pointing the other way."""
 
@@ -401,7 +402,7 @@ class BriefComposer:
         assignment = {i: ids for i, (_, ids) in enumerate(into)}
         uncovered = self.obligations.uncovered(subtask_id, assignment)
         if uncovered:
-            raise PartsDontCover(
+            raise ObligationsNotCovered(
                 "the new sub-tasks do not jointly cover the original's obligations; "
                 "uncovered: "
                 + ", ".join(uncovered)

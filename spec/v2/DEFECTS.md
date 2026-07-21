@@ -1116,6 +1116,24 @@ complete the sweep that was believed finished.
 - records every exception in `GLOSSARY.md` **with a reason**, so an exception is a visible act
   — the same friction shape as `requirements:79`'s waiver log and D8's promotion reason.
 
+**Exactly one exception survives** (`writer_lease.session_id`, exempted by the rule's own
+text). Two more were proposed on the day and the owner refused both, which is the part worth
+remembering:
+
+- **`PartsDontCover`** was kept as a "quotation" of `contracts:40`'s declared error name,
+  on the strength of `errors.py`'s convention that a contract's error name is the class name.
+  Presented to the owner as an unresolved tension between two rules; it was not one. The
+  convention is internal, has no consumer outside this repo, and the plan's spelling stays
+  findable in a docstring — so the rename to `ObligationsNotCovered` cost nothing and the
+  "tension" was a live retired word being defended by a rule that was never load-bearing.
+  **The quotation rule covers prose, not identifiers.**
+- **A local variable in `engine/gaps.py`** was listed as an exception "renamed on next touch
+  of that file" — a carve-out wearing a schedule. Renamed on the spot.
+
+The generalisable error in both: when a rule is broken and a fix is proposed, the proposal
+inherits the same lack of enforcement. An exceptions list is where a retirement quietly
+becomes a preference, and it needs the same scrutiny as the original rule.
+
 **The generalised lesson, and it applies to the product and not only to this build:** a
 vocabulary is enforced at the moment of *writing*, or it is not enforced. The three things
 that would have prevented this, in order of strength, are (1) a check that runs on every

@@ -4,6 +4,18 @@ Every error here is named by a contract in the frozen plan (spec/v2/plan.md). Th
 contract's error name is the class name; its stated behaviour is the docstring. Errors
 carry structured detail because the plan repeatedly requires that an error *names* the
 offending thing rather than merely failing.
+
+**One amendment to that convention, owner's decision 2026-07-21 (DEFECTS.md F27).** Where a
+contract's error name uses retired vocabulary, `GLOSSARY.md` wins and the class is renamed.
+The frozen plan's spelling is recorded in the class docstring so a reader grepping the plan
+still lands here. Known instance: `contracts:40`'s `PartsDontCover` is
+`engine.briefs.ObligationsNotCovered`.
+
+The reasoning is worth keeping, because the first instinct was to treat this as a standoff
+between two rules and preserve the plan's spelling as a quotation. It is not a standoff. This
+convention is internal — no protocol, no consumer outside the repo, and the plan's own name
+stays findable in one docstring. A rule kept alive at the cost of a live retired word in the
+codebase is the carve-out the glossary already rejected once.
 """
 
 

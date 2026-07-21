@@ -153,13 +153,14 @@ something that happened.
 | **unit**, **unit of work** | journal entry, or sub-task | `requirements:56`/`60`'s "unit of work" is a *record of something that happened* — say **journal entry**. As a work chunk below sub-task, rejected outright (see above). |
 | **work packet**, **chunk** | sub-task or package, per meaning | Informal synonyms that resolve to a defined level; pick the level. |
 
-**One unresolved tension, owner's call.** `contracts:40` declares an error literally named
-`PartsDontCover`, and `engine/errors.py`'s standing convention is that *a contract's error name
-is the class name*. So `part` survives as one identifier in `engine/briefs.py`. Either the
-quotation rule wins (as it does for `components:N`) or the retirement does and the class is
-renamed, breaking the error-name convention for one contract. Built as a quotation pending a
-decision; everything else in that module says sub-task — the parameter is `into`, the ids are
-`new_ids`, and the sibling error the build invented is `ObligationsNotOwned`.
+**Settled 2026-07-21, owner's decision: the retirement beats the quotation, even for a
+contract's own error name.** `contracts:40` declares an error literally named
+`PartsDontCover`, and `engine/errors.py`'s convention is that a contract's error name *is* the
+class name. The class is `ObligationsNotCovered`. The convention is internal — no protocol, no
+consumer outside the repo — so preserving the plan's spelling would have bought nothing and
+cost a live retired word in the codebase, which is the carve-out this section already rejected
+once. The frozen plan's name is recorded on the class docstring so a reader grepping the plan
+still lands there. **The quotation rule covers prose, not identifiers.**
 
 **No carve-outs.** An earlier draft kept "milestone" for this build's own M0–M8 and "stage" for
 the methodology. Both exceptions were withdrawn by the owner on 2026-07-21, on the grounds that

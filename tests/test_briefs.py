@@ -16,7 +16,7 @@ from engine.briefs import (
     NothingToSplit,
     ObligationsNotOwned,
     OmissionNeedsReason,
-    PartsDontCover,
+    ObligationsNotCovered,
 )
 from engine.models import LinkSpec, RowSubmission
 from engine.obligations import NotEnumerated
@@ -254,21 +254,22 @@ def test_split_redistributes_the_obligations(briefs, tasks, rows, obligations):
 
 
 def test_a_split_that_drops_an_obligation_is_refused(briefs, tasks, rows):
-    """contracts:40's PartsDontCover, with the denominator F23 found missing. Before D12
-    every sub-task a split produced named the same single contract, so joint coverage was
-    vacuous and requirements:37's "silent trimming is not a remedy" had no enforcement."""
+    """contracts:40's coverage check — `PartsDontCover` in the frozen plan — with the
+    denominator F23 found missing. Before D12 every sub-task a split produced named the same
+    single contract, so joint coverage was vacuous and requirements:37's "silent trimming is
+    not a remedy" had no enforcement at all."""
     _plan(rows)
     tasks.finalize_plan()
 
-    with pytest.raises(PartsDontCover) as exc:
+    with pytest.raises(ObligationsNotCovered) as exc:
         briefs.split_subtask(1, [("sub-task a", [1]), ("sub-task b", [])])
     assert "contracts:1#NotFound" in str(exc.value)
     assert len(tasks._all()) == 1        # nothing written
 
 
 def test_a_split_cannot_claim_obligations_the_original_never_owed(briefs, tasks, rows):
-    """PartsDontCover's mirror: coverage alone would let a split satisfy its accounting by
-    enlarging the denominator, which is F23's disease pointing the other way."""
+    """`ObligationsNotCovered`'s mirror: coverage alone would let a split satisfy its
+    accounting by enlarging the denominator, which is F23's disease the other way round."""
     _plan(rows)
     tasks.finalize_plan()
 

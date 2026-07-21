@@ -122,10 +122,10 @@ class GapEngine:
         return self.rows.lineage_root(ref)
 
     def _key(self, rule_id: str, root: RowRef | None, extra: str = "") -> str:
-        parts = [rule_id, str(root) if root else "-"]
+        segments = [rule_id, str(root) if root else "-"]
         if extra:
-            parts.append(extra)
-        return "|".join(parts)
+            segments.append(extra)
+        return "|".join(segments)
 
     # --- derivation ---
 
