@@ -105,7 +105,7 @@ DEPENDS_ON = "depends_on"
 
 
 class GatesIncomplete(PlanToolError):
-    """contracts:35 — a required stage gate has not passed; names it."""
+    """contracts:35 — a required package gate has not passed; names it."""
 
 
 class CycleDetected(PlanToolError):
@@ -156,9 +156,9 @@ class SubTask:
     id: int
     contract_ref: RowRef
     title: str
-    #: The owning task (`components:N`), from the contract's `belongs_to` link. Empty when
-    #: the contract declares no owner — see DEFECTS.md F24.
-    task_ref: str
+    #: The owning task's id, resolved at finalization from the contract's `belongs_to`
+    #: link. None when the contract declares no owner — see DEFECTS.md F24.
+    task_id: int | None
     state: str
     serve_epoch: int
     deps: tuple[int, ...] = ()
@@ -274,7 +274,7 @@ class TaskGraphService:
             ops.append(Op("insert", "subtasks", {
                 "contract_ref": str(ref),
                 "title": title,
-                "task_ref": self._owning_task(ref),
+                "task_id": self._owning_task_id(ref),
                 "state": PENDING,
                 "serve_epoch": 0,
                 "created_at": stamp,
@@ -307,13 +307,13 @@ class TaskGraphService:
     def _guard_gates(self, required_stages: list[int] | None) -> None:
         if self.gates is None or required_stages is None:
             return
-        for stage in required_stages:
-            result = self.gates.run_gate(stage)
+        for package in required_stages:
+            result = self.gates.run_gate(package)
             if not result.clean:
                 raise GatesIncomplete(
-                    f"stage {stage} gate has not passed; "
+                    f"package {package} gate has not passed; "
                     f"{len(result.holes)} outstanding",
-                    stage=stage,
+                    package=package,
                 )
 
     def _guard_findings(self) -> None:
@@ -343,27 +343,26 @@ class TaskGraphService:
             specs.append((ref, content.get("title") or content.get("name") or str(ref)))
         return specs
 
-    def _owning_task(self, contract: RowRef) -> str:
-        """The task (`components:N`) this contract belongs to, via its `belongs_to` link.
+    def _owning_task_id(self, contract: RowRef) -> int | None:
+        """The id of the task this contract belongs to, via its `belongs_to` link.
 
         DEFECTS.md F24: v1 carried this as `contracts.component_id`, a real foreign key.
-        The stage-6 flattening into generic `plan_rows`/`links` kept the rows and dropped
+        The package-6 flattening into generic `plan_rows`/`links` kept the rows and dropped
         the relation, leaving membership expressed only as markdown nesting in the exported
         plan. D13 restores it as a typed link, mirroring D11's treatment of `depends_on` —
         member -> owner, so the edge is owned by the row that knows it.
 
-        Returns '' when the contract declares no owner. That is reported, never guessed:
-        choosing an owner would be the tool exercising judgment (`decisions:12`).
+        Returns None when the contract declares no owner, or when the owning row has not
+        been made a task (which requires a package — see `tasks.package_id NOT NULL`). That
+        is reported, never guessed: choosing an owner or a package would be the tool
+        exercising judgment (`decisions:12`).
         """
         found = self.storage.query(
-            "SELECT target_ref FROM links WHERE source_ref = ? AND edge_type = 'belongs_to'"
-            " ORDER BY id LIMIT 1",
+            "SELECT t.id FROM links l JOIN tasks t ON t.source_ref = l.target_ref "
+            "WHERE l.source_ref = ? AND l.edge_type = 'belongs_to' ORDER BY l.id LIMIT 1",
             (str(contract),),
         )
-        if not found:
-            return ""
-        target = found[0]["target_ref"]
-        return target if target.startswith("components:") else ""
+        return found[0]["id"] if found else None
 
     def _derive_edges(self, specs) -> list[tuple[str, str]]:
         """D11 — consumer -> provider, from `depends_on` links between contract rows only.
@@ -771,7 +770,7 @@ class TaskGraphService:
             id=r["id"],
             contract_ref=RowRef.parse(r["contract_ref"]),
             title=r["title"],
-            task_ref=r["task_ref"],
+            task_id=r["task_id"],
             state=r["state"],
             serve_epoch=r["serve_epoch"],
             deps=deps,

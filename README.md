@@ -37,5 +37,5 @@ Sessions A–D of 5 (spec §9) are in:
   submit, `plan_status` digest + `get_rows` targeted reads, `dismiss_gap`, and the
   interview-conduct rewrites (divergence rounds, recorded challenges, file-question-first).
 
-Session E (red-team script, `get_plan_pack`, stages 7–8 gates, `export_plan`,
-`freeze_plan`) closes stage 1.
+Session E (red-team script, `get_plan_pack`, packages 7–8 gates, `export_plan`,
+`freeze_plan`) closes package 1.

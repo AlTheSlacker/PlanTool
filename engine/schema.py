@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS plan_rows (
     provenance      TEXT    NOT NULL,
     assumption_kind TEXT,
     state           TEXT    NOT NULL,
-    stage           INTEGER,
+    package           INTEGER,
     supersedes      TEXT,                      -- ref
     superseded_by   TEXT,                      -- ref; null == live (requirements:61)
     superseded_at   TEXT,
@@ -43,7 +43,12 @@ CREATE TABLE IF NOT EXISTS plan_rows (
 
 CREATE INDEX IF NOT EXISTS idx_rows_table  ON plan_rows (table_name);
 CREATE INDEX IF NOT EXISTS idx_rows_live   ON plan_rows (superseded_by, state);
-CREATE INDEX IF NOT EXISTS idx_rows_stage  ON plan_rows (stage);
+-- `package` here is the *planning* package that produced the row — the ordinal of the
+-- methodology's standard package set (1..8), not a row in the `packages` table. Planning
+-- packages and build packages are the same concept in two layers, kept in separate tables:
+-- the standard set ships with the methodology and is identical for every plan, whereas
+-- build packages are declared per plan. See GLOSSARY.md.
+CREATE INDEX IF NOT EXISTS idx_rows_package ON plan_rows (package);
 CREATE INDEX IF NOT EXISTS idx_rows_prov   ON plan_rows (provenance);
 
 -- Typed edges (entities:15): immutable, owned by the source row, created with it.
@@ -280,23 +285,37 @@ CREATE TABLE IF NOT EXISTS packages (
 
 CREATE INDEX IF NOT EXISTS idx_packages_live ON packages (superseded_at);
 
--- Task -> Package membership. Mandatory and exclusive: every task belongs to exactly one
--- package, and finalize_plan refuses a plan with an unpackaged task.
+-- Tasks — the execution layer's middle level. Derived at finalization from the plan rows
+-- that describe the architecture, exactly as `subtasks` are derived from contract rows.
+--
+-- This is the second half of a deliberate two-layer store. The *planning* layer is generic
+-- (`plan_rows`, JSON content) so supersession lineage, typed links and provenance work
+-- identically for twenty-odd row types — DEVIATIONS.md D3. The *execution* layer is typed:
+-- packages, tasks and subtasks are real tables with real foreign keys. F20 and F24 are both
+-- relations that vanished when v1's typed tables were flattened, so the execution structures
+-- that carry the build's own relations do not get flattened.
+--
+-- Membership is mandatory and exclusive: `package_id NOT NULL` makes "every task belongs to
+-- exactly one package" a constraint the database enforces, rather than an invariant
+-- finalize_plan has to remember to check.
 --
 -- There is deliberately no default/catch-all package. A catch-all satisfies the invariant
--- while quietly restoring the three-level model, and a grouping nobody chose is a grouping
+-- while quietly restoring a three-level model, and a grouping nobody chose is a grouping
 -- nobody reviews. A one-package plan is fine — declared, not defaulted.
 --
 -- Which package a task belongs to is a *judgment*, so the tool does not choose it
--- (decisions:12). The tool enforces the invariant; the methodology's architecture-stage
--- script leads the driving session to propose a cut; the owner decides. See D13.
-CREATE TABLE IF NOT EXISTS task_packages (
-    task_ref   TEXT    NOT NULL PRIMARY KEY,  -- `components:N` — the task
-    package_id INTEGER NOT NULL,
-    created_at TEXT    NOT NULL
+-- (decisions:12). The tool enforces the invariant; the methodology's architecture-package
+-- script leads the planner to propose a cut; the owner decides. See D13.
+CREATE TABLE IF NOT EXISTS tasks (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_ref TEXT    NOT NULL UNIQUE,  -- the plan row this task realises
+    name       TEXT    NOT NULL,
+    package_id INTEGER NOT NULL REFERENCES packages (id),
+    created_at TEXT    NOT NULL,
+    updated_at TEXT    NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_task_packages_pkg ON task_packages (package_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_package ON tasks (package_id);
 
 -- A node in the implementation task graph (entities:9, state_machines:9).
 --
@@ -315,8 +334,10 @@ CREATE TABLE IF NOT EXISTS subtasks (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     contract_ref  TEXT    NOT NULL UNIQUE,   -- the one contract this implements
     title         TEXT    NOT NULL,
-    task_ref      TEXT    NOT NULL DEFAULT '', -- owning task (`components:N`), via
-                                               -- belongs_to link (F24 / D13)
+    task_id       INTEGER REFERENCES tasks (id),  -- owning task, resolved at finalization
+                                               -- from the contract's belongs_to link.
+                                               -- Null when the contract declares no owner
+                                               -- (DEFECTS.md F24) — reported, never guessed.
     state         TEXT    NOT NULL,          -- pending | in_progress | blocked | done
                                              -- | rework_flagged  (never 'ready')
     serve_epoch   INTEGER NOT NULL DEFAULT 0,

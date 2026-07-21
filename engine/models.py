@@ -101,7 +101,7 @@ class RowSubmission:
     provenance: Provenance = Provenance.DECIDED
     assumption_kind: str | None = None
     links: list[LinkSpec] = field(default_factory=list)
-    stage: int | None = None
+    package: int | None = None
 
     def initial_state(self) -> RowState:
         return (
@@ -121,7 +121,7 @@ class PlanRow:
     state: RowState
     created_at: str
     assumption_kind: str | None = None
-    stage: int | None = None
+    package: int | None = None
     supersedes: RowRef | None = None
     superseded_by: RowRef | None = None
     superseded_at: str | None = None
@@ -161,7 +161,7 @@ class BatchReceipt:
 
 @dataclass(slots=True)
 class RowSelector:
-    """contracts:10 — by ids | table | stage | provenance | liveness | link-neighborhood.
+    """contracts:10 — by ids | table | package | provenance | liveness | link-neighborhood.
 
     Paginated, because requirements:62 forbids a full-plan dump as the default read
     path. The plan names the selector's dimensions but not its field shapes; this
@@ -170,7 +170,7 @@ class RowSelector:
 
     ids: list[RowRef] | None = None
     table: str | None = None
-    stage: int | None = None
+    package: int | None = None
     provenance: Provenance | None = None
     live_only: bool = False
     neighbourhood_of: RowRef | None = None

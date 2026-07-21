@@ -1,7 +1,7 @@
 """Versioned methodology content assets.
 
-requirements:71 — the stage list, per-stage interview scripts, the engineer's mandate,
-per-stage mechanical gate criteria and the gap-derivation rules ship as versioned
+requirements:71 — the package list, per-package interview scripts, the engineer's mandate,
+per-package mechanical gate criteria and the gap-derivation rules ship as versioned
 content assets carrying a content-revision stamp, with an update path from one revision
 to the next.
 
@@ -22,7 +22,7 @@ from typing import Any
 import yaml
 
 ASSETS = Path(__file__).parent
-DEFAULT_REVISION = 2
+DEFAULT_REVISION = 3
 
 
 class MethodologyUnavailable(Exception):
@@ -34,7 +34,7 @@ class MethodologyUnavailable(Exception):
 
 
 @dataclass(frozen=True, slots=True)
-class Stage:
+class Package:
     number: int
     name: str
     mode: str  # elicit | synthesize | verify
@@ -43,7 +43,7 @@ class Stage:
 
     @property
     def is_elicit(self) -> bool:
-        """Elicit stages carry mandatory divergence rounds (requirements:16)."""
+        """Elicit packages carry mandatory divergence rounds (requirements:16)."""
         return self.mode == "elicit"
 
 
@@ -51,7 +51,7 @@ class Stage:
 class Rule:
     id: str
     priority: int
-    stage: int | None
+    package: int | None
     type: str
     ask: str
     spec: dict[str, Any]
@@ -66,7 +66,7 @@ class Criterion:
     """
 
     id: str
-    stage: int
+    package: int
     type: str
     problem: str
     fix: str
@@ -81,25 +81,25 @@ class Methodology:
     vendored_from: str
     root: Path
     mandate_file: str
-    stages: tuple[Stage, ...]
+    packages: tuple[Package, ...]
     rules: tuple[Rule, ...]
     criteria: tuple[Criterion, ...]
     auxiliary: dict[str, str]
 
-    def criteria_for(self, stage: int) -> tuple[Criterion, ...]:
-        """This stage's criteria in file order — requirements:46's determinism starts
+    def criteria_for(self, package: int) -> tuple[Criterion, ...]:
+        """This package's criteria in file order — requirements:46's determinism starts
         here."""
-        return tuple(c for c in self.criteria if c.stage == stage)
+        return tuple(c for c in self.criteria if c.package == package)
 
-    def stage(self, number: int) -> Stage:
-        for stage in self.stages:
-            if stage.number == number:
-                return stage
+    def package(self, number: int) -> Package:
+        for package in self.packages:
+            if package.number == number:
+                return package
         raise KeyError(number)
 
     @property
     def stage_range(self) -> tuple[int, int]:
-        numbers = [s.number for s in self.stages]
+        numbers = [s.number for s in self.packages]
         return min(numbers), max(numbers)
 
     def read(self, filename: str) -> str:
@@ -134,21 +134,21 @@ def load(revision: int = DEFAULT_REVISION) -> Methodology:
             f"methodology revision {revision} is malformed"
         ) from exc
 
-    stages = tuple(
-        Stage(
+    packages = tuple(
+        Package(
             number=entry["number"],
             name=entry["name"],
             mode=entry["mode"],
             script_file=entry["script"],
             tables=tuple(entry.get("tables") or ()),
         )
-        for entry in manifest["stages"]
+        for entry in manifest["packages"]
     )
     rules = tuple(
         Rule(
             id=entry["id"],
             priority=entry["priority"],
-            stage=entry.get("stage"),
+            package=entry.get("package"),
             type=entry["type"],
             ask=" ".join(entry["ask"].split()),
             spec=entry,
@@ -158,14 +158,14 @@ def load(revision: int = DEFAULT_REVISION) -> Methodology:
     criteria = tuple(
         Criterion(
             id=entry["id"],
-            stage=block["stage"],
+            package=block["package"],
             type=entry["type"],
             problem=" ".join(entry["problem"].split()),
             fix=" ".join(entry["fix"].split()),
             cross_check=bool(entry.get("cross_check")),
             spec=entry,
         )
-        for block in criteria_doc["stages"]
+        for block in criteria_doc["packages"]
         for entry in block["criteria"]
     )
     return Methodology(
@@ -174,7 +174,7 @@ def load(revision: int = DEFAULT_REVISION) -> Methodology:
         vendored_from=manifest["vendored_from"],
         root=root,
         mandate_file=manifest["mandate"],
-        stages=stages,
+        packages=packages,
         rules=rules,
         criteria=criteria,
         auxiliary=manifest.get("auxiliary") or {},

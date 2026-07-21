@@ -59,7 +59,7 @@ name where the result is stored.*
 `contracts:14` (`TraversalSpec`, `Closure`), `contracts:58` (`GraphScope`).
 
 **Insufficient:** the contracts name these types and, for `RowSelector`, list its
-dimensions in prose — "by ids | table | stage | provenance | liveness |
+dimensions in prose — "by ids | table | package | provenance | liveness |
 link-neighborhood; paginated" — but no row anywhere defines their fields, so two
 implementers would produce two incompatible interfaces.
 
@@ -69,7 +69,7 @@ implementer's choice.
 **Resolved:** invented in `engine/models.py` and `engine/storage.py`, following the
 prose closely where it exists.
 
-**Class:** the domain model (Stage 4) covers *entities* thoroughly but not the
+**Class:** the domain model (Package 4) covers *entities* thoroughly but not the
 *parameter and return types* that appear in contract signatures. Those types are the
 actual interface. Worth a gate rule in v2: *every type named in a contract signature
 must be defined somewhere.*
@@ -149,21 +149,21 @@ a hole until re-checked.*
 
 ---
 
-## F7 — Nothing defines the current stage
+## F7 — Nothing defines the current package
 
 **Rows:** `contracts:19` (`next_gaps`), `requirements:12`, `entities:1`.
 
-**Insufficient:** `next_gaps` returns gaps for "the current stage" and requirements:12
-recommends the gate "while the current stage has no open gaps", but nothing in the plan
-says how the current stage is determined. `entities:1` carries stage on the Plan and
-`crud_grid:3` says "System: stage advances" without stating the advance condition —
+**Insufficient:** `next_gaps` returns gaps for "the current package" and requirements:12
+recommends the gate "while the current package has no open gaps", but nothing in the plan
+says how the current package is determined. `entities:1` carries package on the Plan and
+`crud_grid:3` says "System: package advances" without stating the advance condition —
 whether it is gate-pass, owner instruction, or derived from content.
 
-**Needed:** a stated rule for what the current stage is and when it advances.
+**Needed:** a stated rule for what the current package is and when it advances.
 
-**Resolved:** invented — the lowest stage with any open gap, else the highest stage. This
-is a guess. It happens to make submits-for-any-stage work naturally (v1's stated
-behaviour: "submits for any stage are always accepted; next_gap prefers stage order but
+**Resolved:** invented — the lowest package with any open gap, else the highest package. This
+is a guess. It happens to make submits-for-any-package work naturally (v1's stated
+behaviour: "submits for any package are always accepted; next_gap prefers package order but
 follows the conversation"), but the plan does not say so.
 
 **Class:** same family as F2 and F4 — behaviour named in prose without the mechanism that
@@ -177,21 +177,21 @@ produces it. Third instance, which strengthens the case for the gate rule propos
 
 **Insufficient:** `run_gate` returns "row-level holes (each naming table, row, problem,
 and fix)" and `requirements:20` says gates evaluate "only mechanical criteria" — but no
-row anywhere in the frozen plan states what any stage's criteria *are*. The plan
+row anywhere in the frozen plan states what any package's criteria *are*. The plan
 specifies the shape of the answer and never the question. `requirements:71` does require
 the criteria to ship as a versioned content asset, which at least says where they live.
 
-**Needed:** the per-stage criteria themselves, as content.
+**Needed:** the per-package criteria themselves, as content.
 
 **Resolved:** vendored, not invented — `engine/methodology/rev2/gate_criteria.yaml`
 transcribes v1's `archive/v1/engine/gates.py` into declarative rules, per `decisions:61`
-and `findings:4`. v1 wrote one hand-coded SQL function per stage; the v2 asset expresses
+and `findings:4`. v1 wrote one hand-coded SQL function per package; the v2 asset expresses
 the same criteria as nine declarative types the gate-engine interprets.
 
 **Class:** distinct from F2/F4/F7 — this is not a missing mechanism but missing
 *content*, and the plan knew it (requirements:71 exists precisely because the
 methodology is the product's IP). Worth noting that the vendoring instruction is what
-made this recoverable: without decisions:61 an executor would have invented eight stages
+made this recoverable: without decisions:61 an executor would have invented eight packages
 of gate criteria at build time, which findings:4 identifies as the failure mode the tool
 exists to prevent.
 
@@ -234,14 +234,14 @@ mechanically checkable — which makes it a gate criterion, not just advice.
 
 **Insufficient:** "WHEN a gate passes while open gaps or unresolved assumptions exist,
 the system shall list each as an explicit warning." Read literally, *each* means every
-open gap in the plan. Built that way, the stage-1 gate of a four-row plan reported
+open gap in the plan. Built that way, the package-1 gate of a four-row plan reported
 twelve warnings, ten of which said things like "No components yet" — true, and useless,
-because the plan was five stages away from needing components.
+because the plan was five packages away from needing components.
 
-**Needed:** the scope of "each" — plan-wide, or the stage being gated.
+**Needed:** the scope of "each" — plan-wide, or the package being gated.
 
-**Resolved:** invented — raising is scoped to the gated stage plus the stage-agnostic
-rules (assumptions, reference coverage). Warnings raised at their own stage persist in
+**Resolved:** invented — raising is scoped to the gated package plus the package-agnostic
+rules (assumptions, reference coverage). Warnings raised at their own package persist in
 the ledger and keep re-presenting, so nothing is passed over silently.
 
 **Discovered by:** driving the engine end-to-end. The test suite passed with the noisy
@@ -256,7 +256,7 @@ that does not bound a set produces duplicates as readily as noise.
 
 ---
 
-## F11 — The vendored gap rules and gate criteria disagree about stage 1
+## F11 — The vendored gap rules and gate criteria disagree about package 1
 
 **Rows:** `requirements:71`, `decisions:61`; assets `gap_rules.yaml` (M2) and
 `gate_criteria.yaml` (M3).
@@ -266,13 +266,13 @@ goals, non-goals and target stack as `decisions` rows distinguished by a text pr
 ("Goal:", "Non-goal:", "Stack:"), a convention its gate SQL matched with `LIKE 'goal:%'`.
 v2's generic PlanRow store makes separate tables the natural encoding, and M2's
 `gap_rules.yaml` had already half-adopted it (`goal_without_success_criteria` reads a
-`goals` table) while `stage1_not_started` still tested `decisions` for emptiness. The two
-assets therefore disagreed about what stage 1 even fills.
+`goals` table) while `package1_not_started` still tested `decisions` for emptiness. The two
+assets therefore disagreed about what package 1 even fills.
 
-**Consequence:** a complete, passing stage 1 was permanently accompanied by the warning
-"Nothing recorded yet. Open the stage-1 interview."
+**Consequence:** a complete, passing package 1 was permanently accompanied by the warning
+"Nothing recorded yet. Open the package-1 interview."
 
-**Resolved:** `stage1_not_started` now tests `goals`. Recorded here rather than silently
+**Resolved:** `package1_not_started` now tests `goals`. Recorded here rather than silently
 fixed because it is evidence about the *revision* path requirements:71 mandates: a
 methodology revision that changes how content is encoded has to be applied to every
 asset at once, and nothing checks that. M5 introduces rev 3 and will hit this again.
@@ -283,7 +283,7 @@ disagreement, and it passed.
 
 **Class:** a cross-asset consistency hole. Worth a gate criterion in a future revision:
 *every table named in one methodology asset is named in the others that cover the same
-stage.*
+package.*
 
 ---
 
@@ -399,7 +399,7 @@ blind-spot inheritance recorded at F5 and F11. The drive catches it because read
 
 ---
 
-## F15 — Stage-7 fixes cited as contract rows that were never written
+## F15 — Package-7 fixes cited as contract rows that were never written
 
 **Status: RESOLVED at the M5a `state_machines:9` audit, 2026-07-21 — and the diagnosis
 below was WRONG.** See **Resolved** at the end of this entry before reading the rest. The
@@ -418,7 +418,7 @@ being built in M5a. Resolving now would be inventing in a vacuum. This entry get
 same class, the missing definition of `contracts:61` as the mechanism for `findings:10`
 (workspace drift) and `contracts:59/60` for `findings:9` (delivery verification).
 
-**Insufficient:** four contract ids are cited as the fixes for stage-7 findings but have
+**Insufficient:** four contract ids are cited as the fixes for package-7 findings but have
 no definition row anywhere in the frozen plan. Verified by grepping for the definition
 form `` `contracts:N` · ``: `52`, `56`, `59`, `61` each appear *only* inside a findings
 fix-note, never as a defined contract. (Contracts 3, 4, 16, 36, 39, 47 are also absent
@@ -441,7 +441,7 @@ Concretely, each missing row is load-bearing:
 **Class:** F9's, the running pattern (F2, F4, F7, F9, F12) — behaviour named in prose
 without the mechanism that produces it — now six for six. What is *new* and worth marking:
 in every prior instance the missing mechanism was named by a requirement or a state
-machine. Here the missing mechanism is named by a **stage-7 finding's own fix note** — the
+machine. Here the missing mechanism is named by a **package-7 finding's own fix note** — the
 plan's adversarial pass asserted a fix ("Resolved: contracts:61 computes drift flags…")
 whose contract was never actually written. The fix note is prose that reads as
 resolution, which is a more camouflaged version of the pattern than any before it: the
@@ -484,7 +484,7 @@ with the same behaviour linking the same finding. All four pass it in about five
 
 This inverts the entry's own "six for six" claim. F15 is **not** an instance of the
 F2/F4/F7/F9/F12 pattern; the running count of that pattern stands at five, not six, and
-the claim that the adversarial pass asserted fixes it never wrote is withdrawn — stage 7
+the claim that the adversarial pass asserted fixes it never wrote is withdrawn — package 7
 wrote every one of them. **The pattern was over-fitted:** five prior confirmations made
 the sixth reading feel like recognition rather than a hypothesis needing a test. Worth
 carrying: a defect log that names a recurring class starts to *recruit* ambiguous
@@ -705,7 +705,7 @@ gate: M6 (methodology rev 3, already scheduled in the milestone recut).**
 **Rows:** `decisions:63`, `contracts:35` (`finalize_plan`), `requirements:34`,
 `entities:15` (links), `findings:11` (whose fix decisions:63 is), `findings:17` (the
 fossilization pre-mortem); vendored `gate_criteria.yaml` criterion `contract_has_consumer`
-and `stage6_architecture.md`.
+and `package6_architecture.md`.
 
 **Insufficient:** `decisions:63` is the row that made task-graph derivation deterministic —
 it was the fix for `findings:11` ("two implementers would derive incompatible graphs"). It
@@ -727,7 +727,7 @@ was supposed to make the graph deterministic leaves it underdetermined after all
 
 **Two knock-on defects in the vendored methodology, both real:**
 
-1. **`stage6_architecture.md` instructs the session to call `submit_contract_deps`** — a v1
+1. **`package6_architecture.md` instructs the session to call `submit_contract_deps`** — a v1
    tool with no v2 equivalent. A session following the vendored script hits a tool that
    is not there. This is `findings:17`'s fossilization pre-mortem happening for real, and
    notably it is the *first* observed instance: rev 2 was vendored verbatim from v1
@@ -745,7 +745,7 @@ supports it (`links.edge_type`, `LinkSpec.edge_type`); nothing new is stored, an
 `LinkGraph` already filters traversals by edge type. `finalize_plan` derives edges from
 those links alone and from no others.
 
-**Methodology half, bound to M6:** `stage6_architecture.md` must stop naming
+**Methodology half, bound to M6:** `package6_architecture.md` must stop naming
 `submit_contract_deps` and instead instruct the session to record the dependency as a typed
 link; `contract_has_consumer` must filter on `edge_type='depends_on'`. Both are edits to
 vendored content, which under `decisions:61` means a new content revision with its own
@@ -756,10 +756,10 @@ lands there rather than being smuggled into M5a. Recorded here so it cannot be l
 **Class:** new, and the third distinct class this milestone. Not F9's (missing mechanism),
 not F17's (stale citation). This is **a primitive that lost its type information in a
 redesign, silently invalidating a later row that depended on it.** `decisions:63` was
-written at stage 7 against a mental model of the v1 store; the v2 architecture that
-flattened `contract_deps` into generic links was decided at stage 6, *earlier*. Nothing
-re-checked the stage-7 fixes against the stage-6 architecture, because the plan's own
-review direction runs forward. Worth a v2 gate rule: **when a stage-6 architecture decision
+written at package 7 against a mental model of the v1 store; the v2 architecture that
+flattened `contract_deps` into generic links was decided at package 6, *earlier*. Nothing
+re-checked the package-7 fixes against the package-6 architecture, because the plan's own
+review direction runs forward. Worth a v2 gate rule: **when a package-6 architecture decision
 generalises or removes a primitive, every later row naming that primitive is a hole until
 re-checked** — the same shape as F6's rule about identity changes, one level up.
 
@@ -922,7 +922,7 @@ invariant over obligations rather than a procedure over contract refs.
 
 **The defect.** Which task a contract belongs to — in v1, `contracts.component_id`, a real
 foreign key that `gaps.py` and `gates.py` join on throughout (`archive/v1/engine/gaps.py:196`,
-`:204`) — has **no representation in v2**. The stage-6 architecture flattened v1's typed
+`:204`) — has **no representation in v2**. The package-6 architecture flattened v1's typed
 tables into the generic `plan_rows`/`links` pair, and the owning ref was not carried across.
 In the frozen plan a contract's membership survives only as **markdown nesting** — the
 `### brief-composer (components:12)` heading with its contracts printed beneath — which is
@@ -936,7 +936,7 @@ contracts it owns. With no stored ownership the level is underived and unowned �
 `milestone` failure it was introduced to fix.
 
 **Class: plan insufficiency, and the second instance of a distinct sub-class** — *information
-that existed as a typed column in v1 and was silently lost when stage 6 flattened the schema*.
+that existed as a typed column in v1 and was silently lost when package 6 flattened the schema*.
 `F20` (`contract_deps`) is the first. Two instances make it a characteristic risk of that
 architectural move rather than an oversight: **the flattening preserved the rows and dropped
 the relations between them**, because a generic row table makes rows the unit of migration

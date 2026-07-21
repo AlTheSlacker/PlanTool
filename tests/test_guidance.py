@@ -31,28 +31,28 @@ def test_mandate_carries_the_challenge_duty(guidance):
 
 def test_every_stage_has_a_readable_script(guidance):
     low, high = load().stage_range
-    for stage in range(low, high + 1):
-        script = guidance.get_stage_script(stage)
+    for package in range(low, high + 1):
+        script = guidance.get_stage_script(package)
         assert script.text.strip()
-        assert script.stage == stage
+        assert script.package == package
 
 
 def test_elicit_stages_require_divergence(guidance):
-    """requirements:16 — elicit stages present divergence prompts and solicit
+    """requirements:16 — elicit packages present divergence prompts and solicit
     owner-generated candidates before agent drafts."""
-    for stage in (1, 2, 3):
-        script = guidance.get_stage_script(stage)
+    for package in (1, 2, 3):
+        script = guidance.get_stage_script(package)
         assert script.mode == "elicit"
         assert script.divergence_required is True
 
-    for stage in (4, 5, 6):
-        assert guidance.get_stage_script(stage).divergence_required is False
+    for package in (4, 5, 6):
+        assert guidance.get_stage_script(package).divergence_required is False
 
 
 def test_elicit_scripts_actually_contain_the_divergence_round(guidance):
     """The flag is only worth having if the vendored content backs it."""
-    for stage in (1, 2, 3):
-        text = guidance.get_stage_script(stage).text.lower()
+    for package in (1, 2, 3):
+        text = guidance.get_stage_script(package).text.lower()
         assert "divergence" in text
 
 

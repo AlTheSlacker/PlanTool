@@ -152,18 +152,18 @@ in the session, where the tool cannot observe it.
 
 ---
 
-## D7 — Gate warnings are scoped to the stage being gated
+## D7 — Gate warnings are scoped to the package being gated
 
 **Plan:** `requirements:21` — "WHEN a gate passes while open gaps or unresolved
 assumptions exist, the system shall list each as an explicit warning."
 
-**v2:** a gate *raises* warnings for open gaps in the stage being gated, plus the
-stage-agnostic rules (open assumptions, reference coverage). Warnings already in the
-ledger from earlier stages keep re-presenting until resolved or suppressed, so the
+**v2:** a gate *raises* warnings for open gaps in the package being gated, plus the
+package-agnostic rules (open assumptions, reference coverage). Warnings already in the
+ledger from earlier packages keep re-presenting until resolved or suppressed, so the
 result of any gate still shows everything outstanding.
 
-**Why:** the literal reading made the stage-1 gate report "No components yet" on a plan
-five stages from needing components — ten noise warnings out of twelve. `gap_rules.yaml`
+**Why:** the literal reading made the package-1 gate report "No components yet" on a plan
+five packages from needing components — ten noise warnings out of twelve. `gap_rules.yaml`
 states the principle being violated: "a meter that cries wolf stops being read".
 decisions:31's keep-pushing policy depends entirely on warnings being read.
 
@@ -236,7 +236,7 @@ problem impossible to lose. `decisions:14` (execution sufficiency: zero sub-task
 missing plan information) is only credible if problems cannot silently survive to execution.
 
 **The reconciliation M6 must build, not blur:** this must NOT resurrect the cry-wolf failure
-D7 fixed. Advisory **warnings** (open gaps in a stage, coverage meter) stay warn-don't-block
+D7 fixed. Advisory **warnings** (open gaps in a package, coverage meter) stay warn-don't-block
 per `decisions:31` — they inform, they do not lock. The hard-lock binds a distinct,
 higher-severity class: **outstanding findings** (`state_machines:7`) and, to be settled in
 M6, whether unresolved **conflicts** (`state_machines:4`) and open **assumptions** join them.
@@ -320,7 +320,7 @@ the methodology half is bound to M6.
 
 **Plan:** `decisions:63` derives task-graph edges "directly from **contract_deps**". No such
 thing exists in v2 — it was a v1 table with explicit provider/consumer columns, flattened
-into the generic `links` table (`entities:15`) by the stage-6 architecture. See F20.
+into the generic `links` table (`entities:15`) by the package-6 architecture. See F20.
 
 **v2 does:** the dependency is recorded as a **typed link**, `edge_type='depends_on'`,
 directed **consumer contract → provider contract**. `finalize_plan` derives sub-task edges
@@ -405,14 +405,14 @@ accounting can be changed, but not silently.**
   1-tuple was the placeholder for exactly this.
 - The `subtasks.contract_ref UNIQUE` constraint is replaced by uniqueness over live
   obligation ownership. The constraint was never really about the contract; it was
-  expressing "no unit of work is owned twice", which obligations state directly. Without
+  expressing "no journal entry is owned twice", which obligations state directly. Without
   this, `split_subtask` is unbuildable: every part carries the same `contract_ref` and the
   second insert is rejected.
 - Split accounting and brief accounting become the same primitive at two altitudes — every
   closure row cited-or-waived (`requirements:79`), every obligation assigned-or-waived.
 
 **Cost, accepted:** finalization gains an enumeration step that did not exist, and the
-methodology's stage-7 script should ask for the obligation surface when a contract is
+methodology's package-7 script should ask for the obligation surface when a contract is
 written. Sub-tasks derived before this lands have no obligations recorded; the graph treats
 an empty obligation set as "not yet enumerated" and refuses to split such a node rather than
 silently permitting an unaccountable split.
@@ -485,16 +485,75 @@ membership claim.
 propose a package cut when none is offered. That proposal is a judgment, and the tool records
 judgment but never exercises it (`decisions:12`). The division is the one brief composition
 already uses (`decisions:52`/`decisions:60`): the **tool** enforces the invariant and refuses
-finalization without it; the **methodology** — a vendored stage script, not generated text —
+finalization without it; the **methodology** — a vendored package script, not generated text —
 instructs the driving session to lead the owner to a cut; the **planning session** proposes
 and the **owner** decides. A packaging heuristic inside the engine would be the tool holding
 opinions about architecture, the same seed `M5_PLAN.md` §2.2 rejected a read-time relevance
 heuristic to avoid.
 
 **Cost, accepted:** M5a's scope-attachment code and schema carry the retired names and are
-migrated as part of M5b. The methodology needs a packaging step at the architecture stage,
+migrated as part of M5b. The methodology needs a packaging step at the architecture package,
 which is an M6 concern (`requirements:71`'s revision path covers shipping it). No user data
 exists, so the migration is a rename rather than a back-fill.
 
 **Related:** `GLOSSARY.md`; DEVIATIONS.md D8, D11, D12; DEFECTS.md F20, F23, F24;
 `decisions:12`, `decisions:14`, `decisions:63`, `entities:15`.
+
+---
+
+## D14 — One vocabulary for work chunks; `stage` retired; methodology rev 3
+
+**Extends D13.** Owner decisions, 2026-07-21. Binding definitions in `GLOSSARY.md`.
+
+**The plan says:** the planning process has *stages* (1–8) with per-stage gates and per-stage
+scripts, and the plan's content has components and sub-tasks. Two vocabularies for chunks of
+work, and `plan_rows.stage` records which stage produced a row.
+
+**v2 does:** one vocabulary. **Plan → Package → Task → Sub-task**, everywhere. The
+methodology's ordered steps are the **standard package set** for planning work — eight
+packages every plan instantiates — as against build packages, which are declared per plan.
+Same concept, two layers, two tables. `stage` is retired as a word: `plan_rows.stage` becomes
+`plan_rows.package`, per-stage gate criteria become per-package, and the vendored scripts are
+`package1_context.md` … `package8_freeze.md`.
+
+**Why one vocabulary rather than two.** An earlier draft of this argued for two universes —
+structure ("things you can point at") versus process ("episodes that end") — and kept `stage`
+on the process side. The owner rejected it, correctly: planning work *is* work, and a chunk of
+it is the same kind of thing as a chunk of build work. The distinction that genuinely exists is
+which **table** it lives in, not which word describes it. Keeping a second word for the same
+concept is exactly the condition that produced F23 (two spellings of a coverage set, one of
+them undefined) and F24 (a relation that existed under one name and not another).
+
+**Three consequences that simplified the design rather than complicating it:**
+
+1. **A gate is named by its container** — plan gate, package gate, task gate, sub-task gate —
+   and locks on the outstanding problems bound to that container. D9's hard-lock generalises
+   with no special cases; "stage gate" stops being a distinct kind of thing.
+2. **`session` leaves the vocabulary entirely.** Its only appearance in the data is
+   `writer_lease.session_id`, a string naming the current lease holder — no table, no rows, no
+   lifecycle. Prose that said "the session decides" now says "the planner", which is the actual
+   actor and was always what was meant.
+3. **No work level below sub-task.** "Units" were considered and rejected: `split_subtask`
+   already turns an over-large sub-task into real sub-tasks with their own briefs and
+   verification, and obligations already subdivide a sub-task for *accounting*. A second,
+   ungated subdivision gives one thing two breakdowns and lets "3 of 4 units done" read as
+   progress on a sub-task worth zero. **Validation and gating happen at sub-task level only.**
+
+**The rename lands as a methodology revision, not an edit.** `engine/methodology/rev2/` is a
+faithful vendoring of PlanTool v1 (`decisions:61`, `findings:4` — never invent methodology),
+so renaming inside it would destroy the provenance the vendoring exists to preserve. **rev 3**
+is a copy carrying v2's vocabulary, `DEFAULT_REVISION` is now 3, and rev 2 stays on disk
+unmodified as the v1 artifact. This is `requirements:71`'s revision path doing the job it was
+specified for. Note it pulls part of the M6 work forward: rev 3 was scheduled to also update
+v1's tool names (`submit_use_cases` → v2's surface), and that half remains outstanding and
+bound to the M6 package gate.
+
+**Also in this sweep:** `tasks` is now a real table (`source_ref`, `package_id NOT NULL`
+referencing `packages`), `subtasks.task_id` is a foreign key to it, and `task_packages` is
+gone — mandatory package membership is a database constraint rather than a check
+`finalize_plan` must remember. `subtasks.task_id` is nullable *only* because a contract with no
+`belongs_to` link has no derivable owner; that is reported, never guessed (F24), and full
+enforcement lands when those links are written.
+
+**Related:** `GLOSSARY.md`; DEVIATIONS.md D3, D9, D12, D13; DEFECTS.md F20, F23, F24;
+`decisions:12`, `decisions:61`, `findings:4`, `requirements:56`, `requirements:71`.

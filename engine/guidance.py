@@ -1,7 +1,7 @@
 """guidance (components:4).
 
-Serves the engineer's mandate and per-stage interview scripts, including the mandatory
-divergence rounds for elicit stages.
+Serves the engineer's mandate and per-package interview scripts, including the mandatory
+divergence rounds for elicit packages.
 
 Contracts: contracts:17 get_mandate, contracts:65 get_stage_script.
 
@@ -26,12 +26,12 @@ class GuidanceUnreadable(PlanToolError):
 
 
 class UnknownStage(PlanToolError):
-    """contracts:65 — stage outside the defined set; names the valid range."""
+    """contracts:65 — package outside the defined set; names the valid range."""
 
 
 @dataclass(frozen=True, slots=True)
 class StageScript:
-    stage: int
+    package: int
     name: str
     mode: str
     text: str
@@ -68,10 +68,10 @@ class Guidance:
 
     # --- contracts:65 ---
 
-    def get_stage_script(self, stage: int) -> StageScript:
-        """The interview script for a stage.
+    def get_stage_script(self, package: int) -> StageScript:
+        """The interview script for a package.
 
-        For elicit stages this includes the mandatory divergence rounds — context-free
+        For elicit packages this includes the mandatory divergence rounds — context-free
         questions, negative-space probes, owner-generated candidates solicited *before*
         agent-authored drafts (requirements:16). That ordering is the countermeasure to
         the friction recorded in decisions:36, where the owner "did not feel pushed that
@@ -79,24 +79,24 @@ class Guidance:
         """
         low, high = self.methodology.stage_range
         try:
-            entry = self.methodology.stage(stage)
+            entry = self.methodology.package(package)
         except KeyError as exc:
             raise UnknownStage(
-                "no such stage", stage=stage, valid_range=f"{low}-{high}"
+                "no such package", package=package, valid_range=f"{low}-{high}"
             ) from exc
 
         try:
             text = self.methodology.read(entry.script_file)
         except MethodologyUnavailable as exc:
             raise GuidanceUnreadable(
-                "the stage script could not be read; refusing to answer from partial "
+                "the package script could not be read; refusing to answer from partial "
                 "methodology",
-                stage=stage,
+                package=package,
                 cause=str(exc),
             ) from exc
 
         return StageScript(
-            stage=entry.number,
+            package=entry.number,
             name=entry.name,
             mode=entry.mode,
             text=text,

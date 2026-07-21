@@ -224,7 +224,7 @@ PlanTool/
 evidence are moved into `spec/v2/`. Its `.claude/`, `.mcp.json`, `CLAUDE.md`, `AGENTS.md` and
 `__pycache__` are disposable.
 
-## 7. Milestones
+## 7. Build packages
 
 Each is a branch and a PR. Al merges; no self-merges.
 
@@ -241,7 +241,7 @@ Each is a branch and a PR. Al merges; no self-merges.
 | 7 | `revision-service`, reduced form (§4.1) |
 | 8 | Dogfood: plan the next body of work (GUI) **using v2** |
 
-Within each build milestone, contracts are built in `depends_on` order, one contract per unit of
+Within each build package, contracts are built in `depends_on` order, one contract per journal
 work.
 
 M2 carries the most product risk and should be expected to iterate. The frozen plan records

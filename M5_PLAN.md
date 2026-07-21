@@ -25,7 +25,7 @@ Current outstanding items and their gates (updated 2026-07-21, after the audit):
 
 | Problem | Resolve-by gate |
 |---|---|
-| ~~F15 — undefined stage-7 fix contracts~~ | **RESOLVED 2026-07-21** at the audit; hard lock lifted. The mechanisms all exist — see DEFECTS.md F15 |
+| ~~F15 — undefined package-7 fix contracts~~ | **RESOLVED 2026-07-21** at the audit; hard lock lifted. The mechanisms all exist — see DEFECTS.md F15 |
 | F18 — `deps_satisfied`/`serve_brief` have no firing contract | **M5a gate** (hard-locks M5a) |
 | F19 — `rework_flagged` trap + early-banked verdict | **M5a gate** (hard-locks M5a) |
 | F17 — prose row citations break on supersession | M6 gate |
@@ -46,8 +46,8 @@ The session opened intending to build `task-graph` + `brief-composer`, on the st
 memory that said M5 was those two components. `V2_BUILD_PLAN.md` §7 says M5 is Surface, and
 §3/§9 defer the execution module entire, pending a design discussion the owner explicitly
 reserved. The memory had reasoned from component *numbering* (9 and 10 are done, so 11 and 12
-are next) rather than from the milestone table. Corrected in memory; recorded here because the
-failure mode is instructive — **`V2_BUILD_PLAN.md` §7 is the authority on milestone order, not
+are next) rather than from the build-package table. Corrected in memory; recorded here because the
+failure mode is instructive — **`V2_BUILD_PLAN.md` §7 is the authority on build-package order, not
 component numbering.**
 
 ### 1.2 The deferral removed the only path out of `draft`
@@ -216,7 +216,7 @@ on* a next-action being set, and should say so when it is not.
 
 ---
 
-## 3. Milestone recut
+## 3. Build-package recut
 
 Task-graph coming into scope makes the old M5 (surface) dependency-wrong: `plan_status`'s
 digest depends on the scope-attachment bounds (§2.3) and its drift flags depend on a
@@ -246,7 +246,7 @@ Per the outstanding-problem rule (§0): an open question is a problem; it is fix
 bound to a named gate it must be resolved by, and that gate cannot pass while it is open.
 Both below are `plan_status`-shaped, so their gate is **M6** (surface). Neither blocks M5.
 
-1. **[resolve-by: M6 gate] Mandate and stage script: by value or by reference in the resume
+1. **[resolve-by: M6 gate] Mandate and package script: by value or by reference in the resume
    digest?** `requirements:10` says return them on session open; they are the biggest single
    chunk, bounded by methodology size rather than plan size. Serving by reference contradicts
    `requirements:10`'s plain reading; by value makes the digest permanently fat. A
@@ -320,14 +320,14 @@ machine.
     log; the `in_progress → done` transition's only stated enabler may be missing.
 - **`state_machines:1` (Plan)** — audited this session, see §1.2.
 
-### Contract rows cited as stage-7 fixes but never defined
+### Contract rows cited as package-7 fixes but never defined
 
 `contracts:52`, `contracts:56`, `contracts:59`, `contracts:61`. Verified absent by grepping
 for the definition form `` `contracts:N` `` — each appears only inside a findings fix-note.
 (Contracts 3, 4, 16, 36, 39, 47 are also absent, but those are the *superseded originals*,
 correctly dropped from a live-rows export.) This is a new instance of the characteristic
 pattern F2/F4/F7/F9/F12 — behaviour named in prose without the mechanism — and the first where
-the missing thing is the *fix for a stage-7 finding*. **Log as a defect before building.**
+the missing thing is the *fix for a package-7 finding*. **Log as a defect before building.**
 
 ---
 
@@ -335,7 +335,7 @@ the missing thing is the *fix for a stage-7 finding*. **Log as a defect before b
 
 All of this session's findings are recorded; nothing is parked in this doc awaiting a write.
 
-- **DEFECTS.md F15** (OPEN) — stage-7 fix rows cited but never defined
+- **DEFECTS.md F15** (OPEN) — package-7 fix rows cited but never defined
   (`contracts:52/56/59/61`). Resolution is build-time: the `state_machines:9` audit at the
   top of M5a confirms each absence against the built engine and, per row, writes it (as F12
   did for the spike events) or finds it subsumed. **This is the one live to-do.**
@@ -357,8 +357,8 @@ Driver scripts: scratchpad `.py` files, run with
 `$env:PYTHONIOENCODING='utf-8'; $env:PYTHONPATH='D:\PythonProjects\PlanTool'; & .venv\Scripts\python.exe <path>`.
 Inline `python -c` gets classifier-blocked and the cp1252 console chokes on em dashes.
 
-**Drive the engine end-to-end after the milestone and read the output.** It has caught
-something the test suite could not at all four milestones so far. A test written from a
+**Drive the engine end-to-end after each build package and read the output.** It has caught
+something the test suite could not across all four build packages so far. A test written from a
 specification inherits that specification's blind spots.
 
 Branch + PR; the owner merges; no self-merges.

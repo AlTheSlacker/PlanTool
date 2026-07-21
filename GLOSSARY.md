@@ -13,21 +13,53 @@ Established by the owner, 2026-07-21. Recorded as DEVIATIONS.md **D13**.
 ## The hierarchy
 
 ```
-Plan  →  Package  →  Task  →  Sub-task  →  Obligation
+Plan  →  Package  →  Task  →  Sub-task
 ```
 
-Exactly four structural levels, plus obligations inside a sub-task. **No nesting at any
-level** — a package never contains a package. Depth is fixed so that the bound on assembled
-context stays *structural* rather than an arbitrary depth limit, and so the GUI has a shape
-it can draw.
+Exactly four levels, with **obligations** as the accounting surface inside a sub-task — not a
+fifth level. **No nesting at any level**: a package never contains a package. Depth is fixed
+so the bound on assembled context stays *structural* rather than an arbitrary depth limit, and
+so the GUI has a shape it can draw.
 
-| Level | Declared or derived | Cardinality |
-|---|---|---|
-| Plan | — (the root) | 1 per workspace |
-| Package | **declared** | 1..n per plan |
-| Task | derived | 1..n per package; exactly 1 package each |
-| Sub-task | derived | 1..n per task |
-| Obligation | enumerated once, frozen | 1..n per sub-task |
+**There is one vocabulary, not two.** Planning work and build work are the same kinds of
+chunk, stored in different tables. The methodology's ordered steps — what v1 and the frozen
+plan call *stages* — are the **standard package set** for planning work: eight packages every
+plan instantiates, versus build packages declared per plan. `stage` is retired as a word.
+
+**A gate is named by its container**, never by a kind of its own: plan gate, package gate,
+task gate, sub-task gate. A gate locks on the outstanding problems bound to *its own*
+container, which is what makes D9's hard-lock generalise without special cases.
+
+**Validation and gating happen at sub-task level only** (owner, 2026-07-21). A sub-task is
+done when a passing `verify_completion` covers all its obligations — never on partial credit.
+Sub-dividing a sub-task into smaller *work* items was considered and **rejected**: the frozen
+plan's remedy for an over-large sub-task is `split_subtask`, which produces real sub-tasks with
+their own briefs and their own verification, and obligations already subdivide a sub-task for
+accounting. A second, ungated subdivision would give one thing two different breakdowns and
+invite "3 of 4 done" to be read as progress on a sub-task that is still worth zero. If an
+executor works through a sub-task in steps, nothing outside observes those steps and they need
+no name from us.
+
+| Level | Declared or derived | Cardinality | Stored in |
+|---|---|---|---|
+| Plan | — (the root) | 1 per workspace | — |
+| Package | **declared** | 1..n per plan | `packages` |
+| Task | derived | 1..n per package; exactly 1 package each | `tasks` |
+| Sub-task | derived | 1..n per task | `subtasks` |
+| Obligation | enumerated once, frozen | 1..n per sub-task | (M5b) |
+
+### Two layers, and why only one of them is generic
+
+- **Planning layer** — `plan_rows`, generic, JSON content. Every row type shares one table so
+  supersession lineage, typed links and provenance work identically across twenty-odd types
+  (DEVIATIONS.md **D3**).
+- **Execution layer** — `packages`, `tasks`, `subtasks`: real tables, real foreign keys.
+
+The split is deliberate, and F20 and F24 are the evidence for it: both are **relations that
+vanished when v1's typed tables were flattened into generic rows**. A generic row table makes
+rows the unit of migration and edges invisible. The planning layer earns its genericity and
+its two known losses are repaired as typed links; the execution structures, which carry the
+build's own relations, stay typed.
 
 ---
 
@@ -94,14 +126,14 @@ reference, and the old stays frozen for defect forensics.
 
 ---
 
-## Not a level: unit of work
+## Not a level: journal entry
 
-`requirements:56` / `requirements:60` — a **unit of work** is a journal-granularity event:
+`requirements:56` / `requirements:60` — a **journal entry** is a journal-granularity event:
 a row submission, a decision, a brief served, a sub-task status change, an informal learning.
 It is what "durably recorded the moment it completes" applies to.
 
 This is an *episode* vocabulary, not a *structure* vocabulary, and it does not belong on the
-hierarchy above. Keep the two apart: a sub-task is a thing that exists; a unit of work is
+hierarchy above. Keep the two apart: a sub-task is a thing that exists; a journal entry is
 something that happened.
 
 ---
@@ -115,13 +147,17 @@ something that happened.
 | **packet** | sub-task | **Zero** occurrences in the frozen plan; our own coinage in `M5_PLAN.md` §2.3. M5a's own schema comment gave the duplication away: `scope_key` was documented as "packet **subtask id**". |
 | **part** | sub-task | A "part" of a split is a sub-task, distinguished by which obligations it owns, not by being a different kind of thing. Acceptable in prose as "a sub-task produced by a split"; never a field, type or table name. |
 | **component** | task | One entity, two spellings. `components:N` persists as the frozen plan's read-only spelling only. |
+| **stage** | package | The methodology's ordered steps are the standard package set for planning work — the same kind of chunk as a build package, in a different table. Retired 2026-07-21; methodology assets are `package1_context.md` … `package8_freeze.md` at **rev 3**. |
+| **session** | (nothing) | Not an entity. Its only occurrence in the data is `writer_lease.session_id` — a string naming who holds the write lease. No table, no rows, no lifecycle. Where prose meant "the session decides", say **the planner** (the actor). |
+| **phase** | package | Briefly proposed for this build's own units and rejected: it was a new word for something already defined. |
+| **unit**, **unit of work** | journal entry, or sub-task | `requirements:56`/`60`'s "unit of work" is a *record of something that happened* — say **journal entry**. As a work chunk below sub-task, rejected outright (see above). |
 | **work packet**, **chunk** | sub-task or package, per meaning | Informal synonyms that resolve to a defined level; pick the level. |
 
-**One deliberate survival.** "Milestone" remains correct for **this build's own** milestones —
-M0 … M8 in `V2_BUILD_PLAN.md` §7 — and for the frozen plan's phrase "milestone-time
-re-planning" (`decisions:8`, `decisions:14`). That is the *build process* and the *failure
-vocabulary*, a different universe from the tool's domain model. Do not "fix" those. The rule is
-narrow and exact: **milestone is never a level, a column, or a scope key.**
+**No carve-outs.** An earlier draft kept "milestone" for this build's own M0–M8 and "stage" for
+the methodology. Both exceptions were withdrawn by the owner on 2026-07-21, on the grounds that
+a live technical word pollutes reasoning later no matter how narrowly its scope is documented.
+**This build's own M0–M8 are build packages.** The only surviving occurrences of any retired
+word are quotations inside `spec/v2/plan.md` and `engine/methodology/rev2/`, both read-only.
 
 ---
 
@@ -150,7 +186,10 @@ that buys, and it is why the promotion history is kept rather than overwritten.
 - Columns: `package_id`, `task_id`, `subtask_id` — ids, never names.
 - `subtask` is one word in identifiers (`subtask_id`, `SubTask`), hyphenated in prose
   ("sub-task"). This is the existing convention in `engine/`; it stays.
-- No identifier contains `packet`, `milestone`, `part` or `project`.
+- No identifier contains `packet`, `milestone`, `part`, `project`, `stage`, `phase` or
+  `session` (outside `writer_lease.session_id`, which is a lock holder, not a level).
+- `plan_rows.package` is the *planning* package ordinal (1..8, the standard set) and is a
+  different table from `packages.id` (build packages) — the same concept in two layers.
 
 ---
 
@@ -163,7 +202,7 @@ Mandatory package membership means the tool must not let a task go unpackaged �
 
 - the **tool** enforces the invariant (every task has a package) and refuses finalization
   without it;
-- the **methodology** — a vendored stage script, not generated text — instructs the driving
+- the **methodology** — a vendored package script, not generated text — instructs the driving
   session to propose a package cut and to lead the owner when none is offered;
 - the **planning session** proposes; the **owner** decides.
 
