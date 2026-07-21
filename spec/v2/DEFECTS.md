@@ -1141,3 +1141,100 @@ commit, (2) the glossary being present in the brief the writer is working from r
 read once at session start, and (3) the writer's attention. Only the third one was in place.
 See the open design question bound to the **M6 gate**: how a plan's own glossary reaches the
 code engine that must comply with it.
+
+---
+
+## F28 — Six more v1 foreign keys were dropped by the flattening, and nothing missed them
+
+**Found:** 2026-07-21, M6 gate item 2.1 — the sweep that existed to stop this being found a
+third time by accident.
+
+**The class.** v1's typed row tables carried mandatory (`NOT NULL`) foreign keys. Package 6
+flattened them into generic `plan_rows` plus a `links` table, which preserved every row and
+dropped every relation. F20 (`contract_deps`) and F24 (`contracts.component_id`) were each
+found on their own, months apart, by tripping over the consequence rather than by looking.
+Two instances made it a characteristic risk of that architectural move, so the sweep was bound
+to this gate.
+
+**The result.** `archive/v1/engine/schema.sql` declares **eight** mandatory relations that are
+not `plan_id`. Two were already repaired. The other six were still missing:
+
+| v1 relation | asserts | state before this fix |
+|---|---|---|
+| `uc_steps.use_case_id` | a step's owning use case | no edge, no check |
+| `uc_extensions.step_id` | an extension's owning step | no edge, no check |
+| `crud_grid.entity_id` | a CRUD row's entity | no edge, no check |
+| `state_machines.entity_id` | a machine's entity | no edge, no check |
+| `sm_cells.machine_id` | a cell's owning machine | no edge, no check |
+| `dep_failure_modes.dep_id` | a failure mode's dependency | no edge, no check |
+
+Confirmed mechanically: `machine_id`, `entity_id`, `use_case_id`, `step_id` and `dep_id`
+appear in **zero** files under `engine/`.
+
+**Why nothing noticed, which is the interesting half.** An orphan is not a broken row. A
+`uc_steps` row with no use case is writable, readable, renderable and *gate-clean* — the
+gap rules ask whether a step has extensions (`step_without_extensions`) and whether an actor
+appears in a use case, and never whether a step has a parent, because in v1 the question was
+unaskable. The constraint was deleted along with the column that carried it, and the check
+that would have replaced it was never written because nobody was missing anything.
+
+**A second, quieter instance of the same shape.** `links.edge_type` is
+`TEXT NOT NULL DEFAULT 'links'` with no closed vocabulary: any string is a valid edge type.
+A misspelled `belogns_to` therefore produces a real, durable edge that no traversal looks for
+— F20's invisible relation arriving by typo instead of by omission, and silent in exactly the
+same way.
+
+**Resolution.**
+
+- **`belongs_to` for all six**, not six new edge types. Every one asserts the same thing —
+  *this row's owning parent* — and v1's seven differently-named parent columns were themselves
+  seven names for one relation. The parent's row type disambiguates: `uc_steps:4 belongs_to
+  use_cases:2` needs no second edge name.
+- **The map is methodology data** (`rev3/manifest.yaml`'s `containment:` block), not engine
+  knowledge. An engine that knows `uc_steps` has started to contain a methodology of its own,
+  which is `findings:4`. The engine enforces whatever revision is loaded and knows none of the
+  names.
+- **Enforced at submission**, in `RowService._validate`'s neighbourhood: a child row must
+  declare exactly one `belongs_to` link, to a row of the declared parent type. This is
+  well-formedness rather than judgment — a step with no use case makes no claim, the same way
+  a row with no provenance makes none — so **D7's warn-don't-block stance for advisory gate
+  findings is untouched**. It restores precisely what `NOT NULL` used to do, at the same
+  moment `NOT NULL` used to do it.
+- **`EDGE_TYPES` closes the edge vocabulary** in `engine/models.py`, and an unknown type is
+  rejected with the valid set named.
+- `tests/test_containment.py`, including a test that the map loading **empty** would be
+  caught: with `containment={}` an orphan must be accepted, or the rejection tests prove
+  something other than the map (F23's disease).
+
+**The eighth relation is deliberately excluded, and the reason is worth keeping.**
+`contracts.component_id` was declared in the containment map on the first pass, on the
+grounds that it is the same relation. It was not a repair: F24 already restored it, enforced
+at **finalization** — a contract with no owner is reported there, never guessed. Adding it
+here did not restore a lost constraint, it *moved an existing one earlier*, and **53 of the
+57 resulting test failures came from that one line**. The failures were the mechanism
+reporting a design change honestly, and taking them as fixture churn to be tidied away would
+have converted an unargued change to when the tool interrupts the planner into a fait
+accompli. The line was removed. Whether contract ownership should bite at submission like
+the other six, or at finalization as it does now, is a real inconsistency and an owner
+decision — **bound to the M7 gate**, not settled here by side effect.
+
+**The fixtures were carrying the defect too, which is the best evidence it was invisible.**
+Fixing the remaining four failures meant repairing real orphans in our own tests: `uc_steps`
+rows with no use case at all, and — in `test_gates.py` — an `sm_cells` row linked to its
+state machine by `LinkSpec(0)`, an **untyped** edge. That is precisely v1's NOT NULL
+`machine_id` degraded into an optional association that nothing asserts and no traversal
+requires. One of those fixtures had been asserting against a plan where *nothing had been
+written*, and passed.
+
+**What this does not fix, recorded rather than left implied.** v1's `spike_id` was a
+*nullable* column on ten row tables meaning *this row is provisional pending spike N*. In v2
+it survives only as `claim_tracks.spike_id`; the row-level relation is gone. It was nullable,
+so it is not this class, but it is the same loss and it needs a decision rather than a
+silence. **Bound to the M7 gate.**
+
+**The lesson, which is F27's in a different register.** Both defects are a constraint that
+existed, was deleted by a refactor, and left no trace of its own absence. A `NOT NULL` column
+is a mechanism; the rows that survive it are not. When a migration changes the *shape* of the
+store, the checklist is not "did every row arrive" — rows are easy to count and that is
+exactly why counting them feels like verification. It is "did every constraint arrive", and
+constraints are invisible once removed.

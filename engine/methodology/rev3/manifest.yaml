@@ -67,6 +67,31 @@ packages:
     script: package8_freeze.md
     tables: []
 
+# Containment: child row type -> its mandatory owning parent row type.
+#
+# In v1 each of these was a NOT NULL foreign key and the database refused an orphan. The
+# package-6 flattening into generic `plan_rows`/`links` preserved every row and dropped
+# every relation; F20 (`contract_deps`) and F24 (`contracts.component_id`) were the two
+# found by accident. The M6 sweep of v1's schema found six more, listed here.
+#
+# This lives in the methodology and not in the engine on purpose. These row types belong
+# to *this* methodology — an engine that knows `uc_steps` has started to contain a
+# methodology of its own, which is findings:4. The engine enforces whatever a revision
+# declares here and knows none of these names.
+#
+# Enforced at submission by row-service as a single `belongs_to` edge, so an orphan is
+# rejected at the moment of writing rather than surfaced as a gate warning later. This is
+# well-formedness, not judgment: the row is meaningless without its parent, the same
+# reason provenance is mandatory. It is not a gate advisory and D7's warn-don't-block
+# stance is untouched.
+containment:
+  uc_steps: use_cases
+  uc_extensions: uc_steps
+  crud_grid: entities
+  state_machines: entities
+  sm_cells: state_machines
+  dep_failure_modes: dependencies
+
 # Served alongside the package script when a red-team session opens (use_cases:8).
 auxiliary:
   redteam: redteam.md

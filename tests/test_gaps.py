@@ -58,9 +58,14 @@ def test_unless_field_exempts_a_row(gaps, rows):
     """A step that explains why it has no extensions is not a gap."""
     rows.submit_rows(
         [
-            RowSubmission("uc_steps", {"title": "Step one"}),
+            # F28 — a step declares the use case that owns it. This fixture used to
+            # write orphans, which v1's NOT NULL `use_case_id` would have refused.
+            RowSubmission("use_cases", {"title": "A scenario"}),
+            RowSubmission("uc_steps", {"title": "Step one"},
+                          links=[LinkSpec(0, "belongs_to")]),
             RowSubmission("uc_steps", {"title": "Step two",
-                                       "no_extension_reason": "cannot fail"}),
+                                       "no_extension_reason": "cannot fail"},
+                          links=[LinkSpec(0, "belongs_to")]),
         ],
         "k",
     )
@@ -148,7 +153,10 @@ def test_elicit_guidance_puts_divergence_before_drafts(gaps, rows):
     rows.submit_rows(
         [
             RowSubmission("use_cases", {"title": "UC"}),
-            RowSubmission("uc_steps", {"title": "Step one"}),
+            # F28 — the step declares its owning use case. Without it the step is
+            # refused and this fixture silently tested an empty plan.
+            RowSubmission("uc_steps", {"title": "Step one"},
+                          links=[LinkSpec(0, "belongs_to")]),
         ],
         "k",
     )

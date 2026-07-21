@@ -35,7 +35,17 @@ brings no state machine, so checks 1 and 2 are light; check 3 is the live one, b
 Per the outstanding-problem rule, **M6 cannot pass while any of these is open.** Full table
 in `M5_PLAN.md` §0; this is the working detail.
 
-### 2.1 v1 foreign-key sweep
+### 2.1 v1 foreign-key sweep — **DONE 2026-07-21, DEFECTS.md F28**
+Swept. v1 declared **eight** mandatory non-`plan_id` relations; two were already repaired
+(F20, F24) and **six were still missing** — `uc_steps`→`use_cases`,
+`uc_extensions`→`uc_steps`, `crud_grid`→`entities`, `state_machines`→`entities`,
+`sm_cells`→`state_machines`, `dep_failure_modes`→`dependencies`. All six are now one
+`belongs_to` edge, declared in `rev3/manifest.yaml`'s `containment:` block (methodology data,
+never engine knowledge) and enforced at submission. `EDGE_TYPES` closes the edge vocabulary,
+which was open and defaulted, so a misspelled edge type used to produce a durable invisible
+relation. `spikes` row-level provenance is the one remaining loss, bound to the **M7 gate**.
+
+*Original statement of the item:*
 F20 (`contract_deps`) and F24 (`contracts.component_id`) are two instances of the same loss:
 v1 typed tables had real foreign keys, the package-6 flattening into generic
 `plan_rows`/`links` preserved the rows and dropped the relations. Two instances make it a

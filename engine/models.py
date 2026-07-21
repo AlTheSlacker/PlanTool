@@ -70,6 +70,26 @@ class RowRef:
         return f"{self.table}:{self.ordinal}"
 
 
+#: The closed set of edge types, with what each one asserts. `links` table's column
+#: defaults to `links`, so an unknown edge type does not fail loudly — it silently
+#: produces an edge no traversal looks for, which is F20 and F24's failure mode arriving
+#: by typo instead of by omission.
+#:
+#: `belongs_to` is deliberately ONE name for every containment relation. v1 had seven
+#: distinct parent foreign keys (`use_case_id`, `step_id`, `entity_id`, `machine_id`,
+#: `dep_id`, `component_id`, …) that all asserted the same thing — *this row's owning
+#: parent* — and seven names for one relation is the disease `GLOSSARY.md` exists to
+#: prevent. The parent's row type disambiguates: `uc_steps:4 belongs_to use_cases:2`
+#: needs no second edge name to be unambiguous.
+EDGE_TYPES = {
+    "links": "untyped association; the source row cites the target as related",
+    "belongs_to": "the target is this row's owning parent (containment)",
+    "depends_on": "D11 — consumer to provider; the target must be built first",
+    "cites": "the source row's prose quotes or references the target",
+    "contradicts": "the source row makes a claim incompatible with the target's",
+}
+
+
 @dataclass(frozen=True, slots=True)
 class LinkSpec:
     """An outbound typed edge declared by a row at submission time.

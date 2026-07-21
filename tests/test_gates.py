@@ -139,11 +139,18 @@ def test_covers_all_names_the_missing_values(gate, rows):
 def test_matrix_complete_flags_undefined_state_event_cells(gate, rows):
     submit(
         rows,
+        # F28 — the cell's link to its machine was `LinkSpec(0)`, i.e. an *untyped*
+        # edge. That is exactly v1's NOT NULL `machine_id` degraded into an optional
+        # association nothing asserts. It is `belongs_to` now, and the machine declares
+        # the entity that owns it.
+        RowSubmission("entities", {"name": "Plan"}),
         RowSubmission("state_machines", {"name": "Plan lifecycle",
                                          "states": ["draft", "frozen"],
-                                         "events": ["freeze"]}),
+                                         "events": ["freeze"]},
+                      links=[LinkSpec(0, "belongs_to")]),
         RowSubmission("sm_cells", {"state": "draft", "event": "freeze",
-                                   "transition_to": "frozen"}, links=[LinkSpec(0)]),
+                                   "transition_to": "frozen"},
+                      links=[LinkSpec(1, "belongs_to")]),
     )
     hole = next(
         h for h in gate.run_gate(4).holes
