@@ -13,7 +13,9 @@ Format: what the plan says · what v2 does · why.
 > **History:** this deviation originally deferred `task-graph` and `brief-composer`
 > entire. That deferral was **reversed on 2026-07-20** — the design discussion it was
 > waiting on happened (see D8 and `M5_PLAN.md`), and the deferral was also found to be
-> structurally unsound (it removed the only path out of `draft`; DEFECTS.md F15). Both
+> structurally unsound (it removed the only path out of `draft` — `M5_PLAN.md` §1.2, not
+> a numbered defect; this line previously miscited DEFECTS.md F15, which is a different
+> and since-withdrawn finding). Both
 > components are now built at M5. What remains a deviation is only the reduction of
 > `revision-service`, below.
 
@@ -251,3 +253,104 @@ design work; D9 fixes the requirement, not the entity list.
 
 **Contradicts:** `decisions:31`, D7 — logged here rather than folded in silently, because
 reopening the keep-pushing policy is a real design change and must read as one.
+
+---
+
+## D10 — SubTask readiness is a level-triggered predicate, not an edge-triggered event
+
+**Status: decided 2026-07-21 (owner approved), built at M5a.** Resolves DEFECTS.md F19(a)
+and sets the shape of F18's readiness contract.
+
+**Plan:** `state_machines:9` models readiness as an **event**: `deps_satisfied` fires and
+moves `pending → ready` (`sm_cells:130`), `rework_flagged → ready` (`sm_cells:160`). The
+plan never says what fires it, and no contract does (F18) — so it never says whether the
+event is raised once, when a predecessor transitions, or evaluated whenever asked.
+
+**v2 does:** readiness is a **predicate over dependency state**, recomputed on demand —
+whenever the graph is read, a status is reported, or a sub-task is requested. A sub-task is
+`ready` exactly when it is not `done`/`in_progress`/`blocked` and every dependency is
+`done`. `deps_satisfied` remains the named transition in the state machine (the recorded
+history stays faithful to `sm_cells:130`/`160`), but it is *derived* — the system evaluates
+the predicate and applies the transition; nothing external raises the event.
+
+**Why:**
+
+1. **The edge reading is broken, the level reading is not.** Under edge-triggering, a
+   `rework_flagged` node is trapped: it is entered from `done`, so all its predecessors are
+   already `done` and the `deps_satisfied` edge has fired for the last time. Its only other
+   exit is `block`, which reaches `ready` via `blocked → unblock` — arriving at the correct
+   state by declaring a block that does not exist. DEFECTS.md F19(a). Level-triggering makes
+   the `rework_flagged → ready` transition immediate and correct with no special case.
+2. **The alternative fix is worse.** The edge reading can be patched by adding a
+   rework-specific re-arm, but that is a second readiness mechanism existing only to serve
+   one state — and every future entry into `ready` from a non-`pending` state would need its
+   own. The predicate has no such surface.
+3. **`graph_status` already assumes it.** `contracts:38` returns "built, in-flight, blocked,
+   and stale sub-tasks" as a pure read, computing status at call time. A stored,
+   edge-maintained readiness flag would be a second source of truth for the same fact, and
+   the two would drift exactly when the graph is revised — the moment they most need to
+   agree.
+4. **It keeps readiness on the system's side of `crud_grid:35`.** The predicate is evaluated
+   from dependency states the system owns; nothing the code engine reports can assert
+   readiness directly. This is the same boundary F18 turns on: a gate the graded party can
+   open is not a gate.
+
+**One place this changes an outcome the plan's table names, deliberately:** `sm_cells:152`
+sends `blocked + unblock` straight to `ready`. Under the predicate, unblocking returns the
+sub-task to `pending` and it is *presented* as ready only if its dependencies actually
+allow. The table's version is safe only because it assumes the sub-task was servable when
+it blocked; a sub-task blocked from `pending` with unfinished dependencies would be handed
+back as ready and then served, which is `sm_cells:131` ("unbuildable work is never served")
+violated by its own state machine. The predicate cannot produce that state. Recorded rather
+than folded in silently, because it is a transition outcome differing from a named cell.
+
+**Cost, accepted:** readiness is recomputed rather than cached, so a graph read is O(edges)
+rather than O(1). At the scale the plan targets (one contract implementation unit per
+sub-task, `decisions:63`) this is not worth caching, and caching is what would reintroduce
+the drift in (3). If it ever matters, memoise per read — never persist.
+
+**Related:** DEFECTS.md F18 (the readiness contract this shapes), F19 (both halves).
+
+---
+
+## D11 — The provider/consumer dependency edge is a typed link
+
+**Status: decided 2026-07-21, built at M5a.** Resolves the engine half of DEFECTS.md F20;
+the methodology half is bound to M6.
+
+**Plan:** `decisions:63` derives task-graph edges "directly from **contract_deps**". No such
+thing exists in v2 — it was a v1 table with explicit provider/consumer columns, flattened
+into the generic `links` table (`entities:15`) by the stage-6 architecture. See F20.
+
+**v2 does:** the dependency is recorded as a **typed link**, `edge_type='depends_on'`,
+directed **consumer contract → provider contract**. `finalize_plan` derives sub-task edges
+from links of that type between two `contracts` rows, and from nothing else. Untyped
+(`'links'`) edges are traceability and never imply a build dependency.
+
+**Why:**
+
+1. **The information has to be typed somewhere, and the column already exists.**
+   `links.edge_type` is in the schema, `LinkSpec` takes it, `LinkGraph.closure` and
+   `find_cycles` already filter traversals by it, and `conflicts.py` already uses a second
+   type (`'contradicts'`) for exactly this reason — a different *kind* of relation that must
+   not be walked as if it were traceability. This is the second instance of that pattern,
+   not a new mechanism.
+2. **Direction is consumer → provider so the edge is owned by the row that knows it.**
+   Links are immutable and created with their source row (`entities:15`), so an edge can
+   only be written by the row that owns it. A contract knows what it consumes at the moment
+   it is written; a provider cannot know its future consumers without its links being
+   mutable, which `entities:15` forbids. Note this inverts the frozen plan's *presentation*,
+   which prints "consumed by:" on the provider — that is an export convenience, not a
+   storable direction.
+3. **It keeps derivation deterministic, which was `decisions:63`'s whole purpose.** Deriving
+   from untyped links would make every citation a build dependency: a contract citing a
+   requirement, a finding, or a sibling for context would acquire a spurious edge, and
+   `finalize_plan`'s `CycleDetected` would fire on traceability loops that mean nothing.
+
+**Cost, accepted:** rows already written by this build carry no `depends_on` edges, so a
+graph derived from the current store is all-roots — every sub-task ready at once. That is
+correct behaviour on data that declares no dependencies, not a silent failure, and
+`finalize_plan` reports the edge count so an all-roots graph is visible rather than assumed.
+Back-filling the edges for the dogfood plan is an M8 concern.
+
+**Related:** DEFECTS.md F20, `decisions:63`, `findings:11`.

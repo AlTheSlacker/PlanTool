@@ -115,20 +115,11 @@ class GapEngine:
         deficiency is the same deficiency even though the row carrying it is new. Keying
         on the lineage root gives exactly that, without the dismissal silently detaching
         and re-surfacing (findings:16).
+
+        Canonical implementation is `RowService.lineage_root`: scope attachments key the
+        same way (M5_PLAN.md 2.4), so it belongs to neither caller alone.
         """
-        current = RowRef.coerce(ref)
-        seen: set[str] = set()
-        while True:
-            if str(current) in seen:  # defensive: a cycle in lineage is corruption
-                return current
-            seen.add(str(current))
-            found = self.storage.query(
-                "SELECT supersedes FROM plan_rows WHERE table_name = ? AND ordinal = ?",
-                (current.table, current.ordinal),
-            )
-            if not found or not found[0]["supersedes"]:
-                return current
-            current = RowRef.parse(found[0]["supersedes"])
+        return self.rows.lineage_root(ref)
 
     def _key(self, rule_id: str, root: RowRef | None, extra: str = "") -> str:
         parts = [rule_id, str(root) if root else "-"]

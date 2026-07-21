@@ -6,8 +6,10 @@ from engine.gaps import GapEngine
 from engine.gates import GateEngine
 from engine.graph import LinkGraph
 from engine.references import ReferenceService
+from engine.attachments import AttachmentService
 from engine.rows import RowService
 from engine.storage import Storage
+from engine.tasks import TaskGraphService
 from engine.validation import ValidationService
 from engine.warnings import WarningService
 
@@ -58,6 +60,16 @@ def validation(store, rows, graph, conflicts):
 @pytest.fixture
 def findings(store, rows):
     return FindingService(store, rows)
+
+
+@pytest.fixture
+def tasks(store, rows, graph, findings):
+    return TaskGraphService(store, rows, graph=graph, findings=findings)
+
+
+@pytest.fixture
+def attachments(store, rows):
+    return AttachmentService(store, rows)
 
 
 PAPER = """A Study of Widget Settling

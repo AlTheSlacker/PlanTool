@@ -694,3 +694,167 @@ meaningless — and F14's for (a): silent, invisible to any test written from th
 specification, discoverable only by walking the table and asking what actually fires each
 edge. Both were invisible to check 1, which passes happily on events that *are* fired; these
 are about *when*.
+
+---
+
+## F20 — `contract_deps` does not exist in v2, and the gate that guards it is imprecise
+
+**Status: PARTLY RESOLVED at M5a (engine half, D11). Methodology half OPEN, resolve-by
+gate: M6 (methodology rev 3, already scheduled in the milestone recut).**
+
+**Rows:** `decisions:63`, `contracts:35` (`finalize_plan`), `requirements:34`,
+`entities:15` (links), `findings:11` (whose fix decisions:63 is), `findings:17` (the
+fossilization pre-mortem); vendored `gate_criteria.yaml` criterion `contract_has_consumer`
+and `stage6_architecture.md`.
+
+**Insufficient:** `decisions:63` is the row that made task-graph derivation deterministic —
+it was the fix for `findings:11` ("two implementers would derive incompatible graphs"). It
+says: "dependency edges map directly from **contract_deps** (the sub-task implementing a
+consumer depends on the sub-task implementing its provider contract)".
+
+**There is no `contract_deps` in v2.** In v1 it was a first-class table with explicit
+`provider_contract_id` and `consumer_component_id` columns and its own `submit_contract_deps`
+tool (`archive/v1/engine/db.py`, `gaps.py`, `lineage.py`). The v2 redesign flattened every
+relation into the generic `links` table (`entities:15`) — which carries an `edge_type`
+column but no convention for using it, and every link written by the build so far uses the
+default `'links'`. The provider/consumer *role* that v1 stored explicitly is simply not
+recoverable: a contract's links point at its requirements, its decisions, its findings and
+(perhaps) its providers, all indistinguishable.
+
+So `decisions:63`'s derivation rule reads on a field that does not exist, and the row that
+was supposed to make the graph deterministic leaves it underdetermined after all —
+`findings:11` is not actually closed.
+
+**Two knock-on defects in the vendored methodology, both real:**
+
+1. **`stage6_architecture.md` instructs the session to call `submit_contract_deps`** — a v1
+   tool with no v2 equivalent. A session following the vendored script hits a tool that
+   is not there. This is `findings:17`'s fossilization pre-mortem happening for real, and
+   notably it is the *first* observed instance: rev 2 was vendored verbatim from v1
+   including its tool names, and nothing checked that the tools still exist.
+2. **`contract_has_consumer` is imprecise.** It is a `traced` criterion with
+   `direction: in, to_tables: [components, contracts]` and **no `edge_type` filter**, so any
+   incoming link from any contract or component satisfies it, whatever the link means. The
+   criterion intends "someone consumes this contract" and actually tests "someone mentions
+   this contract". It cannot distinguish invented scope from cited scope — which is exactly
+   what it exists to catch.
+
+**Engine half, resolved now:** see DEVIATIONS.md **D11** — the provider/consumer edge
+becomes a typed link, `edge_type='depends_on'`, consumer → provider. The schema already
+supports it (`links.edge_type`, `LinkSpec.edge_type`); nothing new is stored, and
+`LinkGraph` already filters traversals by edge type. `finalize_plan` derives edges from
+those links alone and from no others.
+
+**Methodology half, bound to M6:** `stage6_architecture.md` must stop naming
+`submit_contract_deps` and instead instruct the session to record the dependency as a typed
+link; `contract_has_consumer` must filter on `edge_type='depends_on'`. Both are edits to
+vendored content, which under `decisions:61` means a new content revision with its own
+stamp, not an in-place edit — and `requirements:71` requires a migration path from rev 2 to
+rev 3. **Methodology rev 3 is already scheduled at M6** by the milestone recut, so this
+lands there rather than being smuggled into M5a. Recorded here so it cannot be lost.
+
+**Class:** new, and the third distinct class this milestone. Not F9's (missing mechanism),
+not F17's (stale citation). This is **a primitive that lost its type information in a
+redesign, silently invalidating a later row that depended on it.** `decisions:63` was
+written at stage 7 against a mental model of the v1 store; the v2 architecture that
+flattened `contract_deps` into generic links was decided at stage 6, *earlier*. Nothing
+re-checked the stage-7 fixes against the stage-6 architecture, because the plan's own
+review direction runs forward. Worth a v2 gate rule: **when a stage-6 architecture decision
+generalises or removes a primitive, every later row naming that primitive is a hole until
+re-checked** — the same shape as F6's rule about identity changes, one level up.
+
+---
+
+## F21 — `allow_draft` cannot serve anything, because the graph is derived at finalization
+
+**Status: OPEN. Resolve-by gate: M7 (`revision-service`).** Bound there because the only
+reading under which the flag becomes reachable is the revision case, which is M7's subject.
+M5a ships the honest error instead of a silent empty result.
+
+**Rows:** `contracts:55` (`next_subtask`, error `PlanNotFinalized`), `requirements:40`,
+`crud_grid:33`, `entities:9`, `findings:6` and its fix `decisions:62`/`sm_cells:186`/`187`.
+
+**Insufficient:** `contracts:55` offers an escape hatch from its own refusal —
+"`PlanNotFinalized`: refused unless `allow_draft` with recorded owner consent; draft briefs
+carry an explicit watermark (`requirements:40`)". The flag has nothing to act on. SubTask is
+"a node in the implementation task graph **derived at finalization**" (`entities:9`), and
+`crud_grid:33` gives creation to "System: task-graph derivation at finalization and revision
+regeneration". A plan that has never been finalized therefore has **zero sub-tasks**, so
+`next_subtask(allow_draft=True)` has an empty graph to choose from no matter what consent is
+recorded. `requirements:40`'s watermarked draft brief can never be issued.
+
+**Discovered by driving, not by the audit.** This is check 2's exact shape — an outcome a
+signature offers that is unreachable from the states the entity can be in — and the M5a
+pre-build audit did not catch it, because the audit walks the *state machine's* table and
+this unreachability comes from an entity-lifecycle row (`entities:9`) sitting outside it.
+Worth recording as a limit of the two mechanical checks alongside F12's: **check 2 tests
+contract outcomes against state-machine states, and misses outcomes made unreachable by
+when the entity is created.**
+
+**The one reading that makes the flag meaningful, and why it is M7's:** a plan can leave
+`finalized` *after* it has a graph — `state_machines:1` moves it to `revising` when a
+revision opens. Sub-tasks then exist while the plan is not finalized, and serving unaffected
+ones is exactly what `findings:6` demanded and `decisions:62`/`sm_cells:186`/`187` granted
+(affected-only freeze, so unaffected sub-tasks keep flowing). Under that reading
+`allow_draft` is not about draft plans at all despite its name — it is the affected-only
+freeze needing a way past a state check. That is `revision-service`'s design surface, so it
+resolves at M7 rather than being guessed here.
+
+**Built at M5a:** `next_subtask` raises `PlanNotFinalized` naming the real reason when
+consent is given but no graph exists. The alternative — returning `AllBlockedReport` with an
+empty blocking map — is what the code did before this was noticed, and it is the worse
+failure: "everything is blocked" reported for a plan with nothing in it, indistinguishable
+from a genuinely blocked build. Same silent-wrong-answer class as F14.
+
+**Class:** F13's (unreachable advertised outcome), with F21's own wrinkle that the
+unreachability is created by *lifecycle timing* rather than by the state machine. Third
+instance of an escape hatch that cannot be taken; worth a gate rule: **a flag that bypasses
+a precondition must name the state in which the bypass is reachable.**
+
+---
+
+## F22 — Narrowing an attachment did nothing, and the test asserted the wrong half
+
+**Status: RESOLVED at M5a, 2026-07-21.** Found by driving the engine end-to-end, not by
+the suite — the fifth milestone in a row where that step caught something the tests could
+not.
+
+**Rows:** `M5_PLAN.md` 2.5 (asymmetric friction), DEVIATIONS.md D8.
+
+**The bug:** `AttachmentService.attach` inserted a new row for every placement and left the
+previous one live. Promotion worked — the breadth comparison read the most recent row — but
+**narrowing was a silent no-op**: attaching a project-scoped row down to a packet added a
+packet row while the project row stayed live, so the target remained in the union for every
+packet forever.
+
+That inverts the design. `M5_PLAN.md` 2.5 makes promotion expensive (a recorded reason the
+owner reads) and narrowing free, precisely because "too high" is the *silent* failure —
+context bloat returns through the ceiling and nobody notices a cost spread evenly. The
+implementation made the cheap corrective direction ineffective while leaving the expensive
+one working, so the only reachable movement was upward. A ratchet, pointing the wrong way.
+
+**Why the suite missed it, which is the interesting part.** There was a test for narrowing,
+`test_narrowing_is_free`, and it passed throughout. It asserted `narrowed.promoted_from is
+None` — that the operation was *classified* as a narrowing — and never asserted where the
+row ended up. The assertion tested the bookkeeping the implementation had just written
+rather than the behaviour the design asked for. The specification says "narrowing is free",
+and "free" was read as "requires no reason" instead of "actually moves it".
+
+This is the M1/M3 lesson (`F5`, `F11`) in a new position: there, tests inherited the
+*specification's* blind spot. Here the test inherited the *implementation's* — written
+alongside the code, from the same mental model, checking the field the code had in hand.
+Both produce a green suite over a broken behaviour, and the driver caught both.
+
+**Resolved:** a target now has exactly one **live** placement. Re-attaching stamps the
+previous placement's `superseded_at` in the same atomic write. Superseded placements are
+kept rather than deleted, because the promotion history is the owner's review surface
+(`M5_PLAN.md` 2.5's second countermeasure) and deleting it would discard the log that makes
+gaming visible. New tests assert the row's actual scope after narrowing, and that the
+replaced placement survives as history.
+
+**Class:** implementation, not plan insufficiency — the F14 shape. Carried here because the
+methodology point is worth the entry: **a test written from the same mental model as the
+code checks the code's bookkeeping, not the design's intent.** The countermeasure is the one
+already in practice — drive it and read the output — and the sharper version is to assert on
+the *observable consequence* (what does a packet actually receive?) rather than on the
+record the operation just wrote.
