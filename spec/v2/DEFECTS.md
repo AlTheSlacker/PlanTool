@@ -1049,3 +1049,77 @@ it is fixed.**
 accounts against the frozen closure, which is what `requirements:44` measures, and reports
 plan drift since composition as a *separate*, non-failing observation. Two numbers, because
 they are two different facts.
+
+---
+
+## F27 — The glossary was a rule with no mechanism, and broke the session after it was written
+
+**Status:** RESOLVED 2026-07-21 — `tests/test_vocabulary.py` parses the banned list out of
+`GLOSSARY.md` and fails the suite on any violating identifier. The check found 20 further
+violations on its first run, in code the *previous* session's "full vocabulary sweep" had
+already been through.
+
+**Rows:** none — this is a defect in **this build's own process**, logged here because the
+execution-sufficiency ledger is worth nothing if it only records the plan's failures and not
+the builder's.
+
+**The defect.** `GLOSSARY.md` was written on 2026-07-21, declared binding, and stated a
+precise, mechanically checkable rule: *no identifier contains `packet`, `milestone`, `part`,
+`project`, `stage`, `phase` or `session`.* The next build package (M5b, `brief-composer`)
+shipped `parts=`, `part_ids`, `by_part`, `PartsExceedOriginal` and
+`assign_task(component=...)`. The owner caught it by reading the code.
+
+**Why it happened**, because "insufficient care" is not a cause anyone can act on:
+
+1. **The read-only exception is also the primary input.** The glossary permits retired words
+   in exactly one place — quotations from `spec/v2/plan.md` — and that file is *also* what is
+   read immediately before writing each function. `contracts:40`'s signature is literally
+   `parts: list[SubTaskSpec]` and it declares an error named `PartsDontCover`. The glossary was
+   read once, at session start; the retired vocabulary was re-read, freshly and in the exact
+   words of the thing about to be written, at every implementation step. **Ranked by proximity
+   to the moment of typing, the exception beats the rule.**
+2. **Naming happens at the point of least attention.** The thinking went into the obligation
+   denominator and the dependant deadlock; the parameter name was incidental typing. The words
+   that leak are precisely the ones nobody is thinking about, which is why care cannot be the
+   countermeasure.
+3. **There was no check.** Every other invariant in this build has a mechanical one — the
+   pre-build audit, the test suite, the gates. Vocabulary had a well-argued document and zero
+   enforcement.
+
+**Class: plan insufficiency — the eighth instance of F2/F4/F7/F9/F12/F23/F25**, behaviour named
+in prose without the mechanism that produces it, and the first where the prose is *ours*. The
+glossary is exactly the artifact that has been diagnosing this pattern in the frozen plan for
+eight entries, and it reproduced the pattern in itself within a day. That is the strongest
+available evidence that the pattern is structural rather than a property of the v1 planning
+session: **a rule and its enforcement are two different artifacts, and writing the first feels
+like doing the second.**
+
+**The 20 further violations are the load-bearing detail.** Commit `41184cd` was titled "Full
+vocabulary sweep" and was done by reading. It left `current_stage`, `stage_range`,
+`UnknownStage`, `StageScript`, `get_stage_script`, `next_stage`, `required_stages` and 13 test
+names untouched. A sweep performed by attention misses at the same rate as the writing that
+required it — so the check is not merely a guard against future drift, it was needed to
+complete the sweep that was believed finished.
+
+**Resolution.** `tests/test_vocabulary.py`:
+
+- parses the banned words **out of `GLOSSARY.md`'s own rule** rather than carrying a copy — a
+  second list drifts, and a vocabulary rule with two sources of truth is the bug it exists to
+  prevent (the same argument D10 made for readiness);
+- tokenises identifiers (`PartsDontCover` → parts/dont/cover) so `partial` and `third_party`
+  are not false positives — a check that cries wolf gets disabled, which is D7's whole lesson;
+- enforces the glossary's *stated* rule and not a stricter one — the rule deliberately omits
+  `component`, `unit` and `chunk`, and inventing a harsher check would put the code and the
+  document out of step, which is the same failure again;
+- carries a test that the check **can** fail, written on day one, because a check that cannot
+  fail is F23's disease;
+- records every exception in `GLOSSARY.md` **with a reason**, so an exception is a visible act
+  — the same friction shape as `requirements:79`'s waiver log and D8's promotion reason.
+
+**The generalised lesson, and it applies to the product and not only to this build:** a
+vocabulary is enforced at the moment of *writing*, or it is not enforced. The three things
+that would have prevented this, in order of strength, are (1) a check that runs on every
+commit, (2) the glossary being present in the brief the writer is working from rather than
+read once at session start, and (3) the writer's attention. Only the third one was in place.
+See the open design question bound to the **M6 gate**: how a plan's own glossary reaches the
+code engine that must comply with it.

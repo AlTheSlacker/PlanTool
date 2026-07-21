@@ -13,13 +13,13 @@ def gaps(store, rows, refs):
     return GapEngine(store, rows, refs)
 
 
-def test_empty_plan_reports_stage_one_not_started(gaps):
+def test_empty_plan_reports_package_one_not_started(gaps):
     cluster = gaps.next_gaps()
     assert cluster.package == 1
     assert any(g.rule_id == "package1_not_started" for g in cluster.gaps)
 
 
-def test_gate_is_recommended_when_a_stage_is_clean(gaps, rows):
+def test_gate_is_recommended_when_a_package_is_clean(gaps, rows):
     """requirements:12 — while the package has no open gaps, recommend the gate."""
     # `goals`, not `decisions`: package 1 fills goals/non_goals/stack in v2 (DEFECTS.md
     # F11 — the vendored rule still tested v1's decisions-with-a-"Goal:"-prefix shape).

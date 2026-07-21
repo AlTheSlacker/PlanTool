@@ -2,7 +2,7 @@
 
 import pytest
 
-from engine.guidance import Guidance, GuidanceUnreadable, UnknownStage
+from engine.guidance import Guidance, GuidanceUnreadable, UnknownPackage
 from engine.methodology import load
 
 
@@ -29,42 +29,42 @@ def test_mandate_carries_the_challenge_duty(guidance):
     assert "challenge duty" in guidance.get_mandate().lower()
 
 
-def test_every_stage_has_a_readable_script(guidance):
-    low, high = load().stage_range
+def test_every_package_has_a_readable_script(guidance):
+    low, high = load().package_range
     for package in range(low, high + 1):
-        script = guidance.get_stage_script(package)
+        script = guidance.get_package_script(package)
         assert script.text.strip()
         assert script.package == package
 
 
-def test_elicit_stages_require_divergence(guidance):
+def test_elicit_packages_require_divergence(guidance):
     """requirements:16 — elicit packages present divergence prompts and solicit
     owner-generated candidates before agent drafts."""
     for package in (1, 2, 3):
-        script = guidance.get_stage_script(package)
+        script = guidance.get_package_script(package)
         assert script.mode == "elicit"
         assert script.divergence_required is True
 
     for package in (4, 5, 6):
-        assert guidance.get_stage_script(package).divergence_required is False
+        assert guidance.get_package_script(package).divergence_required is False
 
 
 def test_elicit_scripts_actually_contain_the_divergence_round(guidance):
     """The flag is only worth having if the vendored content backs it."""
     for package in (1, 2, 3):
-        text = guidance.get_stage_script(package).text.lower()
+        text = guidance.get_package_script(package).text.lower()
         assert "divergence" in text
 
 
-def test_unknown_stage_names_the_valid_range(guidance):
-    with pytest.raises(UnknownStage) as exc:
-        guidance.get_stage_script(99)
+def test_unknown_package_names_the_valid_range(guidance):
+    with pytest.raises(UnknownPackage) as exc:
+        guidance.get_package_script(99)
     assert exc.value.detail["valid_range"] == "1-8"
 
 
 def test_script_carries_the_revision_stamp(guidance):
     """requirements:71 — content assets carry a content-revision stamp."""
-    script = guidance.get_stage_script(2)
+    script = guidance.get_package_script(2)
     assert script.revision_stamp == "plantool-rev2-2026-07-15"
 
 

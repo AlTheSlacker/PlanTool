@@ -3,7 +3,7 @@
 Serves the engineer's mandate and per-package interview scripts, including the mandatory
 divergence rounds for elicit packages.
 
-Contracts: contracts:17 get_mandate, contracts:65 get_stage_script.
+Contracts: contracts:17 get_mandate, contracts:65 get_package_script.
 
 This component holds no methodology of its own — it serves the vendored content assets
 (decisions:61). If it ever starts generating guidance, findings:4 has come back.
@@ -25,12 +25,12 @@ class GuidanceUnreadable(PlanToolError):
     """
 
 
-class UnknownStage(PlanToolError):
+class UnknownPackage(PlanToolError):
     """contracts:65 — package outside the defined set; names the valid range."""
 
 
 @dataclass(frozen=True, slots=True)
-class StageScript:
+class PackageScript:
     package: int
     name: str
     mode: str
@@ -68,7 +68,7 @@ class Guidance:
 
     # --- contracts:65 ---
 
-    def get_stage_script(self, package: int) -> StageScript:
+    def get_package_script(self, package: int) -> PackageScript:
         """The interview script for a package.
 
         For elicit packages this includes the mandatory divergence rounds — context-free
@@ -77,11 +77,11 @@ class Guidance:
         the friction recorded in decisions:36, where the owner "did not feel pushed that
         hard" and every use case ended up agent-authored.
         """
-        low, high = self.methodology.stage_range
+        low, high = self.methodology.package_range
         try:
             entry = self.methodology.package(package)
         except KeyError as exc:
-            raise UnknownStage(
+            raise UnknownPackage(
                 "no such package", package=package, valid_range=f"{low}-{high}"
             ) from exc
 
@@ -95,7 +95,7 @@ class Guidance:
                 cause=str(exc),
             ) from exc
 
-        return StageScript(
+        return PackageScript(
             package=entry.number,
             name=entry.name,
             mode=entry.mode,
@@ -109,7 +109,7 @@ class Guidance:
         """Supplementary scripts, e.g. the red-team brief for use_cases:8."""
         filename = self.methodology.auxiliary.get(name)
         if filename is None:
-            raise UnknownStage(
+            raise UnknownPackage(
                 "no such auxiliary script",
                 name=name,
                 available=sorted(self.methodology.auxiliary),

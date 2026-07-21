@@ -2,7 +2,7 @@
 
 import pytest
 
-from engine.gates import BlockedByConflict, UnknownStage
+from engine.gates import BlockedByConflict, UnknownPackage
 from engine.models import LinkSpec, Provenance, RowRef, RowSubmission
 
 
@@ -13,7 +13,7 @@ def submit(rows, *submissions, key="k"):
 # --- contracts:22: the shape of a gate result --------------------------------------
 
 
-def test_an_empty_plan_fails_stage_one_with_row_level_holes(gate):
+def test_an_empty_plan_fails_package_one_with_row_level_holes(gate):
     result = gate.run_gate(1)
     assert result.passed is False
     ids = {h.criterion_id for h in result.holes}
@@ -26,11 +26,11 @@ def test_every_hole_names_table_problem_and_fix(gate):
         assert hole.table and hole.problem and hole.fix
 
 
-def test_a_stage_outside_the_range_is_refused_with_the_range(gate):
-    with pytest.raises(UnknownStage) as exc:
+def test_a_package_outside_the_range_is_refused_with_the_range(gate):
+    with pytest.raises(UnknownPackage) as exc:
         gate.run_gate(0)
     assert "1-8" in str(exc.value)
-    with pytest.raises(UnknownStage):
+    with pytest.raises(UnknownPackage):
         gate.run_gate(9)
 
 
@@ -43,7 +43,7 @@ def test_results_are_deterministic(gate, rows):
     ]
 
 
-def test_a_complete_stage_passes_and_points_at_the_next(gate, rows):
+def test_a_complete_package_passes_and_points_at_the_next(gate, rows):
     submit(
         rows,
         RowSubmission("goals", {"title": "ship it", "success_criteria": "M7 lands"}),
@@ -53,7 +53,7 @@ def test_a_complete_stage_passes_and_points_at_the_next(gate, rows):
     )
     result = gate.run_gate(1)
     assert result.passed is True
-    assert result.next_stage == 2
+    assert result.next_package == 2
 
 
 # --- requirements:17: elicit-package coverage cross-checks ---------------------------
@@ -162,7 +162,7 @@ def test_an_escape_row_satisfies_a_non_empty_criterion(gate, rows):
     assert "dependencies_registered" not in after
 
 
-def test_an_unbacked_world_assumption_is_a_stage_six_hole(gate, rows):
+def test_an_unbacked_world_assumption_is_a_package_six_hole(gate, rows):
     submit(
         rows,
         RowSubmission("contracts", {"title": "SMB honours O_EXCL"},
@@ -186,7 +186,7 @@ def test_a_spike_backs_a_world_assumption(gate, rows):
     ]
 
 
-def test_stage_eight_folds_in_every_earlier_gate(gate):
+def test_package_eight_folds_in_every_earlier_gate(gate):
     """An empty plan fails every package, so freeze must report all seven."""
     holes = [
         h for h in gate.run_gate(8).holes if h.criterion_id == "all_prior_gates_green"
@@ -207,7 +207,7 @@ def test_an_open_conflict_out_of_scope_still_stops_the_freeze(gate, rows, confli
 # --- requirements:21 / decisions:31: warn, do not block ------------------------------
 
 
-def test_a_gate_lists_every_open_gap_in_its_stage_as_an_explicit_warning(gate, rows):
+def test_a_gate_lists_every_open_gap_in_its_package_as_an_explicit_warning(gate, rows):
     """An actor with no use case is a package-2 gap as well as a package-1 gate hole."""
     submit(rows, RowSubmission("actors", {"name": "Auditor"}))
     result = gate.run_gate(2)
@@ -241,7 +241,7 @@ def test_warnings_do_not_accumulate_across_repeated_gates(gate, rows, warns):
     assert len(warns.all_warnings()) == first
 
 
-def test_a_gate_does_not_warn_about_other_stages_gaps(gate, rows):
+def test_a_gate_does_not_warn_about_other_packages_gaps(gate, rows):
     """DEFECTS.md F10 — the first build warned "no components yet" at the package-1 gate
     of a plan three packages from needing components. Ten of twelve warnings were noise."""
     result = gate.run_gate(1)

@@ -196,6 +196,32 @@ that buys, and it is why the promotion history is kept rather than overwritten.
   ("sub-task"). This is the existing convention in `engine/`; it stays.
 - No identifier contains `packet`, `milestone`, `part`, `project`, `stage`, `phase` or
   `session` (outside `writer_lease.session_id`, which is a lock holder, not a level).
+
+### This rule is enforced, not merely stated
+
+`tests/test_vocabulary.py` parses the banned list **out of the bullet above** and fails the
+suite on any violating identifier in `engine/` or `tests/`. It reads this file rather than
+carrying its own copy: a duplicated list drifts from the glossary, and a vocabulary rule with
+two sources of truth is the bug it exists to prevent.
+
+The check exists because the rule was broken the session after it was written (DEFECTS.md
+**F27**), and the reason is worth keeping in view: **the read-only exception is also the
+primary input.** `spec/v2/plan.md` is the one place retired words legitimately survive, and it
+is also the document read immediately before writing every function — `contracts:40`'s own
+signature is `parts: list[SubTaskSpec]`. Ranked by proximity to the moment of typing, the
+exception beats the rule every time. A document cannot fix that; a check that runs on every
+commit can.
+
+Every exception is listed below **with its reason**, and adding one is a visible act — the
+same friction shape as `requirements:79`'s waiver log and D8's promotion reason.
+
+```vocabulary-exceptions
+engine/briefs.py:PartsDontCover — contracts:40's declared error name, quoted; see the
+    unresolved tension above. The only live `part` identifier in the codebase.
+engine/storage.py:session_id — writer_lease's lock holder, exempted by the rule itself.
+engine/gaps.py:parts — a local list of string fragments joined into a gap key; the English
+    word, no relation to a split. Renamed on next touch of that file.
+```
 - `plan_rows.package` is the *planning* package ordinal (1..8, the standard set) and is a
   different table from `packages.id` (build packages) — the same concept in two layers.
 

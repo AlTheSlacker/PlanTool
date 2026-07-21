@@ -392,7 +392,7 @@ class TaskGraphService:
 
     # --- contracts:35 ---
 
-    def finalize_plan(self, lease=None, required_stages: list[int] | None = None) -> TaskGraph:
+    def finalize_plan(self, lease=None, required_packages: list[int] | None = None) -> TaskGraph:
         """Derive the task graph and move the plan out of `draft`.
 
         This is the sole contract firing `state_machines:1`'s `finalize` event
@@ -400,7 +400,7 @@ class TaskGraphService:
         revision loop unreachable and the drift baseline never captured
         (M5_PLAN.md 1.2).
         """
-        self._guard_gates(required_stages)
+        self._guard_gates(required_packages)
         self._guard_findings()
         self._guard_packaging()
 
@@ -462,10 +462,10 @@ class TaskGraphService:
             unenumerated=tuple(unenumerated),
         )
 
-    def _guard_gates(self, required_stages: list[int] | None) -> None:
-        if self.gates is None or required_stages is None:
+    def _guard_gates(self, required_packages: list[int] | None) -> None:
+        if self.gates is None or required_packages is None:
             return
-        for package in required_stages:
+        for package in required_packages:
             result = self.gates.run_gate(package)
             if not result.clean:
                 raise GatesIncomplete(

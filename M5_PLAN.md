@@ -40,6 +40,7 @@ session):
 | §4 Q1 — mandate/script by value or reference | M6 gate |
 | §4 Q2 — digest names what to fetch | M6 gate |
 | D9 — gates hard-lock on outstanding problems (product form) | M6 gate |
+| **Glossary delivery to the writer** — F27: a plan's vocabulary is enforced at the moment of writing or not at all. How does a plan's own glossary reach the code engine, and should `compose_brief` carry it as a first-class section rather than as a row that can be omitted? | **M6 gate** |
 
 Nothing is unallocated, so no global lock is in force. **The M5b gate is clear**: F23–F26 were
 all fixed while building `brief-composer`, as their binding required. Everything still open is
@@ -52,6 +53,13 @@ bound to the M6 gate.
 3. For every coverage/accounting/completeness check: **name the set, say where it comes from,
    and say at what moment it is fixed.** A denominator re-derived at read time measures against
    a moving target — that is F26, caught by this check on its first use.
+
+A fifth, from **F27** and applying to our own prose rather than the plan's: **a rule stated in
+a document is not a mechanism.** When this build writes a rule for itself — a naming
+convention, an invariant, a discipline — the same question gets asked of it that gets asked of
+the frozen plan: *what fires this, and what fails when it is broken?* The glossary spent eight
+defect entries diagnosing exactly this pattern in the frozen plan and then reproduced it in
+itself within a day.
 
 A fourth is worth considering after F25: a contract that says it *supersedes*, *replaces* or
 *supplants* something in the execution layer must say what that does to the thing's edges and

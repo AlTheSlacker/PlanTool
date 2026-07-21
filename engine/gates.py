@@ -38,7 +38,7 @@ from engine.rows import RowService
 from engine.warnings import Warning, WarningService
 
 
-class UnknownStage(PlanToolError):
+class UnknownPackage(PlanToolError):
     """contracts:22 — names the valid range."""
 
 
@@ -78,7 +78,7 @@ class GateResult:
     warnings: tuple[Warning, ...]
     #: requirements:17 — which coverage cross-checks ran, so their absence is visible.
     cross_checks_run: tuple[str, ...] = ()
-    next_stage: int | None = None
+    next_package: int | None = None
 
     @property
     def clean(self) -> bool:
@@ -108,9 +108,9 @@ class GateEngine:
     # --- contracts:22 ---
 
     def run_gate(self, package: int, lease=None) -> GateResult:
-        low, high = self.methodology.stage_range
+        low, high = self.methodology.package_range
         if isinstance(package, bool) or not isinstance(package, int) or not low <= package <= high:
-            raise UnknownStage(
+            raise UnknownPackage(
                 f"package must be an integer in {low}-{high}", package=repr(package)
             )
 
@@ -145,7 +145,7 @@ class GateEngine:
             holes=tuple(holes),
             warnings=tuple(warnings),
             cross_checks_run=tuple(c.id for c in criteria if c.cross_check),
-            next_stage=package + 1 if passed and package < high else None,
+            next_package=package + 1 if passed and package < high else None,
         )
 
     def scope(self, package: int) -> GateScope:
@@ -181,7 +181,7 @@ class GateEngine:
         return tables
 
     def _is_terminal(self, package: int) -> bool:
-        return package == self.methodology.stage_range[1]
+        return package == self.methodology.package_range[1]
 
     # --- warnings (requirements:21, decisions:31) ---
 

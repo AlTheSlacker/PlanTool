@@ -308,7 +308,7 @@ class GapEngine:
                 unreadable=list(integrity.unreadable),
             )
 
-        current = package if package is not None else self.current_stage()
+        current = package if package is not None else self.current_package()
         derived = self.open_gaps(package=current)
         clustered = self._cluster(derived, limit)
 
@@ -393,7 +393,7 @@ class GapEngine:
             "batch with provenance."
         )
 
-    def current_stage(self) -> int:
+    def current_package(self) -> int:
         """The lowest package that still has open gaps, else the highest package.
 
         The plan never states how the current package is determined (DEFECTS.md F6).
@@ -404,7 +404,7 @@ class GapEngine:
                     continue
                 if self._derive(rule):
                     return entry.number
-        return self.methodology.stage_range[1]
+        return self.methodology.package_range[1]
 
     # --- contracts:66 ---
 

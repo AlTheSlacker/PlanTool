@@ -98,7 +98,7 @@ class Methodology:
         raise KeyError(number)
 
     @property
-    def stage_range(self) -> tuple[int, int]:
+    def package_range(self) -> tuple[int, int]:
         numbers = [s.number for s in self.packages]
         return min(numbers), max(numbers)
 
