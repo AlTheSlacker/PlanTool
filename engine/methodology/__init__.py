@@ -85,6 +85,9 @@ class Methodology:
     rules: tuple[Rule, ...]
     criteria: tuple[Criterion, ...]
     auxiliary: dict[str, str]
+    #: Child row type -> mandatory owning parent row type. See the manifest's own
+    #: comment: these names belong to the methodology, never to the engine.
+    containment: dict[str, str]
 
     def criteria_for(self, package: int) -> tuple[Criterion, ...]:
         """This package's criteria in file order — requirements:46's determinism starts
@@ -178,4 +181,5 @@ def load(revision: int = DEFAULT_REVISION) -> Methodology:
         rules=rules,
         criteria=criteria,
         auxiliary=manifest.get("auxiliary") or {},
+        containment=dict(manifest.get("containment") or {}),
     )

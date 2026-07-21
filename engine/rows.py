@@ -24,6 +24,7 @@ from engine.errors import (
     UpgradeFailed,
 )
 from engine.models import (
+    EDGE_TYPES,
     BatchReceipt,
     LinkSpec,
     PlanRow,
@@ -56,9 +57,19 @@ class RowService:
         self,
         storage: Storage,
         detector: ContradictionDetector = _no_contradictions,
+        containment: dict[str, str] | None = None,
     ):
         self.storage = storage
         self.detect_contradiction = detector
+        #: Child row type -> mandatory parent row type, from the methodology revision in
+        #: force. The engine holds no opinion about which row types these are; it
+        #: enforces the map it is handed. Pass `{}` to disable (used by tests that
+        #: submit row types no methodology declares).
+        if containment is None:
+            from engine.methodology import load
+
+            containment = load().containment
+        self.containment = containment
 
     # --- contracts:9 ---
 
@@ -95,6 +106,8 @@ class RowService:
         problems: dict[int, str] = {}
         for index, submission in enumerate(batch):
             problem = self._validate(submission, index, len(batch))
+            if problem is None:
+                problem = self._containment_problem(submission, batch)
             if problem is not None:
                 problems[index] = problem
                 continue
@@ -225,6 +238,12 @@ class RowService:
                 "world assumptions go to spikes, intent assumptions go to the owner"
             )
         for link in submission.links:
+            if link.edge_type not in EDGE_TYPES:
+                return (
+                    f"unknown edge type {link.edge_type!r}; the vocabulary is closed: "
+                    f"{', '.join(sorted(EDGE_TYPES))}. An edge type nothing traverses "
+                    "is an invisible relation, not a new kind of one"
+                )
             if link.is_intra_batch:
                 if not 0 <= link.target < batch_size:
                     return (
@@ -235,6 +254,53 @@ class RowService:
                     return "a row cannot link to itself"
             elif self._row(link.target) is None:
                 return f"link target {link.target} does not exist"
+        return None
+
+    def _containment_problem(
+        self, submission: RowSubmission, batch: list[RowSubmission]
+    ) -> str | None:
+        """A child row type must carry exactly one `belongs_to` edge to its parent.
+
+        v1 spelled this as a NOT NULL foreign key and the database refused an orphan.
+        The package-6 flattening kept the rows and dropped the constraint, so an orphan
+        `uc_steps` row became writable, invisible and gate-clean. This is the general
+        repair for that class; F20 and F24 were the two instances found by accident.
+
+        Checked here rather than at the gate because it is well-formedness, not judgment
+        — the row makes no claim without its parent — and because a gate warning arrives
+        after the planner has moved on.
+        """
+        parent = self.containment.get(submission.table)
+        if parent is None:
+            return None
+
+        owners = [link for link in submission.links if link.edge_type == "belongs_to"]
+        if not owners:
+            return (
+                f"a {submission.table} row must declare its owning {parent} with a "
+                f"belongs_to link (this was a NOT NULL foreign key before the row "
+                f"tables were flattened; see DEFECTS.md F28)"
+            )
+        if len(owners) > 1:
+            return (
+                f"a {submission.table} row belongs to exactly one {parent}; "
+                f"{len(owners)} belongs_to links were declared"
+            )
+
+        # A stored ref names its own table (`table:ordinal`), so no lookup is needed;
+        # _validate has already established that the target row exists. `target` may be
+        # a RowRef or the string spelling of one — LinkSpec accepts both everywhere else.
+        target = owners[0].target
+        found = (
+            batch[target].table
+            if owners[0].is_intra_batch
+            else RowRef.coerce(target).table
+        )
+        if found != parent:
+            return (
+                f"a {submission.table} row belongs to a {parent}, but its belongs_to "
+                f"link points at {found or 'a missing row'}"
+            )
         return None
 
     # --- contracts:10 ---

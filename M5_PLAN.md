@@ -34,7 +34,9 @@ session):
 | ~~F24 — task membership lost in the package-6 flattening~~ | **RESOLVED** in M5b — `belongs_to`, plus live `packages`/`tasks` |
 | ~~F25 — "supersedes the original in the graph" has no mechanism~~ | **RESOLVED** in M5b |
 | ~~F26 — `audit_brief`'s denominator is re-derived at read time~~ | **RESOLVED** in M5b — closure frozen into the brief |
-| **v1 foreign-key sweep** — F20 and F24 are two instances; check every remaining v1 FK against v2 rather than finding a third by accident | **M6 gate** |
+| ~~**v1 foreign-key sweep**~~ | **RESOLVED 2026-07-21** in M6 — swept; six more mandatory relations were missing, all repaired as `belongs_to`. See DEFECTS.md **F28** |
+| **`spikes` row-level provenance** — v1's nullable `spike_id` on ten row tables ("this row is provisional pending spike N") survives only as `claim_tracks.spike_id`. Not F28's class (it was nullable), but the same loss | **M7 gate** |
+| **When does contract ownership bite?** — the other six containment relations are enforced at submission; `contracts`→`components` is enforced at finalization (F24). One relation, two moments. Owner's call, not a side effect | **M7 gate** |
 | **Methodology rev 3, second half** — rev 3 carries v2's vocabulary but still names v1's tool surface (`submit_use_cases`, …) | **M6 gate** |
 | F17 — prose row citations break on supersession | M6 gate |
 | §4 Q1 — mandate/script by value or reference | M6 gate |

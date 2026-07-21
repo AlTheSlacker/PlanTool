@@ -100,6 +100,18 @@ the frozen spec says "component", read "task". New code says task.
 
 Task membership of a contract is a typed link, `edge_type='belongs_to'` (F24 / D13).
 
+### `belongs_to` — one name for containment, everywhere
+Every *this row's owning parent* relation is `edge_type='belongs_to'`, whatever the two row
+types are. v1 spelled the same relation seven ways — `use_case_id`, `step_id`, `entity_id`,
+`machine_id`, `dep_id`, `component_id`, `consumer_component_id` — which is this document's
+subject matter in a different column. The parent's row type disambiguates, so a second edge
+name buys nothing: `uc_steps:4 belongs_to use_cases:2` is unambiguous.
+
+**The edge vocabulary is closed** — `engine/models.py`'s `EDGE_TYPES`, enforced at submission.
+`links.edge_type` defaults to `'links'` and accepts any string, so before this a misspelled
+edge type produced a durable relation that no traversal looked for (F28). Which child types
+*require* a parent is methodology data (`rev3/manifest.yaml`), never engine knowledge.
+
 ### Sub-task
 The atomic unit of executable work, and the node of the task graph (`entities:9`,
 `state_machines:9`). The thing a brief is composed for and a code engine executes.
