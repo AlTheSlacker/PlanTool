@@ -216,12 +216,12 @@ class GateEngine:
             rule.id for rule in self.methodology.rules if rule.type == "open_assumption"
         }
         for gap in self.gaps.open_gaps(package=package):
-            if gap.rule_id in assumption_rules:
+            if gap.rule_key in assumption_rules:
                 continue
             self.warnings.raise_warning(
                 warning_key=f"gap:{gap.key}",
                 kind="open_gap",
-                message=f"open gap ({gap.rule_id}): {gap.ask}",
+                message=f"open gap ({gap.rule_key}): {gap.ask}",
                 source_ref=gap.target,
                 lease=lease,
             )

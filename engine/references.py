@@ -202,7 +202,7 @@ class ReferenceService:
                     "content_hash": content_hash,
                     "text": text,
                     "char_count": len(text),
-                    "stored_at": now(),
+                    "created_at": now(),
                 })
             )
             ops.extend(

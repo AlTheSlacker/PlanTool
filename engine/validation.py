@@ -454,6 +454,7 @@ class ValidationService:
                     "track": track,
                     "state": TRACK_OPEN,
                     "detail": _TRACK_DETAIL[track],
+                    "created_at": stamp,
                     "updated_at": stamp,
                 })
                 for track in _KIND_TRACKS[kind]

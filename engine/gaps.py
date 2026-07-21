@@ -71,7 +71,7 @@ class PlanUnreadable(PlanToolError):
 @dataclass(frozen=True, slots=True)
 class Gap:
     key: str
-    rule_id: str
+    rule_key: str
     priority: int
     package: int | None
     ask: str
@@ -122,8 +122,8 @@ class GapEngine:
         """
         return self.rows.lineage_root(ref)
 
-    def _key(self, rule_id: str, root: RowRef | None, extra: str = "") -> str:
-        segments = [rule_id, str(root) if root else "-"]
+    def _key(self, rule_key: str, root: RowRef | None, extra: str = "") -> str:
+        segments = [rule_key, str(root) if root else "-"]
         if extra:
             segments.append(extra)
         return "|".join(segments)
@@ -184,7 +184,7 @@ class GapEngine:
         root = self.lineage_root(row.ref) if row is not None else None
         return Gap(
             key=self._key(rule.id, root, extra_key),
-            rule_id=rule.id,
+            rule_key=rule.id,
             priority=rule.priority,
             package=rule.package,
             ask=rule.ask.format(title=self._title(row) if row else "", **fmt),
@@ -290,7 +290,7 @@ class GapEngine:
                 if entry is not None and entry["state"] in ("dismissed", "resolved"):
                     continue
                 gaps.append(gap)
-        gaps.sort(key=lambda g: (g.priority, g.rule_id, str(g.target or "")))
+        gaps.sort(key=lambda g: (g.priority, g.rule_key, str(g.target or "")))
         return gaps
 
     # --- contracts:19 ---
@@ -338,7 +338,7 @@ class GapEngine:
                 gap.target.table == lead_table
             )
             return (
-                0 if gap.rule_id == lead.rule_id else 1,
+                0 if gap.rule_key == lead.rule_key else 1,
                 0 if same_table else 1,
                 str(gap.target or ""),
             )
@@ -353,7 +353,7 @@ class GapEngine:
         tables = {g.target.table for g in gaps if g.target}
         if len(tables) == 1:
             return tables.pop()
-        rules = {g.rule_id for g in gaps}
+        rules = {g.rule_key for g in gaps}
         return rules.pop() if len(rules) == 1 else None
 
     def _guidance(self, package: int, has_gaps: bool) -> str:
@@ -460,19 +460,20 @@ class GapEngine:
             if existing
             else Op("insert", "gap_overlay", {
                 "gap_key": gap.key,
-                "rule_id": gap.rule_id,
+                "rule_key": gap.rule_key,
                 "root_ref": str(gap.root) if gap.root else None,
                 "state": state,
                 "reason": reason,
+                "created_at": now(),
                 "updated_at": now(),
             })
         )
         self.storage.write_atomic([op], f"{state}:{gap.key}:{now()}", lease=lease)
 
     def _find(self, gap_key: str, allow_missing: bool = False) -> Gap:
-        rule_id = gap_key.split("|")[0]
+        rule_key = gap_key.split("|")[0]
         for rule in self.methodology.rules:
-            if rule.id != rule_id:
+            if rule.id != rule_key:
                 continue
             for gap in self._derive(rule):
                 if gap.key == gap_key:
@@ -480,7 +481,7 @@ class GapEngine:
         if allow_missing:
             root = gap_key.split("|")[1]
             return Gap(
-                key=gap_key, rule_id=rule_id, priority=9, package=None,
+                key=gap_key, rule_key=rule_key, priority=9, package=None,
                 ask="(gap no longer derived from current plan state)",
                 target=None,
                 root=RowRef.parse(root) if root and root != "-" else None,

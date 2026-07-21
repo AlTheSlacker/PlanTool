@@ -323,6 +323,46 @@ class RowService:
                 return current
             current = RowRef.parse(found[0]["supersedes"])
 
+    def lineage_head(self, ref: RowRef | str) -> RowRef:
+        """The live end of a row's supersession chain — `lineage_root`'s mirror.
+
+        The root is the stable *identity* of a thing; the head is its current *state*. Both
+        are needed and for opposite reasons: key on the root so a reference never detaches,
+        read the head to answer "and where does that stand now".
+
+        This is what serves "I decided something yesterday — what became of it" without a
+        stored `updated_at` on an immutable row (see `PlanRow.updated_at`). The question is
+        about a lineage, so it is answered by walking one.
+        """
+        current = RowRef.coerce(ref)
+        seen: set[str] = set()
+        while True:
+            if str(current) in seen:  # defensive: a cycle in lineage is corruption
+                return current
+            seen.add(str(current))
+            found = self.storage.query(
+                "SELECT superseded_by FROM plan_rows WHERE table_name = ? AND ordinal = ?",
+                (current.table, current.ordinal),
+            )
+            if not found or not found[0]["superseded_by"]:
+                return current
+            current = RowRef.parse(found[0]["superseded_by"])
+
+    def history(self, ref: RowRef | str) -> list:
+        """Every version of a thing, oldest first, from lineage root to live head.
+
+        `requirements:61`'s lineage made readable. Each row carries its own `created_at`, so
+        this answers both halves of the owner's question at once: *when* each version was
+        written, and *what it said at the time*.
+        """
+        rows, current = [], self.lineage_root(ref)
+        while True:
+            row = self.get(current)
+            rows.append(row)
+            if row.superseded_by is None:
+                return rows
+            current = row.superseded_by
+
     def _row(self, ref: RowRef | str):
         ref = RowRef.coerce(ref)
         rows = self.storage.query(

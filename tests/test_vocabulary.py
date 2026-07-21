@@ -35,7 +35,7 @@ def _banned() -> set[str]:
     """The words from the glossary's own "No identifier contains ..." rule."""
     for line in GLOSSARY.read_text(encoding="utf-8").splitlines():
         if line.lstrip().startswith("- No identifier contains"):
-            return {w.lower() for w in re.findall(r"`([a-z_]+)`", line)} - {"session_id"}
+            return {w.lower() for w in re.findall(r"`([a-z_]+)`", line)} - {"session_key"}
     raise AssertionError(
         "GLOSSARY.md has no 'No identifier contains ...' rule to enforce. The check parses "
         "the glossary rather than carrying its own copy, so the rule going missing must "
@@ -127,7 +127,7 @@ def test_the_check_can_actually_fail():
     assert "part" not in _tokens("partial_state")     # not a substring match
     assert "part" not in _tokens("third_party")
     assert "stage" in _tokens("stage_gate")
-    assert "session" in _tokens("session_id")
+    assert "session" in _tokens("session_key")
     assert _banned(), "the banned list parsed empty"
 
 

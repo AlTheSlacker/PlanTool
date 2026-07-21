@@ -918,7 +918,7 @@ class TaskGraphService:
                 "plan_version": handle.get("version") or 1,
                 "subtask_id": subtask_id,
                 "fingerprint": json.dumps(fingerprint, sort_keys=True),
-                "captured_at": stamp,
+                "created_at": stamp,
             }),
         ], f"fingerprint:{occasion}:{subtask_id}:{stamp}", lease=lease)
 

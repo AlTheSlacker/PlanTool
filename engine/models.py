@@ -135,6 +135,27 @@ class PlanRow:
         and the row is not retired."""
         return self.superseded_by is None and self.state is not RowState.RETIRED
 
+    @property
+    def updated_at(self) -> str:
+        """When this row last changed — **derived, never stored** (owner, 2026-07-21).
+
+        A planning row is immutable: `requirements:61` says content is never edited, and
+        changing your mind writes a *new* row and stamps this one `superseded_at`. A stored
+        `updated_at` here would therefore equal `created_at` forever — a column that promises
+        change and cannot deliver it — and would be a second source of truth for something
+        `superseded_at` already records. That is D10's argument for derived readiness, applied
+        to time: the two copies drift precisely when the row is revised, which is the only
+        moment either one matters.
+
+        So the last change to *this row* is when it was superseded or retired, and if neither
+        has happened, when it was created. For "what became of the thing I said yesterday",
+        walk the lineage to its live head — `RowService.lineage_head` — and read that row's
+        `created_at`. The question "when did I last touch this decision" is a question about a
+        *lineage*, not about a row, and answering it from a column on one row is what would
+        make it wrong.
+        """
+        return self.retired_at or self.superseded_at or self.created_at
+
 
 @dataclass(frozen=True, slots=True)
 class RowVerdict:
@@ -220,7 +241,7 @@ class Closure:
 class Lease:
     """The writer lock's lease (contracts:63, requirements:67/68)."""
 
-    lease_id: str
-    session_id: str
-    acquired_at: str
-    renewed_at: str
+    lease_key: str
+    session_key: str
+    created_at: str
+    updated_at: str

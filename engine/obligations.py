@@ -68,7 +68,7 @@ class Obligation:
     key: str
     kind: str
     statement: str
-    frozen_at: str = ""
+    created_at: str = ""
     retired_at: str | None = None
 
     @property
@@ -142,7 +142,7 @@ class ObligationService:
                 "key": spec.key,
                 "kind": spec.kind,
                 "statement": spec.statement,
-                "frozen_at": stamp,
+                "created_at": stamp,
             }))
             ops.append(Op("insert", "obligation_ownership", {
                 "obligation_id": FromOp(base_index + len(ops) - 1, "id"),
@@ -324,6 +324,6 @@ class ObligationService:
             key=r["key"],
             kind=r["kind"],
             statement=r["statement"],
-            frozen_at=r["frozen_at"],
+            created_at=r["created_at"],
             retired_at=r["retired_at"],
         )
