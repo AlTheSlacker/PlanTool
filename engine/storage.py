@@ -120,7 +120,7 @@ class MigrationReport:
 class Storage:
     """A plan store rooted at a workspace directory.
 
-    requirements:49 — all plan state lives in files inside the project workspace; no
+    requirements:49 — all plan state lives in files inside the workspace; no
     state is written outside it.
     """
 

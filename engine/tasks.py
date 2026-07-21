@@ -156,7 +156,9 @@ class SubTask:
     id: int
     contract_ref: RowRef
     title: str
-    milestone: str
+    #: The owning task (`components:N`), from the contract's `belongs_to` link. Empty when
+    #: the contract declares no owner — see DEFECTS.md F24.
+    task_ref: str
     state: str
     serve_epoch: int
     deps: tuple[int, ...] = ()
@@ -272,7 +274,7 @@ class TaskGraphService:
             ops.append(Op("insert", "subtasks", {
                 "contract_ref": str(ref),
                 "title": title,
-                "milestone": "",
+                "task_ref": self._owning_task(ref),
                 "state": PENDING,
                 "serve_epoch": 0,
                 "created_at": stamp,
@@ -340,6 +342,28 @@ class TaskGraphService:
             ref = RowRef("contracts", r["ordinal"])
             specs.append((ref, content.get("title") or content.get("name") or str(ref)))
         return specs
+
+    def _owning_task(self, contract: RowRef) -> str:
+        """The task (`components:N`) this contract belongs to, via its `belongs_to` link.
+
+        DEFECTS.md F24: v1 carried this as `contracts.component_id`, a real foreign key.
+        The stage-6 flattening into generic `plan_rows`/`links` kept the rows and dropped
+        the relation, leaving membership expressed only as markdown nesting in the exported
+        plan. D13 restores it as a typed link, mirroring D11's treatment of `depends_on` —
+        member -> owner, so the edge is owned by the row that knows it.
+
+        Returns '' when the contract declares no owner. That is reported, never guessed:
+        choosing an owner would be the tool exercising judgment (`decisions:12`).
+        """
+        found = self.storage.query(
+            "SELECT target_ref FROM links WHERE source_ref = ? AND edge_type = 'belongs_to'"
+            " ORDER BY id LIMIT 1",
+            (str(contract),),
+        )
+        if not found:
+            return ""
+        target = found[0]["target_ref"]
+        return target if target.startswith("components:") else ""
 
     def _derive_edges(self, specs) -> list[tuple[str, str]]:
         """D11 — consumer -> provider, from `depends_on` links between contract rows only.
@@ -747,7 +771,7 @@ class TaskGraphService:
             id=r["id"],
             contract_ref=RowRef.parse(r["contract_ref"]),
             title=r["title"],
-            milestone=r["milestone"],
+            task_ref=r["task_ref"],
             state=r["state"],
             serve_epoch=r["serve_epoch"],
             deps=deps,

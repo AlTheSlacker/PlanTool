@@ -59,7 +59,7 @@ they are now in scope, built at M5.** Full design and build plan: `M5_PLAN.md` a
 root; the context-allocation model it turns on is summarised at §10 below.
 
 Two things forced the change. First, plan-time context allocation and the task graph are too
-tightly integrated to design separately — allocation is *what a packet is for*. Second, the
+tightly integrated to design separately — allocation is *what a sub-task is for*. Second, the
 deferral was structurally unsound: `finalize_plan` (`contracts:35`) is the sole contract
 firing the `finalize` event of `state_machines:1` and it lives on `task-graph`, so with the
 module deferred no plan could ever leave `draft`. That silently took out the workspace-drift
@@ -241,7 +241,7 @@ Each is a branch and a PR. Al merges; no self-merges.
 | 7 | `revision-service`, reduced form (§4.1) |
 | 8 | Dogfood: plan the next body of work (GUI) **using v2** |
 
-Within each milestone, contracts are built in `contract_deps` order, one contract per unit of
+Within each build milestone, contracts are built in `depends_on` order, one contract per unit of
 work.
 
 M2 carries the most product risk and should be expected to iterate. The frozen plan records
@@ -296,11 +296,12 @@ opinions" grows.
 
 ### 10.2 Scope levels
 
-Attachments carry a scope level: **project / milestone / packet**. A packet's context is the
-union of its own attachments and those of every enclosing scope.
+Attachments carry a scope level: **plan / package / task / sub-task** (`GLOSSARY.md`,
+DEVIATIONS.md D13). A sub-task's context is the union of its own attachments and those of every
+enclosing scope. Keys are row **ids**, never names.
 
-(A `session` level was considered and dropped: the first three are plan structure, whereas a
-session is an episode of work — and session-scoped attachment is what the journal already is.)
+(A `session` level was considered and dropped: these four are plan structure, whereas a session
+is an episode of work — and session-scoped attachment is what the journal already is.)
 
 Allocations key on target-row **lineage root, not row id**, so they survive supersession. This
 is the same primitive `requirements:78` uses for gap identity, for the same reason.
@@ -308,25 +309,26 @@ is the same primitive `requirements:78` uses for gap identity, for the same reas
 This also bounds resume cost structurally rather than arbitrarily: `requirements:58` requires
 resume to present "accumulated learnings" and nothing in the frozen plan bounds that, so
 resume cost would otherwise scale with total session history. Scope levels make the bound
-project ∪ current-milestone ∪ current-packet.
+plan ∪ current-package ∪ current-task ∪ current-sub-task.
 
-### 10.3 Packet boundaries: lowest-coupling, not smallest
+### 10.3 Sub-task boundaries: lowest-coupling, not smallest
 
 **Design rule: maximise crispness of the boundary, not minimise size.** Below a certain size,
-smaller packets cost *more* context — every packet pays the `decisions:16` overhead (its linked
-rows plus the governing big-picture rows), and cutting below a natural seam forces neighbours
-to be re-imported to keep the packet self-contained.
+smaller sub-tasks cost *more* context — every sub-task pays the `decisions:16` overhead (its
+linked rows plus the governing big-picture rows), and cutting below a natural seam forces
+neighbours to be re-imported to keep the sub-task self-contained.
 
-Granularity is therefore `decisions:63` as already settled — one SubTask = one contract
-implementation unit, edges from `contract_deps`, with `split_subtask` as the escape hatch for a
-contract that is genuinely too big. Contracts are the seam *because* `contract_deps` already
-encodes the coupling.
+Granularity is therefore `decisions:63` as already settled — one sub-task = one contract
+implementation unit, edges from typed `depends_on` links (D11), with `split_subtask` as the
+escape hatch for a contract that is genuinely too big. Contracts are the seam *because* that
+dependency relation already encodes the coupling.
 
 ### 10.4 The risk this design concentrates
 
-The scheme rests on one judgment per finding: which level to attach at. Too low and the packet
-that needed it does not get it — silent, discovered at execution. Too high and it is in every
-packet forever, and nobody notices a cost spread evenly.
+The scheme rests on one judgment per finding: which level to attach at. Too low and the
+sub-task that needed it does not get it — silent, discovered at execution. Too high and it is
+in every sub-task forever, and nobody notices a cost spread evenly. Four levels means four rungs
+to misplace on, which is what the review surface is for (D13).
 
 Countermeasures: **asymmetric friction** (promoting to a broader scope requires a recorded
 reason the owner sees; narrowing is free — the `requirements:79` shape, where gaming the

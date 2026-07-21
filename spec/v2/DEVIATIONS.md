@@ -354,3 +354,147 @@ correct behaviour on data that declares no dependencies, not a silent failure, a
 Back-filling the edges for the dogfood plan is an M8 concern.
 
 **Related:** DEFECTS.md F20, `decisions:63`, `findings:11`.
+
+---
+
+## D12 — A sub-task owns an explicit obligation surface; split redistributes it
+
+**Resolves:** DEFECTS.md F23. Built in M5b.
+
+**The plan says:** a sub-task is the implementation unit of exactly one contract
+(`decisions:63`), `split_subtask` "divides along the contract's param/error surface"
+(`decisions:63`), and a split is rejected when "the parts do not jointly cover the original
+sub-task's contracts" (`contracts:40`). The plan never says what the covered set *is*, and
+under one-contract-one-sub-task the stated check is vacuous — see F23.
+
+**v2 does:** a sub-task owns a set of **obligations**. An obligation is one discharge-able
+commitment of its contract — the primary behaviour of the signature, and each enumerated
+error condition. `split_subtask` **redistributes** the original's obligations among the
+parts; it never invents or discards them. Coverage is enforced as a database invariant —
+every obligation of a live sub-task is owned by exactly one live sub-task — rather than as a
+procedural comparison of contract refs. `PartsDontCover` fires when the union of the parts'
+obligations is a proper subset of the original's, and names exactly what was dropped.
+
+**Where the obligation set comes from, which is the load-bearing part.** It is enumerated
+**by the planning session** and frozen against the sub-task **at finalization** — before,
+and independently of, any split that will later be measured against it.
+
+Three ways to source it were considered and two rejected:
+
+1. **The tool derives it** by parsing the contract row. Rejected on the design spine — the
+   tool records judgment, it never exercises it — and on fact: `plan_rows.content` is
+   free-form JSON with no per-table schema (`engine/schema.py:30`), so a contract's
+   enumerated errors are a methodology convention, not a storage guarantee. Deriving would
+   mean the tool inferring an accounting denominator from prose.
+2. **The splitting session declares it at split time.** Rejected: it hands the denominator
+   to the party being audited. That is precisely how `findings:18` was gamed — accounting
+   satisfied by shrinking what counts — and `requirements:79` exists because of it.
+3. **Enumerated at finalization, frozen thereafter.** Adopted. The session enumerates; the
+   tool freezes and enforces. The denominator is fixed while nobody is under pressure to
+   make a particular split pass.
+
+Correcting a frozen enumeration later is legitimate but is a recorded, owner-visible act,
+the same friction shape as `requirements:79`'s waiver log and D8's promotion reason: **the
+accounting can be changed, but not silently.**
+
+**What this buys beyond fixing F23:**
+
+- `verify_completion` (`contracts:62`) resolves M5a's open hook. Evidence maps per
+  *obligation*, not per contract, so a part cannot discharge its parent's whole contract by
+  producing evidence for its own slice. `TaskGraphService._scope_contracts` returning a
+  1-tuple was the placeholder for exactly this.
+- The `subtasks.contract_ref UNIQUE` constraint is replaced by uniqueness over live
+  obligation ownership. The constraint was never really about the contract; it was
+  expressing "no unit of work is owned twice", which obligations state directly. Without
+  this, `split_subtask` is unbuildable: every part carries the same `contract_ref` and the
+  second insert is rejected.
+- Split accounting and brief accounting become the same primitive at two altitudes — every
+  closure row cited-or-waived (`requirements:79`), every obligation assigned-or-waived.
+
+**Cost, accepted:** finalization gains an enumeration step that did not exist, and the
+methodology's stage-7 script should ask for the obligation surface when a contract is
+written. Sub-tasks derived before this lands have no obligations recorded; the graph treats
+an empty obligation set as "not yet enumerated" and refuses to split such a node rather than
+silently permitting an unaccountable split.
+
+**Related:** DEFECTS.md F23, F17; `decisions:63`, `findings:11`, `findings:18`,
+`requirements:37`, `requirements:79`; DEVIATIONS.md D8.
+
+---
+
+## D13 — Four structural levels: Plan → Package → Task → Sub-task
+
+**Supersedes the three-level scheme in D8.** Resolves DEFECTS.md F24. Owner decision,
+2026-07-21. The binding definitions live in `GLOSSARY.md`; this entry records why.
+
+**The plan says:** nothing. There is no grouping level between the plan and its components,
+and no vocabulary for one. `M5_PLAN.md` §2.3 invented three levels — project / milestone /
+packet — and M5a shipped them.
+
+**v2 does:** four levels — **plan → package → task → sub-task** — with obligations (D12)
+inside a sub-task. Packages are declared; tasks and sub-tasks are derived. No level nests.
+
+**Why a fourth level.** With three levels the middle one was the component, and on a large
+plan a subsystem — "the GUI", "the controller" — is far larger than one component and far
+smaller than the plan. Every subsystem-wide attachment is then forced up to plan scope, which
+is D8 §2.5's "too high" failure: context bloat arriving through the ceiling, spread evenly so
+nobody notices. Three levels made that failure *certain* on a large plan rather than merely
+possible. The cost is real and worth stating: a fourth level is a fourth rung to misplace an
+attachment on, and the silent direction gains a rung too. The countermeasures are unchanged
+(recorded promotion reasons, retained promotion history as the owner's review surface), and
+they are load-bearing rather than decorative now.
+
+**Why the three original names were all wrong**, each in an instructive way:
+
+- **packet** had *zero* occurrences in the frozen plan — pure coinage — and was a second name
+  for sub-task. M5a's own schema comment betrayed it: `scope_key` documented as "packet
+  **subtask id**".
+- **milestone** appeared in the frozen plan only inside the phrase "milestone-time
+  re-planning" (`decisions:8`/`decisions:14`) — a term borrowed from the *failure* vocabulary
+  and mistaken for a domain entity. It shipped as a free-text column with no entity, no
+  creation mechanism and no owner.
+- **project** duplicated `Plan`, the actual root entity.
+
+**Packages are declared; everything else is derived.** A package is the one level a human
+chooses, so it is the one level that needs entity discipline: a row with an id, an owner and
+supersession tracking, referenced by id and never by name. A free-text grouping key yields an
+empty context set on a typo — the sub-task silently missing its mid-level context, which is
+precisely what `decisions:14` measures. Tasks derive one-per-component and sub-tasks
+one-per-contract, so neither can be misfiled.
+
+**Membership is mandatory, with no default bucket.** Every task belongs to exactly one
+package and finalization refuses an unpackaged task. An auto-created catch-all was rejected:
+it satisfies the invariant while quietly restoring the three-level model, and a bucket nobody
+chose is a grouping nobody reviews. A one-package plan is fine — declared, not defaulted.
+
+**No nesting.** A `parent_id` would allow packages inside packages for free, and it was
+refused on two grounds. It is confusing to users and awkward to draw, which is the owner's
+call and sufficient on its own. It also reintroduces an arbitrary depth through the back
+door: §2.3's argument for scope levels was that the bound on assembled context is
+*structural*, not a number someone picked, and unbounded nesting makes context assembly a
+tree walk of unknown cost. A package that wants sub-packages is evidence the plan wants
+splitting — a signal worth keeping visible.
+
+**Task membership is a typed link** (F24): `edge_type='belongs_to'`, directed contract →
+component, member → owner. Identical reasoning to D11: the column already exists, an edge can
+only be written by the row that owns it (`entities:15` — links are immutable and created with
+their source), and typing it keeps traversal deterministic instead of making every citation a
+membership claim.
+
+**Leading the user without the tool judging.** Mandatory membership means someone must
+propose a package cut when none is offered. That proposal is a judgment, and the tool records
+judgment but never exercises it (`decisions:12`). The division is the one brief composition
+already uses (`decisions:52`/`decisions:60`): the **tool** enforces the invariant and refuses
+finalization without it; the **methodology** — a vendored stage script, not generated text —
+instructs the driving session to lead the owner to a cut; the **planning session** proposes
+and the **owner** decides. A packaging heuristic inside the engine would be the tool holding
+opinions about architecture, the same seed `M5_PLAN.md` §2.2 rejected a read-time relevance
+heuristic to avoid.
+
+**Cost, accepted:** M5a's scope-attachment code and schema carry the retired names and are
+migrated as part of M5b. The methodology needs a packaging step at the architecture stage,
+which is an M6 concern (`requirements:71`'s revision path covers shipping it). No user data
+exists, so the migration is a rename rather than a back-fill.
+
+**Related:** `GLOSSARY.md`; DEVIATIONS.md D8, D11, D12; DEFECTS.md F20, F23, F24;
+`decisions:12`, `decisions:14`, `decisions:63`, `entities:15`.

@@ -256,6 +256,48 @@ CREATE TABLE IF NOT EXISTS finding_refs (
 CREATE INDEX IF NOT EXISTS idx_finding_refs_ref ON finding_refs (ref);
 CREATE INDEX IF NOT EXISTS idx_findings_state   ON findings (state);
 
+-- Packages (DEVIATIONS.md D13, GLOSSARY.md) — the one *declared* level of the structural
+-- hierarchy Plan -> Package -> Task -> Sub-task. A named grouping of tasks: "the GUI", "the
+-- controller". Not in the frozen plan; introduced because with only plan/task/sub-task a
+-- subsystem is bigger than any task and smaller than the plan, so every subsystem-wide
+-- attachment is forced to plan scope — D8 section 2.5's silent "too high" failure, made
+-- certain rather than merely possible on a large plan.
+--
+-- A row with an id, not a free-text label: a name-keyed grouping yields an empty context set
+-- on a typo, which is exactly the mistake the retired `milestone` column made.
+--
+-- Packages do NOT nest. There is deliberately no parent_id: nesting is confusing to users
+-- and awkward to draw (owner, 2026-07-21), and it reintroduces an arbitrary depth through
+-- the back door when the whole point of scope levels is that the bound is structural.
+CREATE TABLE IF NOT EXISTS packages (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    name          TEXT    NOT NULL,
+    intent        TEXT    NOT NULL DEFAULT '',   -- why this grouping exists
+    superseded_at TEXT,                          -- null == live
+    created_at    TEXT    NOT NULL,
+    updated_at    TEXT    NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_packages_live ON packages (superseded_at);
+
+-- Task -> Package membership. Mandatory and exclusive: every task belongs to exactly one
+-- package, and finalize_plan refuses a plan with an unpackaged task.
+--
+-- There is deliberately no default/catch-all package. A catch-all satisfies the invariant
+-- while quietly restoring the three-level model, and a grouping nobody chose is a grouping
+-- nobody reviews. A one-package plan is fine — declared, not defaulted.
+--
+-- Which package a task belongs to is a *judgment*, so the tool does not choose it
+-- (decisions:12). The tool enforces the invariant; the methodology's architecture-stage
+-- script leads the driving session to propose a cut; the owner decides. See D13.
+CREATE TABLE IF NOT EXISTS task_packages (
+    task_ref   TEXT    NOT NULL PRIMARY KEY,  -- `components:N` — the task
+    package_id INTEGER NOT NULL,
+    created_at TEXT    NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_task_packages_pkg ON task_packages (package_id);
+
 -- A node in the implementation task graph (entities:9, state_machines:9).
 --
 -- decisions:63 — one SubTask is the implementation unit of exactly one contract.
@@ -273,7 +315,8 @@ CREATE TABLE IF NOT EXISTS subtasks (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     contract_ref  TEXT    NOT NULL UNIQUE,   -- the one contract this implements
     title         TEXT    NOT NULL,
-    milestone     TEXT    NOT NULL DEFAULT '',
+    task_ref      TEXT    NOT NULL DEFAULT '', -- owning task (`components:N`), via
+                                               -- belongs_to link (F24 / D13)
     state         TEXT    NOT NULL,          -- pending | in_progress | blocked | done
                                              -- | rework_flagged  (never 'ready')
     serve_epoch   INTEGER NOT NULL DEFAULT 0,
@@ -323,14 +366,15 @@ CREATE INDEX IF NOT EXISTS idx_verifications_subtask
 --
 -- A target has exactly one *live* placement. Re-attaching supersedes the previous one
 -- rather than adding a second: without that, narrowing is a no-op — the old broader row
--- stays live and the target remains in every packet forever, which is precisely the
+-- stays live and the target remains in every sub-task forever, which is precisely the
 -- "too high" failure the friction exists to prevent, made unfixable by the free
 -- direction. Superseded placements are stamped rather than deleted, because the
 -- promotion history IS the owner's review surface.
 CREATE TABLE IF NOT EXISTS scope_attachments (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    scope_level   TEXT    NOT NULL,     -- project | milestone | packet
-    scope_key     TEXT    NOT NULL,     -- '' for project; milestone name; packet subtask id
+    scope_level   TEXT    NOT NULL,     -- plan | package | task | subtask (D13)
+    scope_key     TEXT    NOT NULL,     -- '' at plan level; else the package, task or
+                                        -- subtask *id* — never a name (GLOSSARY.md)
     target_root   TEXT    NOT NULL,     -- lineage root ref of the attached row
     reason        TEXT    NOT NULL,
     promoted_from TEXT,                 -- prior scope_level, when broadened

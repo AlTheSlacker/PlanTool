@@ -858,3 +858,92 @@ code checks the code's bookkeeping, not the design's intent.** The countermeasur
 already in practice — drive it and read the output — and the sharper version is to assert on
 the *observable consequence* (what does a packet actually receive?) rather than on the
 record the operation just wrote.
+
+---
+
+## F23 — `PartsDontCover` can never fire: the split has no accounting denominator
+
+**Status:** OPEN — resolved by DEVIATIONS.md D12, built in M5b.
+
+**Rows:** `contracts:40` (`split_subtask`), `requirements:37`, `decisions:63`,
+`findings:11`.
+
+**The defect.** `contracts:40` declares the error *"PartsDontCover: the parts do not
+jointly cover the original sub-task's contracts"*. Under `decisions:63` a sub-task is the
+implementation unit of **exactly one** contract, so every part of a split names that same
+contract and the union of the parts' contracts is always equal to the original's. **The
+check is vacuous.** It can catch a part that names an unrelated contract — a typo — and
+nothing else.
+
+The consequence is not cosmetic. `requirements:37` exists to say *"silent trimming of
+relevant content is not a remedy"*, and `split_subtask` is the mechanism that is supposed
+to enforce it. As specified, a too-large contract can be split into parts that between them
+implement 60% of it and the split is well-formed. **The exact failure the requirement was
+written to prevent passes the check that exists to prevent it.**
+
+**Why it happened — a supersession fossil.** `contracts:40`'s plural ("the original
+sub-task's contract*s*") is correct for the pre-`decisions:63` world, where a sub-task could
+hold several contracts and joint coverage over a *set of contract refs* was a real check.
+`findings:11` then fixed granularity to one-contract-one-sub-task at `decisions:63`, and the
+fix never propagated back into the contract row whose error condition depended on it. This
+is `F17`'s class — prose that dangles after the row it rests on is superseded — doing real
+damage rather than merely confusing a reader.
+
+**Class: plan insufficiency.** This is the sixth genuine instance of the characteristic
+pattern F2/F4/F7/F9/F12 — behaviour named in prose without the mechanism that produces it.
+The F15 countermeasure was applied before classifying it: a live row carrying the coverage
+mechanism was searched for and does not exist.
+
+What makes it worth its own entry is *what* is missing. The other five were missing
+**triggers** — an event nothing fired. This one is a missing **denominator**: the plan
+specifies an accounting check without ever specifying the set being accounted for. That is
+a distinct sub-class and probably a more dangerous one, because a missing trigger yields an
+unreachable code path (loud, and the mechanical audit finds it) while a missing denominator
+yields a check that *runs, passes, and reports success* over an empty question. Neither
+mechanical check in the pre-build audit detects it: every event has a contract, and every
+outcome is reachable. The check is well-formed and means nothing.
+
+**Countermeasure, proposed for the pre-build audit:** for every error condition phrased as
+a coverage, accounting, or completeness check, name the set being covered and confirm the
+plan says where that set comes from. If the denominator is not independently defined, the
+check is decorative.
+
+**Resolution:** DEVIATIONS.md D12 — a sub-task carries an explicit **obligation surface**,
+enumerated by the planning session and frozen before any split, and coverage becomes an
+invariant over obligations rather than a procedure over contract refs.
+
+---
+
+## F24 — Task membership was a v1 foreign key that the v2 flattening dropped
+
+**Status:** OPEN — resolved by DEVIATIONS.md D13, built in M5b.
+
+**Rows:** `entities:15` (Link), `components:*`, `contracts:*`; v1 `contracts.component_id`.
+
+**The defect.** Which task a contract belongs to — in v1, `contracts.component_id`, a real
+foreign key that `gaps.py` and `gates.py` join on throughout (`archive/v1/engine/gaps.py:196`,
+`:204`) — has **no representation in v2**. The stage-6 architecture flattened v1's typed
+tables into the generic `plan_rows`/`links` pair, and the owning ref was not carried across.
+In the frozen plan a contract's membership survives only as **markdown nesting** — the
+`### brief-composer (components:12)` heading with its contracts printed beneath — which is
+export rendering, not stored structure. v2 contract rows cite requirements, decisions and
+findings; none cites its owning component. The `consumed by: components:N` annotation is the
+*consumer* relation and is not ownership.
+
+**Why it matters now.** Under the four-level model (D13) the **task** is the middle grouping
+of the allocation hierarchy, and a task's sub-tasks are derived as the sub-tasks of the
+contracts it owns. With no stored ownership the level is underived and unowned — the
+`milestone` failure it was introduced to fix.
+
+**Class: plan insufficiency, and the second instance of a distinct sub-class** — *information
+that existed as a typed column in v1 and was silently lost when stage 6 flattened the schema*.
+`F20` (`contract_deps`) is the first. Two instances make it a characteristic risk of that
+architectural move rather than an oversight: **the flattening preserved the rows and dropped
+the relations between them**, because a generic row table makes rows the unit of migration
+and edges invisible. Anything v1 expressed as a foreign key needs checking against v2 the
+same way, and the remaining v1 FKs should be swept before M6 rather than found one at a time.
+
+**Resolution:** DEVIATIONS.md D13 — membership is a typed link, `edge_type='belongs_to'`,
+directed contract → component (member → owner), exactly mirroring D11's treatment of the
+dependency edge. Same argument: the column already exists, the direction is the one the
+owning row can write, and typing it keeps traversal deterministic.

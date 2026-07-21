@@ -85,6 +85,12 @@ returning its `TaskGraph` as `contracts:35` specifies. One fewer deviation.
 
 ## 2. The design: allocation is a planning-time act
 
+> **Vocabulary superseded 2026-07-21.** This section was written with the three-level
+> `project / milestone / packet` scheme. The binding vocabulary is now
+> **plan / package / task / sub-task** — see `GLOSSARY.md` and DEVIATIONS.md **D13**, which
+> records why three levels were not enough and why the three original names were each wrong.
+> The names below have been updated in place; the arguments are unchanged and still hold.
+
 ### 2.1 The principle
 
 **Context allocation happens once, at plan time, as a recorded judgment — not at retrieval
@@ -93,7 +99,7 @@ time as a computed heuristic.**
 When the master plan is built, the planning session looks at the big picture, the data, and
 the deliverable, and decides the base reference set for every part of the plan. Execution then
 serves what was allocated. Findings that arise *during* execution are placed once, carefully,
-at the right scope level, and are thereafter in the right places for the rest of the project.
+at the right scope level, and are thereafter in the right places for the rest of the plan.
 
 Deliberately: ramp up initial cost to control execution cost.
 
@@ -110,20 +116,20 @@ opinions" grows.
 
 ### 2.3 Scope levels
 
-Attachments carry a scope level: **project / milestone / packet**.
+Attachments carry a scope level: **plan / package / task / sub-task**.
 
 (A `session` level was in the owner's original phrasing and was dropped on review: the other
-three are plan structure, whereas a session is an episode of work — and session-scoped
+levels are plan structure, whereas a session is an episode of work — and session-scoped
 attachment is what the journal already is. Settled 2026-07-20, do not reopen.)
 
-A packet's context is the union of its own attachments and those of every enclosing scope.
+A sub-task's context is the union of its own attachments and those of every enclosing scope.
 
 This **dissolves the unbounded-journal problem** rather than answering it. `requirements:58`
 requires resume to present "accumulated learnings", and nothing in the frozen plan bounds that
 accumulation — so as specified, resume cost eventually scales with total session history,
 worse than the plan-size scaling `requirements:62` exists to kill. Every candidate bound
 (last N, since-last-gate) is arbitrary invention. Under scope levels, resume serves
-project ∪ current-milestone ∪ current-packet, and the bound is structural rather than a
+plan ∪ current-package ∪ current-task ∪ current-sub-task, and the bound is structural rather than a
 number someone picked.
 
 ### 2.4 Allocations must key on lineage root, not row id
@@ -141,9 +147,9 @@ primitive in the plan, which is mild evidence it is the right one.
 
 The scheme concentrates risk in a single judgment per finding: which level to attach at.
 
-- **Too low** — the packet that needed it does not get it. Silent, discovered at execution:
+- **Too low** — the sub-task that needed it does not get it. Silent, discovered at execution:
   precisely the failure this tool exists to prevent.
-- **Too high** — a project-level attachment is in every packet forever. Context bloat returns
+- **Too high** — a plan-level attachment is in every sub-task forever. Context bloat returns
   through the ceiling instead of the floor, and nobody notices a cost spread evenly.
 
 Two countermeasures:
@@ -161,20 +167,20 @@ The too-low direction already has its instrument: **`decisions:14`, execution su
 zero sub-tasks blocked by missing plan information — *is* the allocation miss rate.** The
 design ships with its own metric already specified.
 
-### 2.6 Packet boundaries: lowest-coupling, not smallest
+### 2.6 Sub-task boundaries: lowest-coupling, not smallest
 
-The owner's instinct was to minimise packet size — smallest self-contained packets need the
+The owner's instinct was to minimise sub-task size — smallest self-contained sub-tasks need the
 least information, moving power to the planner and risk away from the executor. The direction
 is right; the target is not size.
 
-**Below a certain size, smaller packets cost more context, not less:**
+**Below a certain size, smaller sub-tasks cost more context, not less:**
 
-- Every packet pays fixed overhead — `decisions:16` gives each sub-task its linked rows *plus
-  the governing big-picture rows*. Halving packet size doubles how often that is paid.
+- Every sub-task pays fixed overhead — `decisions:16` gives each sub-task its linked rows *plus
+  the governing big-picture rows*. Halving sub-task size doubles how often that is paid.
 - **Self-contained fights small.** Cut finer and a unit's meaning starts depending on its
   neighbours, so keeping it self-contained means re-importing them. Total context is
-  (per-packet × count); its minimum sits at the natural coupling seams, not at the floor.
-- More packets means more allocation decisions, multiplying the §2.5 level-placement judgment.
+  (per-sub-task × count); its minimum sits at the natural coupling seams, not at the floor.
+- More sub-tasks means more allocation decisions, multiplying the §2.5 level-placement judgment.
 
 **The plan already settled granularity: `decisions:63` — one SubTask = one contract
 implementation unit; edges map from `contract_deps`; `split_subtask` (`contracts:40`) divides
@@ -185,24 +191,24 @@ escape hatch for a contract that is genuinely too big.
 Supporting evidence from this build, not theory: M1–M4 each bundled 2–3 components, and nearly
 every defect caught was an **interaction** bug — F11's intra-batch links, F14's `impact()`
 excluding its roots, M3's plan-wide warning scoping. Those are exactly the defects a too-small
-packet hides: each unit passes alone and the bug lives in the seam. Cutting below the coupling
+sub-task hides: each unit passes alone and the bug lives in the seam. Cutting below the coupling
 boundary relocates the risk somewhere nobody is looking.
 
-**Design rule: maximise crispness of the boundary, not minimise size.** A small packet with a
+**Design rule: maximise crispness of the boundary, not minimise size.** A small sub-task with a
 vague interface is worse than a large one with a sharp contract. "Power to the planner" means
 the planner spends effort on the cut *lines*, not on cutting more often.
 
 ### 2.7 Session-boundary advisory (the "/clear prompt")
 
-The owner wants the tool to prompt for a fresh session between work packets, since humans
+The owner wants the tool to prompt for a fresh session between sub-tasks, since humans
 forget.
 
 **Constraint:** `decisions:4` / `requirements:74` require the surface to be strictly
 MCP-protocol-clean, with no Claude Code-specific calls or configuration. `/clear` is a Claude
 Code command; the tool must not invoke it and should not name it.
 
-**Design:** on packet completion the surface returns a session-boundary advisory in its
-`ToolResult` content — "packet complete; recommend a fresh session before the next" — which is
+**Design:** on sub-task completion the surface returns a session-boundary advisory in its
+`ToolResult` content — "sub-task complete; recommend a fresh session before the next" — which is
 protocol-clean and works on any engine. Engine-specific phrasing stays outside the engine.
 This pairs naturally with `set_next_action` (`contracts:49`): the advisory is only safe to
 give when a resume point has been durably checkpointed, so the advisory should be *conditional
