@@ -331,14 +331,14 @@ CREATE INDEX IF NOT EXISTS idx_tasks_package ON tasks (package_id);
 -- what scopes a verification verdict to the serving episode that produced it: a verdict
 -- recorded under an earlier epoch cannot satisfy a later completion. See DEFECTS.md F19(b).
 -- `contract_ref` is deliberately NOT unique. It was in M5a, and D12 removed it: after a
--- split every part carries the same contract ref, so the constraint made `split_subtask`
--- literally unbuildable — the second part's insert would be rejected. The constraint was
+-- split every resulting sub-task carries the same contract ref, so the constraint made
+-- `split_subtask` literally unbuildable — the second insert would be rejected. It was
 -- never really about the contract anyway; it was expressing "nothing is owed twice", which
 -- live obligation ownership states directly and enforces exactly (idx_obligation_live_owner).
 CREATE TABLE IF NOT EXISTS subtasks (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     contract_ref  TEXT    NOT NULL,          -- the contract this implements; shared by the
-                                             -- parts of a split (D12)
+                                             -- sub-tasks of a split (D12)
     title         TEXT    NOT NULL,
     task_id       INTEGER REFERENCES tasks (id),  -- owning task, resolved at finalization
                                                -- from the contract's belongs_to link.
@@ -360,8 +360,8 @@ CREATE INDEX IF NOT EXISTS idx_subtasks_state ON subtasks (state);
 --
 -- An obligation is one dischargeable commitment of a contract: the primary behaviour of its
 -- signature, or one of its enumerated error conditions. It is the denominator F23 found
--- missing — `contracts:40` rejects a split whose parts "do not jointly cover the original's
--- contracts", but under `decisions:63` every part names the same one contract, so the check
+-- missing — `contracts:40` rejects a split whose products "do not jointly cover the
+-- original's contracts", but under `decisions:63` each names the same one contract, so the check
 -- runs, passes, and means nothing.
 --
 -- Enumerated by the *planning session* and frozen at finalization, before any split that will

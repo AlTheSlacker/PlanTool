@@ -877,14 +877,14 @@ comes from, and say at what moment it is fixed.*
 
 **The defect.** `contracts:40` declares the error *"PartsDontCover: the parts do not
 jointly cover the original sub-task's contracts"*. Under `decisions:63` a sub-task is the
-implementation unit of **exactly one** contract, so every part of a split names that same
-contract and the union of the parts' contracts is always equal to the original's. **The
-check is vacuous.** It can catch a part that names an unrelated contract — a typo — and
+implementation unit of **exactly one** contract, so every sub-task a split produces names
+that same contract and the union of their contracts always equals the original's. **The
+check is vacuous.** It can catch one that names an unrelated contract — a typo — and
 nothing else.
 
 The consequence is not cosmetic. `requirements:37` exists to say *"silent trimming of
 relevant content is not a remedy"*, and `split_subtask` is the mechanism that is supposed
-to enforce it. As specified, a too-large contract can be split into parts that between them
+to enforce it. As specified, a too-large contract can be split into sub-tasks that between them
 implement 60% of it and the split is well-formed. **The exact failure the requirement was
 written to prevent passes the check that exists to prevent it.**
 
@@ -954,7 +954,8 @@ and edges invisible. Anything v1 expressed as a foreign key needs checking again
 same way, and the remaining v1 FKs should be swept before M6 rather than found one at a time.
 
 **Resolution:** DEVIATIONS.md D13 — membership is a typed link, `edge_type='belongs_to'`,
-directed contract → component (member → owner), exactly mirroring D11's treatment of the
+directed contract → task (member → owner; `components:N` is the frozen plan's read-only
+spelling of task), exactly mirroring D11's treatment of the
 dependency edge. Same argument: the column already exists, the direction is the one the
 owning row can write, and typing it keeps traversal deterministic.
 
@@ -964,7 +965,7 @@ owning row can write, and typing it keeps traversal deterministic.
 
 **Status:** RESOLVED in M5b (2026-07-21) — `subtasks.superseded_by` is written by
 `split_subtask` and read as a liveness filter by every graph read; dependants are repointed
-from the original to the parts, and serving/reporting/verifying a superseded node is refused
+from the original to its replacements, and serving/reporting/verifying a superseded node is refused
 (`SubTaskSuperseded`).
 
 **Rows:** `contracts:40` (`split_subtask`), `state_machines:9`, `requirements:37`.
@@ -982,7 +983,7 @@ in the built engine, all silent:
 2. `next_subtask` can serve it again. It is a candidate whenever `readiness_of` returns
    `ready`, and nothing knows it was replaced.
 3. **Dependants deadlock.** `subtask_deps` edges point at the original's id. The original can
-   never reach `done` — its work is being carried by the parts — so every consumer sits in
+   never reach `done` — its work is carried by the sub-tasks that replaced it — so every consumer sits in
    `pending` behind a node that will never complete. `split_subtask` on a node with dependants
    silently bricks that branch of the graph.
 
@@ -998,8 +999,8 @@ defect is assuming a plan-row primitive transfers to an execution-layer node wit
 lifecycle.
 
 **Resolution:** built in M5b — supersession is a liveness filter on every graph read, and the
-split rewires `subtask_deps` from the original to the parts. Which part a dependant should
-follow is not guessable in general, so the edge is redirected to *every* part: the dependant
+split rewires `subtask_deps` from the original to its replacements. Which one a dependant
+should follow is not guessable in general, so the edge is redirected to *all* of them: the dependant
 waits for all of them, which is the only reading that preserves "no sub-task precedes its
 dependencies" (`requirements:34`) without the tool guessing.
 

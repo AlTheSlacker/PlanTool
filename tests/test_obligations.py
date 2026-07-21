@@ -83,9 +83,9 @@ def test_verification_refuses_a_subtask_with_no_surface(tasks, rows):
 
 
 def test_verification_accounts_per_obligation_not_per_contract(tasks, rows):
-    """Evidence maps per obligation, so a part cannot discharge its parent's whole
-    contract by producing evidence for its own slice. M5a's `_scope_contracts` 1-tuple
-    was the placeholder for exactly this."""
+    """Evidence maps per obligation, so a sub-task produced by a split cannot discharge its
+    parent's whole contract by producing evidence for its own slice. M5a's
+    `_scope_contracts` 1-tuple was the placeholder for exactly this."""
     from engine.tasks import EvidenceIncomplete
 
     _contract(rows, "c1", [

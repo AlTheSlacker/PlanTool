@@ -5,14 +5,14 @@ the primary behaviour of its signature, or one of its enumerated error condition
 the accounting denominator that `contracts:40` and `contracts:62` both assume and the plan
 never defines.
 
-F23 is what makes this necessary. `contracts:40` rejects a split when "the parts do not
+F23 is what makes this necessary. `contracts:40` rejects a split when its products "do not
 jointly cover the original sub-task's contracts" — but `decisions:63` gives every sub-task
-exactly one contract, and every part of a split names that same contract, so joint coverage
-is vacuous. `requirements:37`'s "silent trimming of relevant content is not a remedy" has no
+exactly one contract, and every sub-task a split produces names that same contract, so joint
+coverage is vacuous. `requirements:37`'s "silent trimming of relevant content is not a remedy" has no
 enforcement at all. A check that runs, passes, and means nothing is worse than a missing one,
 because it reports success.
 
-**Where the set comes from is the load-bearing part.** It is enumerated by the *planning
+**Where the set comes from is what carries the design.** It is enumerated by the *planning
 session* and frozen at finalization — before, and independently of, any split later measured
 against it. Two alternatives were rejected (D12):
 
@@ -200,13 +200,13 @@ class ObligationService:
     def uncovered(
         self, subtask_id: int, assignment: dict[int, list[int]]
     ) -> tuple[str, ...]:
-        """Which of the sub-task's obligations no part would own. `contracts:40`'s
+        """Which of the sub-task's obligations no new sub-task would own. `contracts:40`'s
         `PartsDontCover`, with the denominator F23 found missing.
 
         A split *redistributes*; it never invents or discards. Obligations assigned to no
-        part are named here; obligations assigned to more than one part are a separate
-        error, caught by the live-ownership unique index rather than by a check that could
-        be forgotten.
+        sub-task are named here; obligations assigned to more than one are a separate error,
+        caught by the live-ownership unique index rather than by a check that could be
+        forgotten.
         """
         owned = {o.id: o for o in self.for_subtask(subtask_id)}
         claimed = {oid for ids in assignment.values() for oid in ids}
@@ -229,7 +229,7 @@ class ObligationService:
     def redistribute_ops(
         self, subtask_id: int, assignment: dict[int, list[int]]
     ) -> list[Op]:
-        """Ops moving live ownership from the original to the parts.
+        """Ops moving live ownership from the original to the sub-tasks replacing it.
 
         Supersede-then-insert rather than update, because the redistribution history is the
         audit trail of the act being audited. The partial unique index on live ownership is
@@ -239,7 +239,7 @@ class ObligationService:
         # Superseded by id rather than by `WHERE superseded_at IS NULL`: storage's where
         # clause is an equality map, and `= NULL` matches nothing in SQL — a filter that
         # silently updates zero rows would leave the original still owning everything and
-        # every part's insert would then collide with the live-ownership index.
+        # and each new insert would then collide with the live-ownership index.
         live = self.storage.query(
             "SELECT id FROM obligation_ownership WHERE subtask_id = ? "
             "AND superseded_at IS NULL",
@@ -250,11 +250,11 @@ class ObligationService:
                where={"id": r["id"]})
             for r in live
         ]
-        for part_id, obligation_ids in assignment.items():
+        for new_subtask_id, obligation_ids in assignment.items():
             for obligation_id in obligation_ids:
                 ops.append(Op("insert", "obligation_ownership", {
                     "obligation_id": obligation_id,
-                    "subtask_id": part_id,
+                    "subtask_id": new_subtask_id,
                     "created_at": stamp,
                 }))
         return ops

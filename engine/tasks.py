@@ -10,7 +10,7 @@ next_subtask, contracts:60 report_status, contracts:62 verify_completion.
 Plus two contracts the frozen plan does not have. `state_machines:9` names six events and
 the plan names a firing contract for only four of them: nothing fires `deps_satisfied` or
 `serve_brief` (DEFECTS.md F18). They are supplied here as `readiness_of`/`refresh_readiness`
-and `serve_brief`, on this component, because both are the *system's* judgment —
+and `serve_brief`, on task-graph, because both are the *system's* judgment —
 `crud_grid:35` splits system-owned readiness from engine-owned status reports, and routing
 them through `report_status` would let the code engine assert its own readiness, voiding
 `sm_cells:131` ("unbuildable work is never served"). A gate the graded party can open is
@@ -160,10 +160,10 @@ class PackageNotFound(PlanToolError):
 
 
 class SubTaskSuperseded(PlanToolError):
-    """Not in the frozen plan. DEFECTS.md F25: `contracts:40` says the parts supersede the
-    original "in the graph" without saying what that means, so nothing stopped a split
-    original from being served, reported on or verified. It is out of the graph: its work
-    is owned by its parts now."""
+    """Not in the frozen plan. DEFECTS.md F25: `contracts:40` says a split's products
+    supersede the original "in the graph" without saying what that means, so nothing stopped
+    a split original from being served, reported on or verified. It is out of the graph: its
+    work is owned by the sub-tasks that replaced it."""
 
 
 class NotInProgress(PlanToolError):
@@ -208,8 +208,9 @@ class Package:
 
 @dataclass(frozen=True, slots=True)
 class Task:
-    """The work of realising one component. Derived one-per-component, so it cannot be
-    misfiled; its *package* is the judgment, and that is recorded."""
+    """The work of realising one unit of the architecture. Derived one per `components:N`
+    row — the frozen plan's read-only spelling of this same entity — so a task cannot be
+    misfiled; its *package* is the judgment, and that is what gets recorded."""
 
     id: int
     source_ref: str
@@ -328,9 +329,11 @@ class TaskGraphService:
         self.storage.write_atomic([op], f"package:{name}:{stamp}", lease=lease)
         return Package(id=op.result["id"], name=name, intent=intent, created_at=stamp)
 
-    def assign_task(self, component: RowRef | str, package_id: int, lease=None) -> Task:
-        """Place the task realising `component` into a package. The recorded judgment."""
-        ref = str(component)
+    def assign_task(self, source_ref: RowRef | str, package_id: int, lease=None) -> Task:
+        """Place the task described by `source_ref` into a package — the recorded
+        judgment. `source_ref` is a `components:N` row: that is the frozen plan's
+        read-only spelling of **task**, one entity with one id space (`GLOSSARY.md`)."""
+        ref = str(source_ref)
         if not self.storage.query("SELECT id FROM packages WHERE id = ?", (package_id,)):
             raise PackageNotFound(
                 f"no package {package_id}; declare it first — a package is a row with an "
@@ -341,7 +344,7 @@ class TaskGraphService:
             "SELECT content FROM plan_rows WHERE table_name || ':' || ordinal = ?", (ref,)
         )
         if not found:
-            raise SubTaskNotFound("no such component row", ref=ref)
+            raise SubTaskNotFound("no such task source row", ref=ref)
         content = json.loads(found[0]["content"])
         name = content.get("title") or content.get("name") or ref
 
@@ -365,9 +368,9 @@ class TaskGraphService:
 
         The invariant the *database* enforces is `tasks.package_id NOT NULL`; what it cannot
         enforce is that a task row exists at all. That gap is this check. It is deliberately
-        loud: a component with no package is a component whose sub-tasks would silently miss
-        their mid-level context, and a sub-task quietly missing context is exactly what
-        `decisions:14` measures.
+        loud: an unpackaged task is one whose sub-tasks would silently miss their mid-level
+        context, and a sub-task quietly missing context is exactly what `decisions:14`
+        measures.
         """
         unplaced = [
             f"{r['table_name']}:{r['ordinal']}"
@@ -380,11 +383,11 @@ class TaskGraphService:
         ]
         if unplaced:
             raise UnpackagedTask(
-                "every task belongs to exactly one package; these have none: "
+                "every task belongs to exactly one package; these tasks have none: "
                 + ", ".join(unplaced)
                 + ". Declare a package and assign them — there is no catch-all, because a "
                   "bucket nobody chose is a grouping nobody reviews.",
-                components=unplaced,
+                tasks=unplaced,
             )
 
     # --- contracts:35 ---
@@ -713,8 +716,8 @@ class TaskGraphService:
         also what makes `serve_epoch` mean something — it counts deliveries, and a
         verification verdict is scoped to the epoch it was earned under (F19b).
 
-        On this component rather than reachable from `report_status` because serving is
-        the system's act, not the engine's claim (crud_grid:35).
+        On task-graph rather than reachable from `report_status` because serving is the
+        system's act, not the engine's claim (crud_grid:35).
         """
         subtask = self.get(subtask_id)
         self.guard_live(subtask)
@@ -787,10 +790,10 @@ class TaskGraphService:
 
         This replaces M5a's placeholder, which returned the sub-task's single contract ref.
         The placeholder was correct for an unsplit graph and wrong the moment `split_subtask`
-        existed: every part carries the *same* contract ref, so evidence for one part's slice
-        would discharge the parent's whole contract. `contracts:62`'s "each contract in the
-        sub-task's scope" is read as each *obligation* in it, which is the only reading under
-        which a part cannot claim its siblings' work.
+        existed: a split's sub-tasks all carry the *same* contract ref, so evidence for one
+        sub-task's slice would discharge the parent's whole contract. `contracts:62`'s "each
+        contract in the sub-task's scope" is read as each *obligation* in it, which is the
+        only reading under which a sub-task cannot claim its siblings' work.
 
         A sub-task with no enumerated surface raises rather than returning an empty scope.
         An empty denominator makes `all(...)` true and reports a pass over nothing — F23
@@ -870,11 +873,12 @@ class TaskGraphService:
         return self.get(subtask_id)
 
     def guard_live(self, subtask: SubTask) -> None:
-        """A superseded node takes no further part in the build (DEFECTS.md F25)."""
+        """A superseded node is out of the build entirely (DEFECTS.md F25)."""
         if not subtask.is_live:
             raise SubTaskSuperseded(
                 f"sub-task {subtask.id} was split and superseded by sub-task "
-                f"{subtask.superseded_by}; its obligations are owned by its parts now",
+                f"{subtask.superseded_by}; its obligations are owned by the sub-tasks that "
+                "replaced it",
                 subtask_id=subtask.id,
                 superseded_by=subtask.superseded_by,
             )
@@ -937,7 +941,7 @@ class TaskGraphService:
         return self._hydrate(found[0])
 
     def _all(self, include_superseded: bool = False) -> list[SubTask]:
-        """The live graph. DEFECTS.md F25: `contracts:40` returns parts "superseding the
+        """The live graph. DEFECTS.md F25: `contracts:40` returns sub-tasks "superseding the
         original in the graph" and never says what that does to the node, so M5a had no
         liveness filter here at all. A split original left in the graph stays `in_progress`
         forever, trips the 24h staleness flag, and can be served again by `next_subtask`.

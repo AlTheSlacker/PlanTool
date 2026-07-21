@@ -9,11 +9,19 @@ Three things here are not in the frozen plan, all logged:
 
 - **D12** — a split redistributes the original's *obligations*. `contracts:40`'s
   `PartsDontCover` compares "the parts' contracts" against the original's, and under
-  `decisions:63` those are the same single contract for every part, so the check is vacuous
-  (DEFECTS.md F23). Obligations are the denominator it was missing.
+  `decisions:63` those are the same single contract for every sub-task a split produces, so
+  the check is vacuous (DEFECTS.md F23). Obligations are the denominator it was missing.
 - **DEFECTS.md F25** — "superseding the original in the graph" is given a meaning: the
-  original leaves the graph, and its dependants are rewired to the parts. Without that a
-  split silently deadlocks every consumer behind a node that can never complete.
+  original leaves the graph, and its dependants are rewired to the new sub-tasks. Without
+  that a split silently deadlocks every consumer behind a node that can never complete.
+
+A note on `PartsDontCover`. **`part` is a retired word** (`GLOSSARY.md`): a "part" of a split
+is a **sub-task**, distinguished by which obligations it owns, not by being a different kind
+of thing. The class name survives only because `errors.py`'s convention is that a contract's
+error name *is* the class name, and `contracts:40` declares this one in a file that is
+read-only — so the name is a quotation, exactly like `components:N`. Nothing else in this
+module uses the word: the parameter is `into`, the ids are `new_ids`, and the sibling error
+this module invented is `ObligationsNotOwned`.
 - **DEFECTS.md F26** — the candidate closure is frozen into the brief. `contracts:41` audits
   against a closure recomputed at audit time, but `decisions:3` makes the plan a living
   source of truth, so requirements:44's 100% accounting meter would drift on its own and
@@ -68,19 +76,22 @@ class OmissionNeedsReason(PlanToolError):
 
 
 class PartsDontCover(PlanToolError):
-    """contracts:40 — the parts do not jointly cover the original's obligations; names what
-    is uncovered; nothing written."""
+    """contracts:40 — the new sub-tasks do not jointly cover the original's obligations;
+    names what is uncovered; nothing written.
+
+    The class name quotes `contracts:40`'s declared error name from the read-only frozen
+    plan. `part` is otherwise retired — see the module docstring."""
 
 
-class PartsExceedOriginal(PlanToolError):
+class ObligationsNotOwned(PlanToolError):
     """Not in the frozen plan. `PartsDontCover`'s mirror: a split that assigns obligations
     the original never owed enlarges the denominator it is measured by, which is F23's
     disease pointing the other way."""
 
 
 class NothingToSplit(PlanToolError):
-    """contracts:40 — a split needs at least two parts. One part is a rename, and zero is
-    a deletion wearing a split's name."""
+    """contracts:40 — a split needs at least two sub-tasks. One is a rename, and zero is a
+    deletion wearing a split's name."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -354,42 +365,45 @@ class BriefComposer:
     # --- contracts:40 ---
 
     def split_subtask(
-        self, subtask_id: int, parts: list[tuple[str, list[int]]], lease=None
+        self, subtask_id: int, into: list[tuple[str, list[int]]], lease=None
     ) -> list:
         """Divide a sub-task whose brief proved too large; silent trimming is never a
         remedy (`requirements:37`).
 
-        Each part is `(title, [obligation ids])`. The parts jointly redistribute the
-        original's obligations — a split never invents or discards one. `decisions:63` says
-        a split "divides along the contract's param/error surface", and the obligation
-        surface (D12) *is* that surface, enumerated by the planning session at finalization
-        rather than by the splitter at split time.
+        `into` is the sub-tasks to split it into, each `(title, [obligation ids])`. They
+        are **sub-tasks**, not a different kind of thing (`GLOSSARY.md`) — what distinguishes
+        them is which obligations they own. They jointly redistribute the original's
+        obligations; a split never invents or discards one. `decisions:63` says a split
+        "divides along the contract's param/error surface", and the obligation surface (D12)
+        *is* that surface, enumerated by the planning session at finalization rather than by
+        the splitter at split time.
 
-        The original is superseded and leaves the graph, its dependants rewired to every
-        part (DEFECTS.md F25). Rewiring to all parts rather than guessing which one a
+        The original is superseded and leaves the graph, its dependants rewired to every new
+        sub-task (DEFECTS.md F25). Rewiring to all of them rather than guessing which one a
         dependant actually needs is the only choice that preserves `requirements:34` without
-        the tool exercising judgment: waiting for all of them is never wrong, only
-        sometimes conservative.
+        the tool exercising judgment: waiting for all of them is never wrong, only sometimes
+        conservative.
         """
         subtask = self.tasks.get(subtask_id)
         self.tasks.guard_live(subtask)
-        if len(parts) < 2:
+        if len(into) < 2:
             raise NothingToSplit(
-                "a split needs at least two parts; one part is a rename and zero is a "
+                "a split needs at least two sub-tasks; one is a rename and zero is a "
                 "deletion wearing a split's name",
                 subtask_id=subtask_id,
-                parts=len(parts),
+                into=len(into),
             )
 
         # Raises when the surface was never enumerated: a split measured against an empty
         # denominator passes vacuously, which is F23 itself.
         self.obligations.require_enumerated(subtask_id, "a split")
 
-        assignment = {i: ids for i, (_, ids) in enumerate(parts)}
+        assignment = {i: ids for i, (_, ids) in enumerate(into)}
         uncovered = self.obligations.uncovered(subtask_id, assignment)
         if uncovered:
             raise PartsDontCover(
-                "the parts do not jointly cover the original's obligations; uncovered: "
+                "the new sub-tasks do not jointly cover the original's obligations; "
+                "uncovered: "
                 + ", ".join(uncovered)
                 + ". Nothing written — splitting is how an over-large brief is made "
                   "tractable, not how work is dropped (requirements:37).",
@@ -398,8 +412,8 @@ class BriefComposer:
             )
         foreign = self.obligations.foreign(subtask_id, assignment)
         if foreign:
-            raise PartsExceedOriginal(
-                "the parts claim obligations the original does not own: "
+            raise ObligationsNotOwned(
+                "the new sub-tasks claim obligations the original does not own: "
                 + ", ".join(str(f) for f in foreign) + "; nothing written",
                 subtask_id=subtask_id,
                 foreign=list(foreign),
@@ -407,11 +421,11 @@ class BriefComposer:
 
         stamp = now()
         ops: list[Op] = []
-        part_indexes: list[int] = []
-        for title, _ in parts:
-            part_indexes.append(len(ops))
+        node_indexes: list[int] = []
+        for title, _ in into:
+            node_indexes.append(len(ops))
             ops.append(Op("insert", "subtasks", {
-                # The parts share the original's contract ref, which is why the M5a UNIQUE
+                # A split's sub-tasks share the original's contract ref, which is why M5a's UNIQUE
                 # constraint on it had to go: uniqueness was never really about the
                 # contract, it was expressing "nothing is owed twice" — which live
                 # obligation ownership states directly (D12).
@@ -423,41 +437,41 @@ class BriefComposer:
                 "created_at": stamp,
                 "updated_at": stamp,
             }))
-        self.storage.write_atomic(ops, f"split:{subtask_id}:parts:{stamp}", lease=lease)
+        self.storage.write_atomic(ops, f"split:{subtask_id}:nodes:{stamp}", lease=lease)
 
-        part_ids = [ops[i].result["id"] for i in part_indexes]
-        by_part = {part_ids[i]: ids for i, (_, ids) in enumerate(parts)}
+        new_ids = [ops[i].result["id"] for i in node_indexes]
+        by_subtask = {new_ids[i]: ids for i, (_, ids) in enumerate(into)}
 
         wiring: list[Op] = [
             Op("update", "subtasks",
-               {"superseded_by": part_ids[0], "updated_at": stamp},
+               {"superseded_by": new_ids[0], "updated_at": stamp},
                where={"id": subtask_id}),
         ]
-        # The original's own dependencies become every part's dependencies: each part is
+        # The original's own dependencies become every new sub-task's dependencies: each is
         # still downstream of whatever the whole was.
-        for part_id in part_ids:
+        for new_id in new_ids:
             for dep in subtask.deps:
                 wiring.append(Op("insert", "subtask_deps", {
-                    "subtask_id": part_id, "depends_on": dep,
+                    "subtask_id": new_id, "depends_on": dep,
                 }))
-        # And its dependants wait for all the parts instead of for a node that can never
+        # And its dependants wait for all the new sub-tasks instead of a node that can never
         # complete. This is the deadlock F25 describes, so the *stale* edge has to go: an
         # edge onto a superseded node is never satisfied, and leaving it while adding the
         # new ones would keep the consumer blocked forever with the fix apparently applied.
-        # The existing edge is repointed at the first part rather than deleted, because
+        # The existing edge is repointed at the first of them rather than deleted, because
         # storage's op vocabulary is insert/update by design (no delete: plan history is
         # append-only) and repointing is one op either way.
         for consumer in self._dependants(subtask_id):
-            wiring.append(Op("update", "subtask_deps", {"depends_on": part_ids[0]},
+            wiring.append(Op("update", "subtask_deps", {"depends_on": new_ids[0]},
                              where={"subtask_id": consumer, "depends_on": subtask_id}))
-            for part_id in part_ids[1:]:
+            for new_id in new_ids[1:]:
                 wiring.append(Op("insert", "subtask_deps", {
-                    "subtask_id": consumer, "depends_on": part_id,
+                    "subtask_id": consumer, "depends_on": new_id,
                 }))
-        wiring.extend(self.obligations.redistribute_ops(subtask_id, by_part))
+        wiring.extend(self.obligations.redistribute_ops(subtask_id, by_subtask))
         self.storage.write_atomic(wiring, f"split:{subtask_id}:wiring:{stamp}", lease=lease)
 
-        return [self.tasks.get(pid) for pid in part_ids]
+        return [self.tasks.get(new_id) for new_id in new_ids]
 
     def _dependants(self, subtask_id: int) -> tuple[int, ...]:
         return tuple(
