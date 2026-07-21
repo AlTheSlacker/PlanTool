@@ -2,7 +2,7 @@
 
 import pytest
 
-from engine.gates import BlockedByConflict, UnknownStage
+from engine.gates import BlockedByConflict, UnknownPackage
 from engine.models import LinkSpec, Provenance, RowRef, RowSubmission
 
 
@@ -13,7 +13,7 @@ def submit(rows, *submissions, key="k"):
 # --- contracts:22: the shape of a gate result --------------------------------------
 
 
-def test_an_empty_plan_fails_stage_one_with_row_level_holes(gate):
+def test_an_empty_plan_fails_package_one_with_row_level_holes(gate):
     result = gate.run_gate(1)
     assert result.passed is False
     ids = {h.criterion_id for h in result.holes}
@@ -26,11 +26,11 @@ def test_every_hole_names_table_problem_and_fix(gate):
         assert hole.table and hole.problem and hole.fix
 
 
-def test_a_stage_outside_the_range_is_refused_with_the_range(gate):
-    with pytest.raises(UnknownStage) as exc:
+def test_a_package_outside_the_range_is_refused_with_the_range(gate):
+    with pytest.raises(UnknownPackage) as exc:
         gate.run_gate(0)
     assert "1-8" in str(exc.value)
-    with pytest.raises(UnknownStage):
+    with pytest.raises(UnknownPackage):
         gate.run_gate(9)
 
 
@@ -43,7 +43,7 @@ def test_results_are_deterministic(gate, rows):
     ]
 
 
-def test_a_complete_stage_passes_and_points_at_the_next(gate, rows):
+def test_a_complete_package_passes_and_points_at_the_next(gate, rows):
     submit(
         rows,
         RowSubmission("goals", {"title": "ship it", "success_criteria": "M7 lands"}),
@@ -53,10 +53,10 @@ def test_a_complete_stage_passes_and_points_at_the_next(gate, rows):
     )
     result = gate.run_gate(1)
     assert result.passed is True
-    assert result.next_stage == 2
+    assert result.next_package == 2
 
 
-# --- requirements:17: elicit-stage coverage cross-checks ---------------------------
+# --- requirements:17: elicit-package coverage cross-checks ---------------------------
 
 
 def test_an_actor_in_no_use_case_is_a_cross_check_hole(gate, rows):
@@ -153,7 +153,7 @@ def test_matrix_complete_flags_undefined_state_event_cells(gate, rows):
 
 
 def test_an_escape_row_satisfies_a_non_empty_criterion(gate, rows):
-    """Stage 5's vendored escape: 'there are none, and here is why' is an answer."""
+    """Package 5's vendored escape: 'there are none, and here is why' is an answer."""
     before = {h.criterion_id for h in gate.run_gate(5).holes}
     assert "dependencies_registered" in before
     submit(rows, RowSubmission("no_dependencies_decision",
@@ -162,7 +162,7 @@ def test_an_escape_row_satisfies_a_non_empty_criterion(gate, rows):
     assert "dependencies_registered" not in after
 
 
-def test_an_unbacked_world_assumption_is_a_stage_six_hole(gate, rows):
+def test_an_unbacked_world_assumption_is_a_package_six_hole(gate, rows):
     submit(
         rows,
         RowSubmission("contracts", {"title": "SMB honours O_EXCL"},
@@ -186,19 +186,19 @@ def test_a_spike_backs_a_world_assumption(gate, rows):
     ]
 
 
-def test_stage_eight_folds_in_every_earlier_gate(gate):
-    """An empty plan fails every stage, so freeze must report all seven."""
+def test_package_eight_folds_in_every_earlier_gate(gate):
+    """An empty plan fails every package, so freeze must report all seven."""
     holes = [
         h for h in gate.run_gate(8).holes if h.criterion_id == "all_prior_gates_green"
     ]
     reported = {h.problem.split()[1] for h in holes}
-    assert reported == {f"stage-{n}" for n in range(1, 8)}
+    assert reported == {f"package-{n}" for n in range(1, 8)}
 
 
 def test_an_open_conflict_out_of_scope_still_stops_the_freeze(gate, rows, conflicts):
-    """Stage 8's own criterion is plan-wide: a frozen plan cannot contradict itself
+    """Package 8's own criterion is plan-wide: a frozen plan cannot contradict itself
     anywhere, including in tables no gate's scope covers."""
-    submit(rows, RowSubmission("scratch", {"title": "an off-stage row"}))
+    submit(rows, RowSubmission("scratch", {"title": "an off-package row"}))
     conflicts.raise_conflict([RowRef("scratch", 1)], "contested", "pick one")
     holes = [h for h in gate.run_gate(8).holes if h.criterion_id == "no_open_conflicts"]
     assert holes and "contested" in holes[0].problem
@@ -207,8 +207,8 @@ def test_an_open_conflict_out_of_scope_still_stops_the_freeze(gate, rows, confli
 # --- requirements:21 / decisions:31: warn, do not block ------------------------------
 
 
-def test_a_gate_lists_every_open_gap_in_its_stage_as_an_explicit_warning(gate, rows):
-    """An actor with no use case is a stage-2 gap as well as a stage-1 gate hole."""
+def test_a_gate_lists_every_open_gap_in_its_package_as_an_explicit_warning(gate, rows):
+    """An actor with no use case is a package-2 gap as well as a package-1 gate hole."""
     submit(rows, RowSubmission("actors", {"name": "Auditor"}))
     result = gate.run_gate(2)
     assert any(
@@ -241,9 +241,9 @@ def test_warnings_do_not_accumulate_across_repeated_gates(gate, rows, warns):
     assert len(warns.all_warnings()) == first
 
 
-def test_a_gate_does_not_warn_about_other_stages_gaps(gate, rows):
-    """DEFECTS.md F10 — the first build warned "no components yet" at the stage-1 gate
-    of a plan three stages from needing components. Ten of twelve warnings were noise."""
+def test_a_gate_does_not_warn_about_other_packages_gaps(gate, rows):
+    """DEFECTS.md F10 — the first build warned "no components yet" at the package-1 gate
+    of a plan three packages from needing components. Ten of twelve warnings were noise."""
     result = gate.run_gate(1)
     assert not [w for w in result.warnings if "no_components" in w.message]
     assert not [w for w in result.warnings if "no_entities" in w.message]
@@ -252,7 +252,7 @@ def test_a_gate_does_not_warn_about_other_stages_gaps(gate, rows):
 def test_a_warning_clears_when_its_condition_clears(gate, rows, warns):
     """A warning that outlives its cause trains the reader to ignore warnings."""
     gate.run_gate(1)
-    stale = next(w for w in warns.active_warnings() if "stage1_not_started" in w.message)
+    stale = next(w for w in warns.active_warnings() if "package1_not_started" in w.message)
     submit(rows, RowSubmission("goals", {"title": "ship it", "success_criteria": "M7"}))
     gate.run_gate(1)
     assert warns.get(stale.id).state == "resolved"
@@ -280,7 +280,7 @@ def test_a_suppressed_warning_stays_suppressed_through_a_gate(gate, rows, warns)
     submit(rows, RowSubmission("actors", {"name": "Auditor"}))
     gate.run_gate(2)
     target = warns.active_warnings()[0]
-    warns.suppress_warning(target.id, "accepted until stage 3")
+    warns.suppress_warning(target.id, "accepted until package 3")
     result = gate.run_gate(2)
     assert target.warning_key not in {w.warning_key for w in result.warnings}
 
@@ -305,7 +305,7 @@ def test_a_conflict_outside_the_gates_scope_does_not_block_it(gate, rows, confli
     conflicts.raise_conflict(
         [RowRef("findings", 1)], "two findings disagree", "keep the first"
     )
-    gate.run_gate(1)  # stage 1 does not depend on findings
+    gate.run_gate(1)  # package 1 does not depend on findings
 
 
 def test_resolving_the_conflict_unblocks_the_gate(gate, rows, conflicts):

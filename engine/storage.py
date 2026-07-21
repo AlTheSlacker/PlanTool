@@ -67,7 +67,7 @@ class FromOp:
 
 @dataclass(slots=True)
 class Op:
-    """One unit of work inside a batch.
+    """One journal entry inside a batch.
 
     Deliberately SQL-free so the storage interface stays backend-neutral, as
     components:1 requires ("a backend-neutral storage interface (SQLite as the only v1
@@ -120,7 +120,7 @@ class MigrationReport:
 class Storage:
     """A plan store rooted at a workspace directory.
 
-    requirements:49 — all plan state lives in files inside the project workspace; no
+    requirements:49 — all plan state lives in files inside the workspace; no
     state is written outside it.
     """
 

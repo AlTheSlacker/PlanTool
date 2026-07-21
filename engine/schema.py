@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS plan_rows (
     provenance      TEXT    NOT NULL,
     assumption_kind TEXT,
     state           TEXT    NOT NULL,
-    stage           INTEGER,
+    package           INTEGER,
     supersedes      TEXT,                      -- ref
     superseded_by   TEXT,                      -- ref; null == live (requirements:61)
     superseded_at   TEXT,
@@ -43,7 +43,12 @@ CREATE TABLE IF NOT EXISTS plan_rows (
 
 CREATE INDEX IF NOT EXISTS idx_rows_table  ON plan_rows (table_name);
 CREATE INDEX IF NOT EXISTS idx_rows_live   ON plan_rows (superseded_by, state);
-CREATE INDEX IF NOT EXISTS idx_rows_stage  ON plan_rows (stage);
+-- `package` here is the *planning* package that produced the row — the ordinal of the
+-- methodology's standard package set (1..8), not a row in the `packages` table. Planning
+-- packages and build packages are the same concept in two layers, kept in separate tables:
+-- the standard set ships with the methodology and is identical for every plan, whereas
+-- build packages are declared per plan. See GLOSSARY.md.
+CREATE INDEX IF NOT EXISTS idx_rows_package ON plan_rows (package);
 CREATE INDEX IF NOT EXISTS idx_rows_prov   ON plan_rows (provenance);
 
 -- Typed edges (entities:15): immutable, owned by the source row, created with it.
@@ -256,6 +261,62 @@ CREATE TABLE IF NOT EXISTS finding_refs (
 CREATE INDEX IF NOT EXISTS idx_finding_refs_ref ON finding_refs (ref);
 CREATE INDEX IF NOT EXISTS idx_findings_state   ON findings (state);
 
+-- Packages (DEVIATIONS.md D13, GLOSSARY.md) — the one *declared* level of the structural
+-- hierarchy Plan -> Package -> Task -> Sub-task. A named grouping of tasks: "the GUI", "the
+-- controller". Not in the frozen plan; introduced because with only plan/task/sub-task a
+-- subsystem is bigger than any task and smaller than the plan, so every subsystem-wide
+-- attachment is forced to plan scope — D8 section 2.5's silent "too high" failure, made
+-- certain rather than merely possible on a large plan.
+--
+-- A row with an id, not a free-text label: a name-keyed grouping yields an empty context set
+-- on a typo, which is exactly the mistake the retired `milestone` column made.
+--
+-- Packages do NOT nest. There is deliberately no parent_id: nesting is confusing to users
+-- and awkward to draw (owner, 2026-07-21), and it reintroduces an arbitrary depth through
+-- the back door when the whole point of scope levels is that the bound is structural.
+CREATE TABLE IF NOT EXISTS packages (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    name          TEXT    NOT NULL,
+    intent        TEXT    NOT NULL DEFAULT '',   -- why this grouping exists
+    superseded_at TEXT,                          -- null == live
+    created_at    TEXT    NOT NULL,
+    updated_at    TEXT    NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_packages_live ON packages (superseded_at);
+
+-- Tasks — the execution layer's middle level. Derived at finalization from the plan rows
+-- that describe the architecture, exactly as `subtasks` are derived from contract rows.
+--
+-- This is the second half of a deliberate two-layer store. The *planning* layer is generic
+-- (`plan_rows`, JSON content) so supersession lineage, typed links and provenance work
+-- identically for twenty-odd row types — DEVIATIONS.md D3. The *execution* layer is typed:
+-- packages, tasks and subtasks are real tables with real foreign keys. F20 and F24 are both
+-- relations that vanished when v1's typed tables were flattened, so the execution structures
+-- that carry the build's own relations do not get flattened.
+--
+-- Membership is mandatory and exclusive: `package_id NOT NULL` makes "every task belongs to
+-- exactly one package" a constraint the database enforces, rather than an invariant
+-- finalize_plan has to remember to check.
+--
+-- There is deliberately no default/catch-all package. A catch-all satisfies the invariant
+-- while quietly restoring a three-level model, and a grouping nobody chose is a grouping
+-- nobody reviews. A one-package plan is fine — declared, not defaulted.
+--
+-- Which package a task belongs to is a *judgment*, so the tool does not choose it
+-- (decisions:12). The tool enforces the invariant; the methodology's architecture-package
+-- script leads the planner to propose a cut; the owner decides. See D13.
+CREATE TABLE IF NOT EXISTS tasks (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_ref TEXT    NOT NULL UNIQUE,  -- the plan row this task realises
+    name       TEXT    NOT NULL,
+    package_id INTEGER NOT NULL REFERENCES packages (id),
+    created_at TEXT    NOT NULL,
+    updated_at TEXT    NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_tasks_package ON tasks (package_id);
+
 -- A node in the implementation task graph (entities:9, state_machines:9).
 --
 -- decisions:63 — one SubTask is the implementation unit of exactly one contract.
@@ -269,11 +330,20 @@ CREATE INDEX IF NOT EXISTS idx_findings_state   ON findings (state);
 -- `serve_epoch` counts how many times a brief has been served for this sub-task. It is
 -- what scopes a verification verdict to the serving episode that produced it: a verdict
 -- recorded under an earlier epoch cannot satisfy a later completion. See DEFECTS.md F19(b).
+-- `contract_ref` is deliberately NOT unique. It was in M5a, and D12 removed it: after a
+-- split every resulting sub-task carries the same contract ref, so the constraint made
+-- `split_subtask` literally unbuildable — the second insert would be rejected. It was
+-- never really about the contract anyway; it was expressing "nothing is owed twice", which
+-- live obligation ownership states directly and enforces exactly (idx_obligation_live_owner).
 CREATE TABLE IF NOT EXISTS subtasks (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    contract_ref  TEXT    NOT NULL UNIQUE,   -- the one contract this implements
+    contract_ref  TEXT    NOT NULL,          -- the contract this implements; shared by the
+                                             -- sub-tasks of a split (D12)
     title         TEXT    NOT NULL,
-    milestone     TEXT    NOT NULL DEFAULT '',
+    task_id       INTEGER REFERENCES tasks (id),  -- owning task, resolved at finalization
+                                               -- from the contract's belongs_to link.
+                                               -- Null when the contract declares no owner
+                                               -- (DEFECTS.md F24) — reported, never guessed.
     state         TEXT    NOT NULL,          -- pending | in_progress | blocked | done
                                              -- | rework_flagged  (never 'ready')
     serve_epoch   INTEGER NOT NULL DEFAULT 0,
@@ -285,6 +355,69 @@ CREATE TABLE IF NOT EXISTS subtasks (
 );
 
 CREATE INDEX IF NOT EXISTS idx_subtasks_state ON subtasks (state);
+
+-- The obligation surface (DEVIATIONS.md D12, fixing DEFECTS.md F23).
+--
+-- An obligation is one dischargeable commitment of a contract: the primary behaviour of its
+-- signature, or one of its enumerated error conditions. It is the denominator F23 found
+-- missing — `contracts:40` rejects a split whose products "do not jointly cover the
+-- original's contracts", but under `decisions:63` each names the same one contract, so the check
+-- runs, passes, and means nothing.
+--
+-- Enumerated by the *planning session* and frozen at finalization, before any split that will
+-- later be measured against it. The two rejected sources are recorded in D12: the tool
+-- deriving it from the contract's prose is the tool exercising judgment (`decisions:12`), and
+-- the splitting session declaring it at split time hands the denominator to the party being
+-- audited — which is exactly how `findings:18` was gamed.
+--
+-- Frozen does not mean unchangeable: a correction is legitimate but is a recorded,
+-- owner-visible act (`obligation_amendments`), the same friction shape as requirements:79's
+-- waiver log and D8's promotion reason. The accounting can change, but not silently.
+CREATE TABLE IF NOT EXISTS obligations (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    contract_ref TEXT    NOT NULL,      -- the contract this commitment belongs to
+    key          TEXT    NOT NULL,      -- stable id within the contract, e.g. 'behaviour'
+                                        -- or the error name ('PartsDontCover')
+    kind         TEXT    NOT NULL,      -- behaviour | error
+    statement    TEXT    NOT NULL,      -- what discharging it means
+    retired_at   TEXT,                  -- null == live; set only by a recorded amendment
+    frozen_at    TEXT    NOT NULL,
+    UNIQUE (contract_ref, key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_obligations_contract ON obligations (contract_ref, retired_at);
+
+-- Who owes what, now. Coverage is enforced here as a database invariant rather than as a
+-- procedural comparison of contract refs: the partial unique index makes "every obligation is
+-- owned by exactly one live sub-task" impossible to violate, which is what D12 buys over
+-- re-checking it at each call site.
+--
+-- Supersession rather than update, because the redistribution history IS the audit trail of
+-- the act being audited — the same reasoning as scope_attachments' promotion history.
+CREATE TABLE IF NOT EXISTS obligation_ownership (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    obligation_id INTEGER NOT NULL REFERENCES obligations (id),
+    subtask_id    INTEGER NOT NULL REFERENCES subtasks (id),
+    superseded_at TEXT,                 -- null == the live ownership
+    created_at    TEXT    NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_obligation_live_owner
+    ON obligation_ownership (obligation_id) WHERE superseded_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_obligation_owner_subtask
+    ON obligation_ownership (subtask_id, superseded_at);
+
+-- Changing a frozen enumeration. D12: legitimate, never silent. Gaming the accounting should
+-- require lying in a log the owner reads.
+CREATE TABLE IF NOT EXISTS obligation_amendments (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    obligation_id INTEGER REFERENCES obligations (id),  -- null for an addition, until written
+    contract_ref  TEXT    NOT NULL,
+    action        TEXT    NOT NULL,     -- added | retired | restated
+    reason        TEXT    NOT NULL,
+    created_at    TEXT    NOT NULL
+);
 
 -- Graph edges: this sub-task cannot start until `depends_on` is done.
 -- Derived at finalization from `depends_on`-typed links between contract rows
@@ -312,6 +445,57 @@ CREATE TABLE IF NOT EXISTS subtask_verifications (
 CREATE INDEX IF NOT EXISTS idx_verifications_subtask
     ON subtask_verifications (subtask_id, serve_epoch);
 
+-- The composed brief (entities:13, contracts:68). Immutable by design, so defect forensics
+-- can always answer "what exactly did the engine see". There is no lifecycle and no update
+-- path: regeneration writes a *new* brief that supersedes the old by reference, and the old
+-- stays frozen (requirements:61's bidirectional lineage, applied to a non-row entity).
+--
+-- `serve_epoch` records which serving episode the brief was composed for, so a brief is
+-- forensically attributable to the delivery it drove — the same scoping verify_completion
+-- verdicts use (DEFECTS.md F19b).
+CREATE TABLE IF NOT EXISTS briefs (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    subtask_id    INTEGER NOT NULL REFERENCES subtasks (id),
+    serve_epoch   INTEGER NOT NULL,
+    goal          TEXT    NOT NULL,     -- the sub-task goal (requirements:36)
+    is_draft      INTEGER NOT NULL DEFAULT 0,  -- requirements:40 watermark
+    supersedes    INTEGER REFERENCES briefs (id),
+    superseded_by INTEGER REFERENCES briefs (id),
+    composed_at   TEXT    NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_briefs_subtask ON briefs (subtask_id, superseded_by);
+
+-- The frozen candidate closure, one row per candidate with its disposition. This table is
+-- DEFECTS.md F26's fix and the reason it exists at all.
+--
+-- `contracts:41` audits "brief contents against the sub-task's link-graph closure". Computed
+-- at audit time that closure has moved — `decisions:3` makes the plan a living source of
+-- truth — so a brief that passed 100% accounting at composition reports as incomplete later
+-- purely because the plan grew, and "the composer skipped a row" becomes indistinguishable
+-- from "the plan changed afterwards". requirements:44's meter would drift on its own.
+--
+-- So the denominator is frozen here with the brief. audit_brief accounts against *this* set,
+-- which is what requirements:44 measures, and reports drift against the current closure as a
+-- separate, non-failing observation. Two numbers, because they are two different facts.
+--
+-- `origin` distinguishes a row reached by link-graph traversal (requirements:36) from one
+-- present because a planning session allocated it to an enclosing scope (D8). Both are
+-- candidates and both are subject to 100% accounting: an allocated row omitted with a reason
+-- is how the "too high" attachment failure becomes visible in a log the owner reads.
+CREATE TABLE IF NOT EXISTS brief_rows (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    brief_id    INTEGER NOT NULL REFERENCES briefs (id),
+    target_ref  TEXT    NOT NULL,
+    origin      TEXT    NOT NULL,       -- closure | allocation
+    disposition TEXT    NOT NULL,       -- included | omitted
+    reason      TEXT    NOT NULL DEFAULT '',  -- required on omitted (requirements:79)
+    UNIQUE (brief_id, target_ref)
+);
+
+CREATE INDEX IF NOT EXISTS idx_brief_rows_disposition
+    ON brief_rows (brief_id, disposition);
+
 -- Plan-time context allocation (DEVIATIONS.md D8, M5_PLAN.md section 2).
 --
 -- M5_PLAN 2.4: keyed on the target row's *lineage root*, not its ref, so an allocation
@@ -323,14 +507,15 @@ CREATE INDEX IF NOT EXISTS idx_verifications_subtask
 --
 -- A target has exactly one *live* placement. Re-attaching supersedes the previous one
 -- rather than adding a second: without that, narrowing is a no-op — the old broader row
--- stays live and the target remains in every packet forever, which is precisely the
+-- stays live and the target remains in every sub-task forever, which is precisely the
 -- "too high" failure the friction exists to prevent, made unfixable by the free
 -- direction. Superseded placements are stamped rather than deleted, because the
 -- promotion history IS the owner's review surface.
 CREATE TABLE IF NOT EXISTS scope_attachments (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    scope_level   TEXT    NOT NULL,     -- project | milestone | packet
-    scope_key     TEXT    NOT NULL,     -- '' for project; milestone name; packet subtask id
+    scope_level   TEXT    NOT NULL,     -- plan | package | task | subtask (D13)
+    scope_key     TEXT    NOT NULL,     -- '' at plan level; else the package, task or
+                                        -- subtask *id* — never a name (GLOSSARY.md)
     target_root   TEXT    NOT NULL,     -- lineage root ref of the attached row
     reason        TEXT    NOT NULL,
     promoted_from TEXT,                 -- prior scope_level, when broadened

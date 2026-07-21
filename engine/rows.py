@@ -143,7 +143,7 @@ class RowService:
                         "provenance": str(submission.provenance),
                         "assumption_kind": submission.assumption_kind,
                         "state": str(submission.initial_state()),
-                        "stage": submission.stage,
+                        "package": submission.package,
                         "created_at": now(),
                     },
                 )
@@ -260,9 +260,9 @@ class RowService:
         if selector.table is not None:
             where.append("table_name = ?")
             params.append(selector.table)
-        if selector.stage is not None:
-            where.append("stage = ?")
-            params.append(selector.stage)
+        if selector.package is not None:
+            where.append("package = ?")
+            params.append(selector.package)
         if selector.provenance is not None:
             where.append("provenance = ?")
             params.append(str(selector.provenance))
@@ -347,7 +347,7 @@ class RowService:
             state=RowState(row["state"]),
             created_at=row["created_at"],
             assumption_kind=row["assumption_kind"],
-            stage=row["stage"],
+            package=row["package"],
             supersedes=RowRef.parse(row["supersedes"]) if row["supersedes"] else None,
             superseded_by=(
                 RowRef.parse(row["superseded_by"]) if row["superseded_by"] else None
@@ -458,7 +458,7 @@ class RowService:
                 "provenance": str(replacement.provenance),
                 "assumption_kind": replacement.assumption_kind,
                 "state": str(replacement.initial_state()),
-                "stage": replacement.stage,
+                "package": replacement.package,
                 "supersedes": str(old),
                 "created_at": stamp,
             },

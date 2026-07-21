@@ -21,20 +21,50 @@ question (§4a).
   and a problem with *no* allocated gate locks *every* gate until one is assigned. The second
   clause removes the escape hatch of never allocating.
 
-Current outstanding items and their gates (updated 2026-07-21, after the audit):
+Current outstanding items and their gates (updated 2026-07-21, end of the M5b vocabulary
+session):
 
 | Problem | Resolve-by gate |
 |---|---|
-| ~~F15 — undefined stage-7 fix contracts~~ | **RESOLVED 2026-07-21** at the audit; hard lock lifted. The mechanisms all exist — see DEFECTS.md F15 |
-| F18 — `deps_satisfied`/`serve_brief` have no firing contract | **M5a gate** (hard-locks M5a) |
-| F19 — `rework_flagged` trap + early-banked verdict | **M5a gate** (hard-locks M5a) |
+| ~~F15 — undefined package-7 fix contracts~~ | **RESOLVED 2026-07-21** at the audit; hard lock lifted. The mechanisms all exist — see DEFECTS.md F15 |
+| ~~F18 — `deps_satisfied`/`serve_brief` have no firing contract~~ | **RESOLVED** in M5a |
+| ~~F19 — `rework_flagged` trap + early-banked verdict~~ | **RESOLVED** in M5a |
+| ~~F22 — narrowing an attachment was a silent no-op~~ | **RESOLVED** in M5a |
+| ~~F23 — `PartsDontCover` can never fire~~ | **RESOLVED** in M5b — obligation surface built |
+| ~~F24 — task membership lost in the package-6 flattening~~ | **RESOLVED** in M5b — `belongs_to`, plus live `packages`/`tasks` |
+| ~~F25 — "supersedes the original in the graph" has no mechanism~~ | **RESOLVED** in M5b |
+| ~~F26 — `audit_brief`'s denominator is re-derived at read time~~ | **RESOLVED** in M5b — closure frozen into the brief |
+| **v1 foreign-key sweep** — F20 and F24 are two instances; check every remaining v1 FK against v2 rather than finding a third by accident | **M6 gate** |
+| **Methodology rev 3, second half** — rev 3 carries v2's vocabulary but still names v1's tool surface (`submit_use_cases`, …) | **M6 gate** |
 | F17 — prose row citations break on supersession | M6 gate |
 | §4 Q1 — mandate/script by value or reference | M6 gate |
 | §4 Q2 — digest names what to fetch | M6 gate |
+| D9 — gates hard-lock on outstanding problems (product form) | M6 gate |
+| **Glossary delivery to the writer** — F27: a plan's vocabulary is enforced at the moment of writing or not at all. How does a plan's own glossary reach the code engine, and should `compose_brief` carry it as a first-class section rather than as a row that can be omitted? | **M6 gate** |
 
-Nothing is unallocated, so no global lock is in force. F18 and F19 replace F15 as M5a's
-hard lock: both are fixed *while building* `task-graph`, which is what F15 was standing in
-for all along — but they are the real holes, and F15 was not one.
+Nothing is unallocated, so no global lock is in force. **The M5b gate is clear**: F23–F26 were
+all fixed while building `brief-composer`, as their binding required. Everything still open is
+bound to the M6 gate.
+
+**The pre-build audit is now three checks, not two** (added by F23, amended by F26):
+
+1. Every state-machine event has a contract that fires it.
+2. Every outcome a contract's signature offers is reachable from the states the entity can be in.
+3. For every coverage/accounting/completeness check: **name the set, say where it comes from,
+   and say at what moment it is fixed.** A denominator re-derived at read time measures against
+   a moving target — that is F26, caught by this check on its first use.
+
+A fifth, from **F27** and applying to our own prose rather than the plan's: **a rule stated in
+a document is not a mechanism.** When this build writes a rule for itself — a naming
+convention, an invariant, a discipline — the same question gets asked of it that gets asked of
+the frozen plan: *what fires this, and what fails when it is broken?* The glossary spent eight
+defect entries diagnosing exactly this pattern in the frozen plan and then reproduced it in
+itself within a day.
+
+A fourth is worth considering after F25: a contract that says it *supersedes*, *replaces* or
+*supplants* something in the execution layer must say what that does to the thing's edges and
+its lifecycle. Plan-row supersession (`requirements:61`) is a defined primitive and reading it
+as transferable to a graph node is what F25 is.
 
 ---
 
@@ -46,8 +76,8 @@ The session opened intending to build `task-graph` + `brief-composer`, on the st
 memory that said M5 was those two components. `V2_BUILD_PLAN.md` §7 says M5 is Surface, and
 §3/§9 defer the execution module entire, pending a design discussion the owner explicitly
 reserved. The memory had reasoned from component *numbering* (9 and 10 are done, so 11 and 12
-are next) rather than from the milestone table. Corrected in memory; recorded here because the
-failure mode is instructive — **`V2_BUILD_PLAN.md` §7 is the authority on milestone order, not
+are next) rather than from the build-package table. Corrected in memory; recorded here because the
+failure mode is instructive — **`V2_BUILD_PLAN.md` §7 is the authority on build-package order, not
 component numbering.**
 
 ### 1.2 The deferral removed the only path out of `draft`
@@ -85,6 +115,12 @@ returning its `TaskGraph` as `contracts:35` specifies. One fewer deviation.
 
 ## 2. The design: allocation is a planning-time act
 
+> **Vocabulary superseded 2026-07-21.** This section was written with the three-level
+> `project / milestone / packet` scheme. The binding vocabulary is now
+> **plan / package / task / sub-task** — see `GLOSSARY.md` and DEVIATIONS.md **D13**, which
+> records why three levels were not enough and why the three original names were each wrong.
+> The names below have been updated in place; the arguments are unchanged and still hold.
+
 ### 2.1 The principle
 
 **Context allocation happens once, at plan time, as a recorded judgment — not at retrieval
@@ -93,7 +129,7 @@ time as a computed heuristic.**
 When the master plan is built, the planning session looks at the big picture, the data, and
 the deliverable, and decides the base reference set for every part of the plan. Execution then
 serves what was allocated. Findings that arise *during* execution are placed once, carefully,
-at the right scope level, and are thereafter in the right places for the rest of the project.
+at the right scope level, and are thereafter in the right places for the rest of the plan.
 
 Deliberately: ramp up initial cost to control execution cost.
 
@@ -110,20 +146,20 @@ opinions" grows.
 
 ### 2.3 Scope levels
 
-Attachments carry a scope level: **project / milestone / packet**.
+Attachments carry a scope level: **plan / package / task / sub-task**.
 
 (A `session` level was in the owner's original phrasing and was dropped on review: the other
-three are plan structure, whereas a session is an episode of work — and session-scoped
+levels are plan structure, whereas a session is an episode of work — and session-scoped
 attachment is what the journal already is. Settled 2026-07-20, do not reopen.)
 
-A packet's context is the union of its own attachments and those of every enclosing scope.
+A sub-task's context is the union of its own attachments and those of every enclosing scope.
 
 This **dissolves the unbounded-journal problem** rather than answering it. `requirements:58`
 requires resume to present "accumulated learnings", and nothing in the frozen plan bounds that
 accumulation — so as specified, resume cost eventually scales with total session history,
 worse than the plan-size scaling `requirements:62` exists to kill. Every candidate bound
 (last N, since-last-gate) is arbitrary invention. Under scope levels, resume serves
-project ∪ current-milestone ∪ current-packet, and the bound is structural rather than a
+plan ∪ current-package ∪ current-task ∪ current-sub-task, and the bound is structural rather than a
 number someone picked.
 
 ### 2.4 Allocations must key on lineage root, not row id
@@ -141,9 +177,9 @@ primitive in the plan, which is mild evidence it is the right one.
 
 The scheme concentrates risk in a single judgment per finding: which level to attach at.
 
-- **Too low** — the packet that needed it does not get it. Silent, discovered at execution:
+- **Too low** — the sub-task that needed it does not get it. Silent, discovered at execution:
   precisely the failure this tool exists to prevent.
-- **Too high** — a project-level attachment is in every packet forever. Context bloat returns
+- **Too high** — a plan-level attachment is in every sub-task forever. Context bloat returns
   through the ceiling instead of the floor, and nobody notices a cost spread evenly.
 
 Two countermeasures:
@@ -161,20 +197,20 @@ The too-low direction already has its instrument: **`decisions:14`, execution su
 zero sub-tasks blocked by missing plan information — *is* the allocation miss rate.** The
 design ships with its own metric already specified.
 
-### 2.6 Packet boundaries: lowest-coupling, not smallest
+### 2.6 Sub-task boundaries: lowest-coupling, not smallest
 
-The owner's instinct was to minimise packet size — smallest self-contained packets need the
+The owner's instinct was to minimise sub-task size — smallest self-contained sub-tasks need the
 least information, moving power to the planner and risk away from the executor. The direction
 is right; the target is not size.
 
-**Below a certain size, smaller packets cost more context, not less:**
+**Below a certain size, smaller sub-tasks cost more context, not less:**
 
-- Every packet pays fixed overhead — `decisions:16` gives each sub-task its linked rows *plus
-  the governing big-picture rows*. Halving packet size doubles how often that is paid.
+- Every sub-task pays fixed overhead — `decisions:16` gives each sub-task its linked rows *plus
+  the governing big-picture rows*. Halving sub-task size doubles how often that is paid.
 - **Self-contained fights small.** Cut finer and a unit's meaning starts depending on its
   neighbours, so keeping it self-contained means re-importing them. Total context is
-  (per-packet × count); its minimum sits at the natural coupling seams, not at the floor.
-- More packets means more allocation decisions, multiplying the §2.5 level-placement judgment.
+  (per-sub-task × count); its minimum sits at the natural coupling seams, not at the floor.
+- More sub-tasks means more allocation decisions, multiplying the §2.5 level-placement judgment.
 
 **The plan already settled granularity: `decisions:63` — one SubTask = one contract
 implementation unit; edges map from `contract_deps`; `split_subtask` (`contracts:40`) divides
@@ -185,24 +221,24 @@ escape hatch for a contract that is genuinely too big.
 Supporting evidence from this build, not theory: M1–M4 each bundled 2–3 components, and nearly
 every defect caught was an **interaction** bug — F11's intra-batch links, F14's `impact()`
 excluding its roots, M3's plan-wide warning scoping. Those are exactly the defects a too-small
-packet hides: each unit passes alone and the bug lives in the seam. Cutting below the coupling
+sub-task hides: each unit passes alone and the bug lives in the seam. Cutting below the coupling
 boundary relocates the risk somewhere nobody is looking.
 
-**Design rule: maximise crispness of the boundary, not minimise size.** A small packet with a
+**Design rule: maximise crispness of the boundary, not minimise size.** A small sub-task with a
 vague interface is worse than a large one with a sharp contract. "Power to the planner" means
 the planner spends effort on the cut *lines*, not on cutting more often.
 
 ### 2.7 Session-boundary advisory (the "/clear prompt")
 
-The owner wants the tool to prompt for a fresh session between work packets, since humans
+The owner wants the tool to prompt for a fresh session between sub-tasks, since humans
 forget.
 
 **Constraint:** `decisions:4` / `requirements:74` require the surface to be strictly
 MCP-protocol-clean, with no Claude Code-specific calls or configuration. `/clear` is a Claude
 Code command; the tool must not invoke it and should not name it.
 
-**Design:** on packet completion the surface returns a session-boundary advisory in its
-`ToolResult` content — "packet complete; recommend a fresh session before the next" — which is
+**Design:** on sub-task completion the surface returns a session-boundary advisory in its
+`ToolResult` content — "sub-task complete; recommend a fresh session before the next" — which is
 protocol-clean and works on any engine. Engine-specific phrasing stays outside the engine.
 This pairs naturally with `set_next_action` (`contracts:49`): the advisory is only safe to
 give when a resume point has been durably checkpointed, so the advisory should be *conditional
@@ -210,7 +246,7 @@ on* a next-action being set, and should say so when it is not.
 
 ---
 
-## 3. Milestone recut
+## 3. Build-package recut
 
 Task-graph coming into scope makes the old M5 (surface) dependency-wrong: `plan_status`'s
 digest depends on the scope-attachment bounds (§2.3) and its drift flags depend on a
@@ -240,7 +276,7 @@ Per the outstanding-problem rule (§0): an open question is a problem; it is fix
 bound to a named gate it must be resolved by, and that gate cannot pass while it is open.
 Both below are `plan_status`-shaped, so their gate is **M6** (surface). Neither blocks M5.
 
-1. **[resolve-by: M6 gate] Mandate and stage script: by value or by reference in the resume
+1. **[resolve-by: M6 gate] Mandate and package script: by value or by reference in the resume
    digest?** `requirements:10` says return them on session open; they are the biggest single
    chunk, bounded by methodology size rather than plan size. Serving by reference contradicts
    `requirements:10`'s plain reading; by value makes the digest permanently fat. A
@@ -314,14 +350,14 @@ machine.
     log; the `in_progress → done` transition's only stated enabler may be missing.
 - **`state_machines:1` (Plan)** — audited this session, see §1.2.
 
-### Contract rows cited as stage-7 fixes but never defined
+### Contract rows cited as package-7 fixes but never defined
 
 `contracts:52`, `contracts:56`, `contracts:59`, `contracts:61`. Verified absent by grepping
 for the definition form `` `contracts:N` `` — each appears only inside a findings fix-note.
 (Contracts 3, 4, 16, 36, 39, 47 are also absent, but those are the *superseded originals*,
 correctly dropped from a live-rows export.) This is a new instance of the characteristic
 pattern F2/F4/F7/F9/F12 — behaviour named in prose without the mechanism — and the first where
-the missing thing is the *fix for a stage-7 finding*. **Log as a defect before building.**
+the missing thing is the *fix for a package-7 finding*. **Log as a defect before building.**
 
 ---
 
@@ -329,7 +365,7 @@ the missing thing is the *fix for a stage-7 finding*. **Log as a defect before b
 
 All of this session's findings are recorded; nothing is parked in this doc awaiting a write.
 
-- **DEFECTS.md F15** (OPEN) — stage-7 fix rows cited but never defined
+- **DEFECTS.md F15** (OPEN) — package-7 fix rows cited but never defined
   (`contracts:52/56/59/61`). Resolution is build-time: the `state_machines:9` audit at the
   top of M5a confirms each absence against the built engine and, per row, writes it (as F12
   did for the spike events) or finds it subsumed. **This is the one live to-do.**
@@ -351,8 +387,8 @@ Driver scripts: scratchpad `.py` files, run with
 `$env:PYTHONIOENCODING='utf-8'; $env:PYTHONPATH='D:\PythonProjects\PlanTool'; & .venv\Scripts\python.exe <path>`.
 Inline `python -c` gets classifier-blocked and the cp1252 console chokes on em dashes.
 
-**Drive the engine end-to-end after the milestone and read the output.** It has caught
-something the test suite could not at all four milestones so far. A test written from a
+**Drive the engine end-to-end after each build package and read the output.** It has caught
+something the test suite could not across all four build packages so far. A test written from a
 specification inherits that specification's blind spots.
 
 Branch + PR; the owner merges; no self-merges.

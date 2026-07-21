@@ -27,7 +27,7 @@ def _row(rows, text="the gate criteria are too weak", key=None):
 
 def test_file_finding_links_the_attacked_rows(rows, findings):
     ref = _row(rows)
-    finding = findings.file_finding([ref], "stage 4 gate passes with zero tests", "high")
+    finding = findings.file_finding([ref], "package 4 gate passes with zero tests", "high")
 
     assert finding.state == FILED
     assert finding.refs == (ref,)

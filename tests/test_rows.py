@@ -164,14 +164,14 @@ def test_contradiction_blocks_the_whole_batch(store):
 def test_read_rows_selectors(rows):
     rows.submit_rows(
         [
-            RowSubmission("requirements", {"text": "a"}, stage=3),
-            RowSubmission("requirements", {"text": "b"}, stage=4),
-            RowSubmission("decisions", {"text": "c"}, stage=3),
+            RowSubmission("requirements", {"text": "a"}, package=3),
+            RowSubmission("requirements", {"text": "b"}, package=4),
+            RowSubmission("decisions", {"text": "c"}, package=3),
         ],
         "k",
     )
     assert rows.read_rows(RowSelector(table="requirements")).total == 2
-    assert rows.read_rows(RowSelector(stage=3)).total == 2
+    assert rows.read_rows(RowSelector(package=3)).total == 2
     assert rows.read_rows(RowSelector(ids=[RowRef("decisions", 1)])).total == 1
 
 

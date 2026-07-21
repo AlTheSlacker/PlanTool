@@ -1,6 +1,8 @@
 import pytest
 
+from engine.briefs import BriefComposer
 from engine.conflicts import ConflictService
+from engine.obligations import ObligationService
 from engine.findings import FindingService
 from engine.gaps import GapEngine
 from engine.gates import GateEngine
@@ -70,6 +72,16 @@ def tasks(store, rows, graph, findings):
 @pytest.fixture
 def attachments(store, rows):
     return AttachmentService(store, rows)
+
+
+@pytest.fixture
+def obligations(store):
+    return ObligationService(store)
+
+
+@pytest.fixture
+def briefs(store, tasks, graph, attachments):
+    return BriefComposer(store, tasks, graph=graph, attachments=attachments)
 
 
 PAPER = """A Study of Widget Settling

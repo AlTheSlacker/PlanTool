@@ -10,7 +10,7 @@ next_subtask, contracts:60 report_status, contracts:62 verify_completion.
 Plus two contracts the frozen plan does not have. `state_machines:9` names six events and
 the plan names a firing contract for only four of them: nothing fires `deps_satisfied` or
 `serve_brief` (DEFECTS.md F18). They are supplied here as `readiness_of`/`refresh_readiness`
-and `serve_brief`, on this component, because both are the *system's* judgment —
+and `serve_brief`, on task-graph, because both are the *system's* judgment —
 `crud_grid:35` splits system-owned readiness from engine-owned status reports, and routing
 them through `report_status` would let the code engine assert its own readiness, voiding
 `sm_cells:131` ("unbuildable work is never served"). A gate the graded party can open is
@@ -35,7 +35,8 @@ from dataclasses import dataclass, field
 
 from engine.errors import PlanToolError
 from engine.models import RowRef
-from engine.storage import Op, Storage, now
+from engine.obligations import ObligationService
+from engine.storage import FromOp, Op, Storage, now
 
 # --- state_machines:9, the SubTask lifecycle ---
 
@@ -105,7 +106,7 @@ DEPENDS_ON = "depends_on"
 
 
 class GatesIncomplete(PlanToolError):
-    """contracts:35 — a required stage gate has not passed; names it."""
+    """contracts:35 — a required package gate has not passed; names it."""
 
 
 class CycleDetected(PlanToolError):
@@ -145,6 +146,26 @@ class EvidenceIncomplete(PlanToolError):
     verification refused naming the unaccounted contracts, state unchanged."""
 
 
+class UnpackagedTask(PlanToolError):
+    """Not in the frozen plan. GLOSSARY.md / DEVIATIONS.md D13: every task belongs to
+    exactly one package and finalization refuses a plan with an unpackaged task. There is
+    deliberately no catch-all: a default bucket satisfies the invariant while quietly
+    restoring the three-level model, and a grouping nobody chose is a grouping nobody
+    reviews."""
+
+
+class PackageNotFound(PlanToolError):
+    """A package is a row with an id, never a free-text label. A name-keyed grouping
+    yields an empty context set on a typo, which is the mistake `milestone` made."""
+
+
+class SubTaskSuperseded(PlanToolError):
+    """Not in the frozen plan. DEFECTS.md F25: `contracts:40` says a split's products
+    supersede the original "in the graph" without saying what that means, so nothing stopped
+    a split original from being served, reported on or verified. It is out of the graph: its
+    work is owned by the sub-tasks that replaced it."""
+
+
 class NotInProgress(PlanToolError):
     """Not in the frozen plan. contracts:62 declares no state precondition, so a passing
     verdict could be banked against a `pending` sub-task and later satisfy contracts:60's
@@ -156,14 +177,45 @@ class SubTask:
     id: int
     contract_ref: RowRef
     title: str
-    milestone: str
+    #: The owning task's id, resolved at finalization from the contract's `belongs_to`
+    #: link. None when the contract declares no owner — see DEFECTS.md F24.
+    task_id: int | None
     state: str
     serve_epoch: int
     deps: tuple[int, ...] = ()
     detail: str | None = None
     block_reason: str | None = None
+    #: The sub-task that replaced this one in a split (`contracts:40`). A superseded node
+    #: leaves the graph entirely — see `is_live` and DEFECTS.md F25.
+    superseded_by: int | None = None
     created_at: str = ""
     updated_at: str = ""
+
+    @property
+    def is_live(self) -> bool:
+        return self.superseded_by is None
+
+
+@dataclass(frozen=True, slots=True)
+class Package:
+    """The one level a human declares (D13). A row with an id — never a name."""
+
+    id: int
+    name: str
+    intent: str = ""
+    created_at: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class Task:
+    """The work of realising one unit of the architecture. Derived one per `components:N`
+    row — the frozen plan's read-only spelling of this same entity — so a task cannot be
+    misfiled; its *package* is the judgment, and that is what gets recorded."""
+
+    id: int
+    source_ref: str
+    name: str
+    package_id: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -196,6 +248,11 @@ class TaskGraph:
     #: requirements:23 — finalization is a critical point, so suppressed warnings
     #: resurface here rather than staying quiet.
     resurfaced_warnings: tuple[str, ...] = ()
+    #: Contracts whose obligation surface the planning session never declared (D12).
+    #: Reported rather than invented: the tool will not guess a denominator. These
+    #: sub-tasks cannot be split or verified until the enumeration exists, and saying so
+    #: at finalization is the loud failure F23's silent one has to become.
+    unenumerated: tuple[str, ...] = ()
 
     @property
     def all_roots(self) -> bool:
@@ -242,16 +299,100 @@ class AllBlockedReport:
 
 
 class TaskGraphService:
-    def __init__(self, storage: Storage, rows, graph=None, gates=None, findings=None):
+    def __init__(
+        self, storage: Storage, rows, graph=None, gates=None, findings=None,
+        obligations=None,
+    ):
         self.storage = storage
         self.rows = rows
         self.graph = graph
         self.gates = gates
         self.findings = findings
+        self.obligations = obligations or ObligationService(storage)
+
+    # --- the package/task levels (DEVIATIONS.md D13, GLOSSARY.md) ---
+
+    def declare_package(self, name: str, intent: str = "", lease=None) -> Package:
+        """Declare a build package — "the GUI", "the controller", "the persistence layer".
+
+        The **only** level a human chooses rather than derives, which is why it is the only
+        one that needs entity discipline: an id, an owner, supersession. Nothing here
+        proposes a cut. Which package a task belongs to is a judgment, and the tool records
+        judgment but never exercises it (`decisions:12`); the methodology's architecture
+        script is what leads the planner to a cut, and the owner decides. A packaging
+        heuristic in the engine would be the tool holding opinions about architecture.
+        """
+        stamp = now()
+        op = Op("insert", "packages", {
+            "name": name, "intent": intent, "created_at": stamp, "updated_at": stamp,
+        })
+        self.storage.write_atomic([op], f"package:{name}:{stamp}", lease=lease)
+        return Package(id=op.result["id"], name=name, intent=intent, created_at=stamp)
+
+    def assign_task(self, source_ref: RowRef | str, package_id: int, lease=None) -> Task:
+        """Place the task described by `source_ref` into a package — the recorded
+        judgment. `source_ref` is a `components:N` row: that is the frozen plan's
+        read-only spelling of **task**, one entity with one id space (`GLOSSARY.md`)."""
+        ref = str(source_ref)
+        if not self.storage.query("SELECT id FROM packages WHERE id = ?", (package_id,)):
+            raise PackageNotFound(
+                f"no package {package_id}; declare it first — a package is a row with an "
+                "id, never a free-text label",
+                package_id=package_id,
+            )
+        found = self.storage.query(
+            "SELECT content FROM plan_rows WHERE table_name || ':' || ordinal = ?", (ref,)
+        )
+        if not found:
+            raise SubTaskNotFound("no such task source row", ref=ref)
+        content = json.loads(found[0]["content"])
+        name = content.get("title") or content.get("name") or ref
+
+        stamp = now()
+        existing = self.storage.query("SELECT id FROM tasks WHERE source_ref = ?", (ref,))
+        if existing:
+            op = Op("update", "tasks",
+                    {"package_id": package_id, "updated_at": stamp},
+                    where={"id": existing[0]["id"]})
+            self.storage.write_atomic([op], f"task:{ref}:{package_id}:{stamp}", lease=lease)
+            return Task(existing[0]["id"], ref, name, package_id)
+        op = Op("insert", "tasks", {
+            "source_ref": ref, "name": name, "package_id": package_id,
+            "created_at": stamp, "updated_at": stamp,
+        })
+        self.storage.write_atomic([op], f"task:{ref}:{package_id}:{stamp}", lease=lease)
+        return Task(op.result["id"], ref, name, package_id)
+
+    def _guard_packaging(self) -> None:
+        """D13 — finalization refuses a plan with an unpackaged task.
+
+        The invariant the *database* enforces is `tasks.package_id NOT NULL`; what it cannot
+        enforce is that a task row exists at all. That gap is this check. It is deliberately
+        loud: an unpackaged task is one whose sub-tasks would silently miss their mid-level
+        context, and a sub-task quietly missing context is exactly what `decisions:14`
+        measures.
+        """
+        unplaced = [
+            f"{r['table_name']}:{r['ordinal']}"
+            for r in self.storage.query(
+                "SELECT table_name, ordinal FROM plan_rows WHERE table_name = 'components' "
+                "AND superseded_by IS NULL AND retired_at IS NULL "
+                "AND table_name || ':' || ordinal NOT IN (SELECT source_ref FROM tasks) "
+                "ORDER BY ordinal"
+            )
+        ]
+        if unplaced:
+            raise UnpackagedTask(
+                "every task belongs to exactly one package; these tasks have none: "
+                + ", ".join(unplaced)
+                + ". Declare a package and assign them — there is no catch-all, because a "
+                  "bucket nobody chose is a grouping nobody reviews.",
+                tasks=unplaced,
+            )
 
     # --- contracts:35 ---
 
-    def finalize_plan(self, lease=None, required_stages: list[int] | None = None) -> TaskGraph:
+    def finalize_plan(self, lease=None, required_packages: list[int] | None = None) -> TaskGraph:
         """Derive the task graph and move the plan out of `draft`.
 
         This is the sole contract firing `state_machines:1`'s `finalize` event
@@ -259,25 +400,43 @@ class TaskGraphService:
         revision loop unreachable and the drift baseline never captured
         (M5_PLAN.md 1.2).
         """
-        self._guard_gates(required_stages)
+        self._guard_gates(required_packages)
         self._guard_findings()
+        self._guard_packaging()
 
         specs = self._derive_nodes()
         edges = self._derive_edges(specs)
         order = self._toposort(specs, edges)
 
         ops: list[Op] = []
+        unenumerated: list[str] = []
         stamp = now()
-        for ref, title in specs:
+        for ref, title, content in specs:
+            node = len(ops)
             ops.append(Op("insert", "subtasks", {
                 "contract_ref": str(ref),
                 "title": title,
-                "milestone": "",
+                "task_id": self._owning_task_id(ref),
                 "state": PENDING,
                 "serve_epoch": 0,
                 "created_at": stamp,
                 "updated_at": stamp,
             }))
+            # D12 — the obligation surface is frozen here, in the same transaction that
+            # creates the sub-task, and before any split that will be measured against it.
+            # Freezing later would let the party being audited pick its own denominator
+            # (DEFECTS.md F23); freezing in a second batch would leave a window in which a
+            # sub-task exists with no accounting at all.
+            obligation_specs = (
+                self.obligations.enumerate_from_row(content)
+                if self.obligations is not None else []
+            )
+            if obligation_specs:
+                ops.extend(self.obligations.freeze_ops(
+                    str(ref), obligation_specs, FromOp(node, "id"), base_index=len(ops)
+                ))
+            else:
+                unenumerated.append(str(ref))
         self.storage.write_atomic(ops, f"finalize:nodes:{stamp}", lease=lease)
 
         by_ref = {str(s.contract_ref): s.id for s in self._all()}
@@ -300,18 +459,19 @@ class TaskGraphService:
             subtasks=tuple(subtasks),
             edge_count=len(edges),
             resurfaced_warnings=tuple(self._resurfaced_warnings()),
+            unenumerated=tuple(unenumerated),
         )
 
-    def _guard_gates(self, required_stages: list[int] | None) -> None:
-        if self.gates is None or required_stages is None:
+    def _guard_gates(self, required_packages: list[int] | None) -> None:
+        if self.gates is None or required_packages is None:
             return
-        for stage in required_stages:
-            result = self.gates.run_gate(stage)
+        for package in required_packages:
+            result = self.gates.run_gate(package)
             if not result.clean:
                 raise GatesIncomplete(
-                    f"stage {stage} gate has not passed; "
+                    f"package {package} gate has not passed; "
                     f"{len(result.holes)} outstanding",
-                    stage=stage,
+                    package=package,
                 )
 
     def _guard_findings(self) -> None:
@@ -327,8 +487,12 @@ class TaskGraphService:
                 findings=[f.id for f in unresolved],
             )
 
-    def _derive_nodes(self) -> list[tuple[RowRef, str]]:
-        """decisions:63 — one sub-task per live contract row."""
+    def _derive_nodes(self) -> list[tuple[RowRef, str, dict]]:
+        """decisions:63 — one sub-task per live contract row.
+
+        The row's content travels with the spec because finalization also freezes the
+        obligation surface the session declared on it (D12).
+        """
         rows = self.storage.query(
             "SELECT table_name, ordinal, content FROM plan_rows "
             "WHERE table_name = 'contracts' AND superseded_by IS NULL "
@@ -338,8 +502,30 @@ class TaskGraphService:
         for r in rows:
             content = json.loads(r["content"])
             ref = RowRef("contracts", r["ordinal"])
-            specs.append((ref, content.get("title") or content.get("name") or str(ref)))
+            title = content.get("title") or content.get("name") or str(ref)
+            specs.append((ref, title, content))
         return specs
+
+    def _owning_task_id(self, contract: RowRef) -> int | None:
+        """The id of the task this contract belongs to, via its `belongs_to` link.
+
+        DEFECTS.md F24: v1 carried this as `contracts.component_id`, a real foreign key.
+        The package-6 flattening into generic `plan_rows`/`links` kept the rows and dropped
+        the relation, leaving membership expressed only as markdown nesting in the exported
+        plan. D13 restores it as a typed link, mirroring D11's treatment of `depends_on` —
+        member -> owner, so the edge is owned by the row that knows it.
+
+        Returns None when the contract declares no owner, or when the owning row has not
+        been made a task (which requires a package — see `tasks.package_id NOT NULL`). That
+        is reported, never guessed: choosing an owner or a package would be the tool
+        exercising judgment (`decisions:12`).
+        """
+        found = self.storage.query(
+            "SELECT t.id FROM links l JOIN tasks t ON t.source_ref = l.target_ref "
+            "WHERE l.source_ref = ? AND l.edge_type = 'belongs_to' ORDER BY l.id LIMIT 1",
+            (str(contract),),
+        )
+        return found[0]["id"] if found else None
 
     def _derive_edges(self, specs) -> list[tuple[str, str]]:
         """D11 — consumer -> provider, from `depends_on` links between contract rows only.
@@ -349,7 +535,7 @@ class TaskGraphService:
         every citation a dependency and fire CycleDetected on traceability loops that mean
         nothing.
         """
-        known = {str(ref) for ref, _ in specs}
+        known = {str(ref) for ref, _, _ in specs}
         return [
             (r["source_ref"], r["target_ref"])
             for r in self.storage.query(
@@ -363,7 +549,7 @@ class TaskGraphService:
     def _toposort(specs, edges) -> list[RowRef]:
         """requirements:34 — no sub-task precedes its dependencies. Kahn's algorithm,
         ties broken by ref so the order is deterministic across runs."""
-        nodes = [ref for ref, _ in specs]
+        nodes = [ref for ref, _, _ in specs]
         incoming = {str(ref): set() for ref in nodes}
         outgoing = {str(ref): set() for ref in nodes}
         for consumer, provider in edges:
@@ -473,7 +659,7 @@ class TaskGraphService:
         briefed, and marking it in-progress here would put sub-tasks into `in_progress`
         that nobody is working on. `serve_brief` fires at handover — see `serve_brief`.
         """
-        if not self._is_finalized():
+        if not self.is_finalized():
             if not allow_draft:
                 raise PlanNotFinalized(
                     "the plan is not finalized; pass allow_draft with recorded owner "
@@ -505,11 +691,11 @@ class TaskGraphService:
         chosen = candidates[0]
         return SubTaskCandidates(
             subtask=chosen,
-            closure=self._closure_for(chosen),
-            is_draft=not self._is_finalized(),
+            closure=self.closure_for(chosen),
+            is_draft=not self.is_finalized(),
         )
 
-    def _closure_for(self, subtask: SubTask) -> tuple[RowRef, ...]:
+    def closure_for(self, subtask: SubTask) -> tuple[RowRef, ...]:
         """requirements:36 — every row reachable from the sub-task's contract."""
         if self.graph is None:
             return (subtask.contract_ref,)
@@ -530,10 +716,11 @@ class TaskGraphService:
         also what makes `serve_epoch` mean something — it counts deliveries, and a
         verification verdict is scoped to the epoch it was earned under (F19b).
 
-        On this component rather than reachable from `report_status` because serving is
-        the system's act, not the engine's claim (crud_grid:35).
+        On task-graph rather than reachable from `report_status` because serving is the
+        system's act, not the engine's claim (crud_grid:35).
         """
         subtask = self.get(subtask_id)
+        self.guard_live(subtask)
         presented = self.readiness_of(subtask)
         self._check_transition(presented, "serve_brief", subtask)
         stamp = now()
@@ -561,6 +748,7 @@ class TaskGraphService:
         `serve_epoch`, so a pass earned before a rework cannot certify the rework.
         """
         subtask = self.get(subtask_id)
+        self.guard_live(subtask)
         if subtask.state != IN_PROGRESS:
             raise NotInProgress(
                 f"sub-task {subtask_id} is {subtask.state}; evidence can only be verified "
@@ -569,8 +757,8 @@ class TaskGraphService:
                 state=subtask.state,
             )
 
-        scope = self._scope_contracts(subtask)
-        unaccounted = tuple(sorted(c for c in scope if not evidence.get(c)))
+        scope = self._scope_obligations(subtask)
+        unaccounted = tuple(sorted(o for o in scope if not evidence.get(o)))
         verdict = "fail" if unaccounted else "pass"
 
         self.storage.write_atomic([
@@ -597,11 +785,23 @@ class TaskGraphService:
             evidence=dict(evidence),
         )
 
-    def _scope_contracts(self, subtask: SubTask) -> tuple[str, ...]:
-        """decisions:63 — one sub-task implements exactly one contract, so its scope is
-        that contract. `split_subtask` (M5b) is what makes this a tuple rather than a
-        scalar: parts jointly cover the original's contracts."""
-        return (str(subtask.contract_ref),)
+    def _scope_obligations(self, subtask: SubTask) -> tuple[str, ...]:
+        """What this sub-task must produce evidence for: the obligations it owns (D12).
+
+        This replaces M5a's placeholder, which returned the sub-task's single contract ref.
+        The placeholder was correct for an unsplit graph and wrong the moment `split_subtask`
+        existed: a split's sub-tasks all carry the *same* contract ref, so evidence for one
+        sub-task's slice would discharge the parent's whole contract. `contracts:62`'s "each
+        contract in the sub-task's scope" is read as each *obligation* in it, which is the
+        only reading under which a sub-task cannot claim its siblings' work.
+
+        A sub-task with no enumerated surface raises rather than returning an empty scope.
+        An empty denominator makes `all(...)` true and reports a pass over nothing — F23
+        exactly, and the one outcome this whole surface exists to prevent.
+        """
+        return tuple(
+            o.ref for o in self.obligations.require_enumerated(subtask.id, "evidence")
+        )
 
     def passing_verdict(self, subtask: SubTask) -> VerificationVerdict | None:
         """The passing verdict for the *current* serving episode, if any."""
@@ -648,6 +848,7 @@ class TaskGraphService:
             )
 
         subtask = self.get(subtask_id)
+        self.guard_live(subtask)
         presented = self.readiness_of(subtask)
         target = self._check_transition(presented, status, subtask)
 
@@ -670,6 +871,17 @@ class TaskGraphService:
             lease=lease,
         )
         return self.get(subtask_id)
+
+    def guard_live(self, subtask: SubTask) -> None:
+        """A superseded node is out of the build entirely (DEFECTS.md F25)."""
+        if not subtask.is_live:
+            raise SubTaskSuperseded(
+                f"sub-task {subtask.id} was split and superseded by sub-task "
+                f"{subtask.superseded_by}; its obligations are owned by the sub-tasks that "
+                "replaced it",
+                subtask_id=subtask.id,
+                superseded_by=subtask.superseded_by,
+            )
 
     def _check_transition(self, presented: str, event: str, subtask: SubTask) -> str:
         target = _TRANSITIONS.get((presented, event))
@@ -728,11 +940,20 @@ class TaskGraphService:
             raise SubTaskNotFound("no such sub-task", subtask_id=subtask_id)
         return self._hydrate(found[0])
 
-    def _all(self) -> list[SubTask]:
-        return [
-            self._hydrate(r)
-            for r in self.storage.query("SELECT * FROM subtasks ORDER BY id")
-        ]
+    def _all(self, include_superseded: bool = False) -> list[SubTask]:
+        """The live graph. DEFECTS.md F25: `contracts:40` returns sub-tasks "superseding the
+        original in the graph" and never says what that does to the node, so M5a had no
+        liveness filter here at all. A split original left in the graph stays `in_progress`
+        forever, trips the 24h staleness flag, and can be served again by `next_subtask`.
+
+        Superseded nodes are still readable through `get`, because the brief they drove is
+        retained for forensics (`entities:13`) and a lineage you cannot read is not a
+        lineage.
+        """
+        sql = "SELECT * FROM subtasks {} ORDER BY id".format(
+            "" if include_superseded else "WHERE superseded_by IS NULL"
+        )
+        return [self._hydrate(r) for r in self.storage.query(sql)]
 
     def _hydrate(self, r) -> SubTask:
         deps = tuple(
@@ -747,17 +968,18 @@ class TaskGraphService:
             id=r["id"],
             contract_ref=RowRef.parse(r["contract_ref"]),
             title=r["title"],
-            milestone=r["milestone"],
+            task_id=r["task_id"],
             state=r["state"],
             serve_epoch=r["serve_epoch"],
             deps=deps,
             detail=r["detail"],
             block_reason=r["block_reason"],
+            superseded_by=r["superseded_by"],
             created_at=r["created_at"],
             updated_at=r["updated_at"],
         )
 
-    def _is_finalized(self) -> bool:
+    def is_finalized(self) -> bool:
         return self.storage.plan_handle().get("state") == "finalized"
 
     @staticmethod

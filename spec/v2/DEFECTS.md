@@ -59,7 +59,7 @@ name where the result is stored.*
 `contracts:14` (`TraversalSpec`, `Closure`), `contracts:58` (`GraphScope`).
 
 **Insufficient:** the contracts name these types and, for `RowSelector`, list its
-dimensions in prose — "by ids | table | stage | provenance | liveness |
+dimensions in prose — "by ids | table | package | provenance | liveness |
 link-neighborhood; paginated" — but no row anywhere defines their fields, so two
 implementers would produce two incompatible interfaces.
 
@@ -69,7 +69,7 @@ implementer's choice.
 **Resolved:** invented in `engine/models.py` and `engine/storage.py`, following the
 prose closely where it exists.
 
-**Class:** the domain model (Stage 4) covers *entities* thoroughly but not the
+**Class:** the domain model (Package 4) covers *entities* thoroughly but not the
 *parameter and return types* that appear in contract signatures. Those types are the
 actual interface. Worth a gate rule in v2: *every type named in a contract signature
 must be defined somewhere.*
@@ -149,21 +149,21 @@ a hole until re-checked.*
 
 ---
 
-## F7 — Nothing defines the current stage
+## F7 — Nothing defines the current package
 
 **Rows:** `contracts:19` (`next_gaps`), `requirements:12`, `entities:1`.
 
-**Insufficient:** `next_gaps` returns gaps for "the current stage" and requirements:12
-recommends the gate "while the current stage has no open gaps", but nothing in the plan
-says how the current stage is determined. `entities:1` carries stage on the Plan and
-`crud_grid:3` says "System: stage advances" without stating the advance condition —
+**Insufficient:** `next_gaps` returns gaps for "the current package" and requirements:12
+recommends the gate "while the current package has no open gaps", but nothing in the plan
+says how the current package is determined. `entities:1` carries package on the Plan and
+`crud_grid:3` says "System: package advances" without stating the advance condition —
 whether it is gate-pass, owner instruction, or derived from content.
 
-**Needed:** a stated rule for what the current stage is and when it advances.
+**Needed:** a stated rule for what the current package is and when it advances.
 
-**Resolved:** invented — the lowest stage with any open gap, else the highest stage. This
-is a guess. It happens to make submits-for-any-stage work naturally (v1's stated
-behaviour: "submits for any stage are always accepted; next_gap prefers stage order but
+**Resolved:** invented — the lowest package with any open gap, else the highest package. This
+is a guess. It happens to make submits-for-any-package work naturally (v1's stated
+behaviour: "submits for any package are always accepted; next_gap prefers package order but
 follows the conversation"), but the plan does not say so.
 
 **Class:** same family as F2 and F4 — behaviour named in prose without the mechanism that
@@ -177,21 +177,21 @@ produces it. Third instance, which strengthens the case for the gate rule propos
 
 **Insufficient:** `run_gate` returns "row-level holes (each naming table, row, problem,
 and fix)" and `requirements:20` says gates evaluate "only mechanical criteria" — but no
-row anywhere in the frozen plan states what any stage's criteria *are*. The plan
+row anywhere in the frozen plan states what any package's criteria *are*. The plan
 specifies the shape of the answer and never the question. `requirements:71` does require
 the criteria to ship as a versioned content asset, which at least says where they live.
 
-**Needed:** the per-stage criteria themselves, as content.
+**Needed:** the per-package criteria themselves, as content.
 
 **Resolved:** vendored, not invented — `engine/methodology/rev2/gate_criteria.yaml`
 transcribes v1's `archive/v1/engine/gates.py` into declarative rules, per `decisions:61`
-and `findings:4`. v1 wrote one hand-coded SQL function per stage; the v2 asset expresses
+and `findings:4`. v1 wrote one hand-coded SQL function per package; the v2 asset expresses
 the same criteria as nine declarative types the gate-engine interprets.
 
 **Class:** distinct from F2/F4/F7 — this is not a missing mechanism but missing
 *content*, and the plan knew it (requirements:71 exists precisely because the
 methodology is the product's IP). Worth noting that the vendoring instruction is what
-made this recoverable: without decisions:61 an executor would have invented eight stages
+made this recoverable: without decisions:61 an executor would have invented eight packages
 of gate criteria at build time, which findings:4 identifies as the failure mode the tool
 exists to prevent.
 
@@ -234,14 +234,14 @@ mechanically checkable — which makes it a gate criterion, not just advice.
 
 **Insufficient:** "WHEN a gate passes while open gaps or unresolved assumptions exist,
 the system shall list each as an explicit warning." Read literally, *each* means every
-open gap in the plan. Built that way, the stage-1 gate of a four-row plan reported
+open gap in the plan. Built that way, the package-1 gate of a four-row plan reported
 twelve warnings, ten of which said things like "No components yet" — true, and useless,
-because the plan was five stages away from needing components.
+because the plan was five packages away from needing components.
 
-**Needed:** the scope of "each" — plan-wide, or the stage being gated.
+**Needed:** the scope of "each" — plan-wide, or the package being gated.
 
-**Resolved:** invented — raising is scoped to the gated stage plus the stage-agnostic
-rules (assumptions, reference coverage). Warnings raised at their own stage persist in
+**Resolved:** invented — raising is scoped to the gated package plus the package-agnostic
+rules (assumptions, reference coverage). Warnings raised at their own package persist in
 the ledger and keep re-presenting, so nothing is passed over silently.
 
 **Discovered by:** driving the engine end-to-end. The test suite passed with the noisy
@@ -256,7 +256,7 @@ that does not bound a set produces duplicates as readily as noise.
 
 ---
 
-## F11 — The vendored gap rules and gate criteria disagree about stage 1
+## F11 — The vendored gap rules and gate criteria disagree about package 1
 
 **Rows:** `requirements:71`, `decisions:61`; assets `gap_rules.yaml` (M2) and
 `gate_criteria.yaml` (M3).
@@ -266,13 +266,13 @@ goals, non-goals and target stack as `decisions` rows distinguished by a text pr
 ("Goal:", "Non-goal:", "Stack:"), a convention its gate SQL matched with `LIKE 'goal:%'`.
 v2's generic PlanRow store makes separate tables the natural encoding, and M2's
 `gap_rules.yaml` had already half-adopted it (`goal_without_success_criteria` reads a
-`goals` table) while `stage1_not_started` still tested `decisions` for emptiness. The two
-assets therefore disagreed about what stage 1 even fills.
+`goals` table) while `package1_not_started` still tested `decisions` for emptiness. The two
+assets therefore disagreed about what package 1 even fills.
 
-**Consequence:** a complete, passing stage 1 was permanently accompanied by the warning
-"Nothing recorded yet. Open the stage-1 interview."
+**Consequence:** a complete, passing package 1 was permanently accompanied by the warning
+"Nothing recorded yet. Open the package-1 interview."
 
-**Resolved:** `stage1_not_started` now tests `goals`. Recorded here rather than silently
+**Resolved:** `package1_not_started` now tests `goals`. Recorded here rather than silently
 fixed because it is evidence about the *revision* path requirements:71 mandates: a
 methodology revision that changes how content is encoded has to be applied to every
 asset at once, and nothing checks that. M5 introduces rev 3 and will hit this again.
@@ -283,7 +283,7 @@ disagreement, and it passed.
 
 **Class:** a cross-asset consistency hole. Worth a gate criterion in a future revision:
 *every table named in one methodology asset is named in the others that cover the same
-stage.*
+package.*
 
 ---
 
@@ -399,7 +399,7 @@ blind-spot inheritance recorded at F5 and F11. The drive catches it because read
 
 ---
 
-## F15 — Stage-7 fixes cited as contract rows that were never written
+## F15 — Package-7 fixes cited as contract rows that were never written
 
 **Status: RESOLVED at the M5a `state_machines:9` audit, 2026-07-21 — and the diagnosis
 below was WRONG.** See **Resolved** at the end of this entry before reading the rest. The
@@ -418,7 +418,7 @@ being built in M5a. Resolving now would be inventing in a vacuum. This entry get
 same class, the missing definition of `contracts:61` as the mechanism for `findings:10`
 (workspace drift) and `contracts:59/60` for `findings:9` (delivery verification).
 
-**Insufficient:** four contract ids are cited as the fixes for stage-7 findings but have
+**Insufficient:** four contract ids are cited as the fixes for package-7 findings but have
 no definition row anywhere in the frozen plan. Verified by grepping for the definition
 form `` `contracts:N` · ``: `52`, `56`, `59`, `61` each appear *only* inside a findings
 fix-note, never as a defined contract. (Contracts 3, 4, 16, 36, 39, 47 are also absent
@@ -441,7 +441,7 @@ Concretely, each missing row is load-bearing:
 **Class:** F9's, the running pattern (F2, F4, F7, F9, F12) — behaviour named in prose
 without the mechanism that produces it — now six for six. What is *new* and worth marking:
 in every prior instance the missing mechanism was named by a requirement or a state
-machine. Here the missing mechanism is named by a **stage-7 finding's own fix note** — the
+machine. Here the missing mechanism is named by a **package-7 finding's own fix note** — the
 plan's adversarial pass asserted a fix ("Resolved: contracts:61 computes drift flags…")
 whose contract was never actually written. The fix note is prose that reads as
 resolution, which is a more camouflaged version of the pattern than any before it: the
@@ -484,7 +484,7 @@ with the same behaviour linking the same finding. All four pass it in about five
 
 This inverts the entry's own "six for six" claim. F15 is **not** an instance of the
 F2/F4/F7/F9/F12 pattern; the running count of that pattern stands at five, not six, and
-the claim that the adversarial pass asserted fixes it never wrote is withdrawn — stage 7
+the claim that the adversarial pass asserted fixes it never wrote is withdrawn — package 7
 wrote every one of them. **The pattern was over-fitted:** five prior confirmations made
 the sixth reading feel like recognition rather than a hypothesis needing a test. Worth
 carrying: a defect log that names a recurring class starts to *recruit* ambiguous
@@ -705,7 +705,7 @@ gate: M6 (methodology rev 3, already scheduled in the milestone recut).**
 **Rows:** `decisions:63`, `contracts:35` (`finalize_plan`), `requirements:34`,
 `entities:15` (links), `findings:11` (whose fix decisions:63 is), `findings:17` (the
 fossilization pre-mortem); vendored `gate_criteria.yaml` criterion `contract_has_consumer`
-and `stage6_architecture.md`.
+and `package6_architecture.md`.
 
 **Insufficient:** `decisions:63` is the row that made task-graph derivation deterministic —
 it was the fix for `findings:11` ("two implementers would derive incompatible graphs"). It
@@ -727,7 +727,7 @@ was supposed to make the graph deterministic leaves it underdetermined after all
 
 **Two knock-on defects in the vendored methodology, both real:**
 
-1. **`stage6_architecture.md` instructs the session to call `submit_contract_deps`** — a v1
+1. **`package6_architecture.md` instructs the session to call `submit_contract_deps`** — a v1
    tool with no v2 equivalent. A session following the vendored script hits a tool that
    is not there. This is `findings:17`'s fossilization pre-mortem happening for real, and
    notably it is the *first* observed instance: rev 2 was vendored verbatim from v1
@@ -745,7 +745,7 @@ supports it (`links.edge_type`, `LinkSpec.edge_type`); nothing new is stored, an
 `LinkGraph` already filters traversals by edge type. `finalize_plan` derives edges from
 those links alone and from no others.
 
-**Methodology half, bound to M6:** `stage6_architecture.md` must stop naming
+**Methodology half, bound to M6:** `package6_architecture.md` must stop naming
 `submit_contract_deps` and instead instruct the session to record the dependency as a typed
 link; `contract_has_consumer` must filter on `edge_type='depends_on'`. Both are edits to
 vendored content, which under `decisions:61` means a new content revision with its own
@@ -756,10 +756,10 @@ lands there rather than being smuggled into M5a. Recorded here so it cannot be l
 **Class:** new, and the third distinct class this milestone. Not F9's (missing mechanism),
 not F17's (stale citation). This is **a primitive that lost its type information in a
 redesign, silently invalidating a later row that depended on it.** `decisions:63` was
-written at stage 7 against a mental model of the v1 store; the v2 architecture that
-flattened `contract_deps` into generic links was decided at stage 6, *earlier*. Nothing
-re-checked the stage-7 fixes against the stage-6 architecture, because the plan's own
-review direction runs forward. Worth a v2 gate rule: **when a stage-6 architecture decision
+written at package 7 against a mental model of the v1 store; the v2 architecture that
+flattened `contract_deps` into generic links was decided at package 6, *earlier*. Nothing
+re-checked the package-7 fixes against the package-6 architecture, because the plan's own
+review direction runs forward. Worth a v2 gate rule: **when a package-6 architecture decision
 generalises or removes a primitive, every later row naming that primitive is a hole until
 re-checked** — the same shape as F6's rule about identity changes, one level up.
 
@@ -858,3 +858,286 @@ code checks the code's bookkeeping, not the design's intent.** The countermeasur
 already in practice — drive it and read the output — and the sharper version is to assert on
 the *observable consequence* (what does a packet actually receive?) rather than on the
 record the operation just wrote.
+
+---
+
+## F23 — `PartsDontCover` can never fire: the split has no accounting denominator
+
+**Status:** RESOLVED in M5b (2026-07-21) — the obligation surface (DEVIATIONS.md D12) is
+built: `engine/obligations.py`, frozen at finalization, and `PartsDontCover` now fires
+against it. Verification accounts per obligation, and a sub-task with no enumerated surface
+refuses to be split or verified rather than passing vacuously.
+
+**The third pre-build check it proposed is adopted, and has already paid** — it caught F26 on
+its first use, one build package later. Amended by that catch to: *name the set, say where it
+comes from, and say at what moment it is fixed.*
+
+**Rows:** `contracts:40` (`split_subtask`), `requirements:37`, `decisions:63`,
+`findings:11`.
+
+**The defect.** `contracts:40` declares the error *"PartsDontCover: the parts do not
+jointly cover the original sub-task's contracts"*. Under `decisions:63` a sub-task is the
+implementation unit of **exactly one** contract, so every sub-task a split produces names
+that same contract and the union of their contracts always equals the original's. **The
+check is vacuous.** It can catch one that names an unrelated contract — a typo — and
+nothing else.
+
+The consequence is not cosmetic. `requirements:37` exists to say *"silent trimming of
+relevant content is not a remedy"*, and `split_subtask` is the mechanism that is supposed
+to enforce it. As specified, a too-large contract can be split into sub-tasks that between them
+implement 60% of it and the split is well-formed. **The exact failure the requirement was
+written to prevent passes the check that exists to prevent it.**
+
+**Why it happened — a supersession fossil.** `contracts:40`'s plural ("the original
+sub-task's contract*s*") is correct for the pre-`decisions:63` world, where a sub-task could
+hold several contracts and joint coverage over a *set of contract refs* was a real check.
+`findings:11` then fixed granularity to one-contract-one-sub-task at `decisions:63`, and the
+fix never propagated back into the contract row whose error condition depended on it. This
+is `F17`'s class — prose that dangles after the row it rests on is superseded — doing real
+damage rather than merely confusing a reader.
+
+**Class: plan insufficiency.** This is the sixth genuine instance of the characteristic
+pattern F2/F4/F7/F9/F12 — behaviour named in prose without the mechanism that produces it.
+The F15 countermeasure was applied before classifying it: a live row carrying the coverage
+mechanism was searched for and does not exist.
+
+What makes it worth its own entry is *what* is missing. The other five were missing
+**triggers** — an event nothing fired. This one is a missing **denominator**: the plan
+specifies an accounting check without ever specifying the set being accounted for. That is
+a distinct sub-class and probably a more dangerous one, because a missing trigger yields an
+unreachable code path (loud, and the mechanical audit finds it) while a missing denominator
+yields a check that *runs, passes, and reports success* over an empty question. Neither
+mechanical check in the pre-build audit detects it: every event has a contract, and every
+outcome is reachable. The check is well-formed and means nothing.
+
+**Countermeasure, proposed for the pre-build audit:** for every error condition phrased as
+a coverage, accounting, or completeness check, name the set being covered and confirm the
+plan says where that set comes from. If the denominator is not independently defined, the
+check is decorative.
+
+**Resolution:** DEVIATIONS.md D12 — a sub-task carries an explicit **obligation surface**,
+enumerated by the planning session and frozen before any split, and coverage becomes an
+invariant over obligations rather than a procedure over contract refs.
+
+---
+
+## F24 — Task membership was a v1 foreign key that the v2 flattening dropped
+
+**Status:** RESOLVED in M5b (2026-07-21) — `edge_type='belongs_to'` is read at finalization
+(`TaskGraphService._owning_task_id`), and `packages`/`tasks` are live: `declare_package`,
+`assign_task`, and a finalization guard that refuses an unpackaged task. The generalised
+v1-foreign-key sweep it implies remains bound to the **M6 gate**.
+
+**Rows:** `entities:15` (Link), `components:*`, `contracts:*`; v1 `contracts.component_id`.
+
+**The defect.** Which task a contract belongs to — in v1, `contracts.component_id`, a real
+foreign key that `gaps.py` and `gates.py` join on throughout (`archive/v1/engine/gaps.py:196`,
+`:204`) — has **no representation in v2**. The package-6 architecture flattened v1's typed
+tables into the generic `plan_rows`/`links` pair, and the owning ref was not carried across.
+In the frozen plan a contract's membership survives only as **markdown nesting** — the
+`### brief-composer (components:12)` heading with its contracts printed beneath — which is
+export rendering, not stored structure. v2 contract rows cite requirements, decisions and
+findings; none cites its owning component. The `consumed by: components:N` annotation is the
+*consumer* relation and is not ownership.
+
+**Why it matters now.** Under the four-level model (D13) the **task** is the middle grouping
+of the allocation hierarchy, and a task's sub-tasks are derived as the sub-tasks of the
+contracts it owns. With no stored ownership the level is underived and unowned — the
+`milestone` failure it was introduced to fix.
+
+**Class: plan insufficiency, and the second instance of a distinct sub-class** — *information
+that existed as a typed column in v1 and was silently lost when package 6 flattened the schema*.
+`F20` (`contract_deps`) is the first. Two instances make it a characteristic risk of that
+architectural move rather than an oversight: **the flattening preserved the rows and dropped
+the relations between them**, because a generic row table makes rows the unit of migration
+and edges invisible. Anything v1 expressed as a foreign key needs checking against v2 the
+same way, and the remaining v1 FKs should be swept before M6 rather than found one at a time.
+
+**Resolution:** DEVIATIONS.md D13 — membership is a typed link, `edge_type='belongs_to'`,
+directed contract → task (member → owner; `components:N` is the frozen plan's read-only
+spelling of task), exactly mirroring D11's treatment of the
+dependency edge. Same argument: the column already exists, the direction is the one the
+owning row can write, and typing it keeps traversal deterministic.
+
+---
+
+## F25 — "superseding the original in the graph" has no mechanism
+
+**Status:** RESOLVED in M5b (2026-07-21) — `subtasks.superseded_by` is written by
+`split_subtask` and read as a liveness filter by every graph read; dependants are repointed
+from the original to its replacements, and serving/reporting/verifying a superseded node is refused
+(`SubTaskSuperseded`).
+
+**Rows:** `contracts:40` (`split_subtask`), `state_machines:9`, `requirements:37`.
+
+**The defect.** `contracts:40` returns "list[SubTask] **superseding the original in the
+graph**". Nothing in the plan says what supersession *does* to a graph node. `state_machines:9`
+has no `split` event and no terminal state for a sub-task that was divided, so the original
+does not leave the lifecycle by any transition the plan defines. Three concrete consequences
+in the built engine, all silent:
+
+1. `TaskGraphService._all()` is `SELECT * FROM subtasks` with no liveness filter, so a split
+   original stays in `graph_status()` — in `in_flight` forever, since the state it was in when
+   its brief proved too large is `in_progress`. It also trips the 24h staleness flag
+   (`dep_failure_modes:6`) permanently.
+2. `next_subtask` can serve it again. It is a candidate whenever `readiness_of` returns
+   `ready`, and nothing knows it was replaced.
+3. **Dependants deadlock.** `subtask_deps` edges point at the original's id. The original can
+   never reach `done` — its work is carried by the sub-tasks that replaced it — so every consumer sits in
+   `pending` behind a node that will never complete. `split_subtask` on a node with dependants
+   silently bricks that branch of the graph.
+
+The column exists — `subtasks.superseded_by`, added in M5a and annotated "split_subtask
+lineage (M5b)" — and is written by nothing and read by nothing.
+
+**Class: plan insufficiency** — the seventh instance of F2/F4/F7/F9/F12/F23, behaviour named
+in prose without the mechanism. Closest to the *missing trigger* sub-class, but a variant
+worth naming: the trigger is present (`split_subtask` fires) and the **effect** is
+unspecified. "Supersedes in the graph" reads as though it means something because
+supersession *is* a defined primitive elsewhere (`requirements:61`, for plan rows) — the
+defect is assuming a plan-row primitive transfers to an execution-layer node with edges and a
+lifecycle.
+
+**Resolution:** built in M5b — supersession is a liveness filter on every graph read, and the
+split rewires `subtask_deps` from the original to its replacements. Which one a dependant
+should follow is not guessable in general, so the edge is redirected to *all* of them: the dependant
+waits for all of them, which is the only reading that preserves "no sub-task precedes its
+dependencies" (`requirements:34`) without the tool guessing.
+
+---
+
+## F26 — `audit_brief`'s denominator is not frozen with the brief
+
+**Status:** RESOLVED in M5b (2026-07-21) — the closure is frozen into `brief_rows` at
+composition; `audit_brief` accounts against it and reports drift as a separate, non-failing
+number.
+
+**Rows:** `contracts:41` (`audit_brief`), `contracts:68` (`compose_brief`),
+`requirements:44`, `decisions:52`, `entities:13`.
+
+**The defect.** Two contracts account the same brief against the same set at two different
+times, and only one of them is anchored:
+
+- `compose_brief` rejects with `IncompleteAccounting` when a candidate row is neither
+  included nor recorded-omitted. Denominator: the link-graph closure, computed *now*.
+- `audit_brief` compares "brief contents against the sub-task's link-graph closure" —
+  computed *at audit time*, against a plan that has kept moving. `decisions:3` makes the plan
+  a living source of truth; rows are added, superseded and revised throughout execution.
+
+So a brief that passed 100% accounting at composition reports as incomplete later, purely
+because the plan grew. `requirements:44`'s "100% accounting target" is the metric, and the
+metric drifts on its own. Worse, the two failures are indistinguishable in the output: *the
+composer skipped a row* and *the plan changed after composition* both surface as an
+unaccounted ref, and the first is a defect while the second is normal life.
+
+This also contradicts `entities:13`, which makes the brief immutable "so defect forensics can
+always answer 'what exactly did the engine see'". A brief whose accounting is measured against
+a set nobody recorded cannot answer that question: the closure the engine's brief was built
+from is not stored anywhere.
+
+**Class: missing denominator** — the second instance of F23's sub-class, and the **first catch
+by the third pre-build check** F23 proposed ("for every coverage/accounting/completeness
+check, name the set and confirm the plan says where it comes from"). Applied to
+`audit_brief`, the check does not fail on *whether* the plan defines the set — it does,
+`requirements:36`'s traversal — but on *when*, which is the same weakness one level down: an
+accounting whose denominator is re-derived at read time is measured against a moving target.
+**The check is hereby amended: name the set, say where it comes from, and say at what moment
+it is fixed.**
+
+**Resolution:** built in M5b — the closure is frozen into the brief at composition
+(`brief_rows`, one row per candidate with its included/omitted disposition). `audit_brief`
+accounts against the frozen closure, which is what `requirements:44` measures, and reports
+plan drift since composition as a *separate*, non-failing observation. Two numbers, because
+they are two different facts.
+
+---
+
+## F27 — The glossary was a rule with no mechanism, and broke the session after it was written
+
+**Status:** RESOLVED 2026-07-21 — `tests/test_vocabulary.py` parses the banned list out of
+`GLOSSARY.md` and fails the suite on any violating identifier. The check found 20 further
+violations on its first run, in code the *previous* session's "full vocabulary sweep" had
+already been through.
+
+**Rows:** none — this is a defect in **this build's own process**, logged here because the
+execution-sufficiency ledger is worth nothing if it only records the plan's failures and not
+the builder's.
+
+**The defect.** `GLOSSARY.md` was written on 2026-07-21, declared binding, and stated a
+precise, mechanically checkable rule: *no identifier contains `packet`, `milestone`, `part`,
+`project`, `stage`, `phase` or `session`.* The next build package (M5b, `brief-composer`)
+shipped `parts=`, `part_ids`, `by_part`, `PartsExceedOriginal` and
+`assign_task(component=...)`. The owner caught it by reading the code.
+
+**Why it happened**, because "insufficient care" is not a cause anyone can act on:
+
+1. **The read-only exception is also the primary input.** The glossary permits retired words
+   in exactly one place — quotations from `spec/v2/plan.md` — and that file is *also* what is
+   read immediately before writing each function. `contracts:40`'s signature is literally
+   `parts: list[SubTaskSpec]` and it declares an error named `PartsDontCover`. The glossary was
+   read once, at session start; the retired vocabulary was re-read, freshly and in the exact
+   words of the thing about to be written, at every implementation step. **Ranked by proximity
+   to the moment of typing, the exception beats the rule.**
+2. **Naming happens at the point of least attention.** The thinking went into the obligation
+   denominator and the dependant deadlock; the parameter name was incidental typing. The words
+   that leak are precisely the ones nobody is thinking about, which is why care cannot be the
+   countermeasure.
+3. **There was no check.** Every other invariant in this build has a mechanical one — the
+   pre-build audit, the test suite, the gates. Vocabulary had a well-argued document and zero
+   enforcement.
+
+**Class: plan insufficiency — the eighth instance of F2/F4/F7/F9/F12/F23/F25**, behaviour named
+in prose without the mechanism that produces it, and the first where the prose is *ours*. The
+glossary is exactly the artifact that has been diagnosing this pattern in the frozen plan for
+eight entries, and it reproduced the pattern in itself within a day. That is the strongest
+available evidence that the pattern is structural rather than a property of the v1 planning
+session: **a rule and its enforcement are two different artifacts, and writing the first feels
+like doing the second.**
+
+**The 20 further violations are the load-bearing detail.** Commit `41184cd` was titled "Full
+vocabulary sweep" and was done by reading. It left `current_stage`, `stage_range`,
+`UnknownStage`, `StageScript`, `get_stage_script`, `next_stage`, `required_stages` and 13 test
+names untouched. A sweep performed by attention misses at the same rate as the writing that
+required it — so the check is not merely a guard against future drift, it was needed to
+complete the sweep that was believed finished.
+
+**Resolution.** `tests/test_vocabulary.py`:
+
+- parses the banned words **out of `GLOSSARY.md`'s own rule** rather than carrying a copy — a
+  second list drifts, and a vocabulary rule with two sources of truth is the bug it exists to
+  prevent (the same argument D10 made for readiness);
+- tokenises identifiers (`PartsDontCover` → parts/dont/cover) so `partial` and `third_party`
+  are not false positives — a check that cries wolf gets disabled, which is D7's whole lesson;
+- enforces the glossary's *stated* rule and not a stricter one — the rule deliberately omits
+  `component`, `unit` and `chunk`, and inventing a harsher check would put the code and the
+  document out of step, which is the same failure again;
+- carries a test that the check **can** fail, written on day one, because a check that cannot
+  fail is F23's disease;
+- records every exception in `GLOSSARY.md` **with a reason**, so an exception is a visible act
+  — the same friction shape as `requirements:79`'s waiver log and D8's promotion reason.
+
+**Exactly one exception survives** (`writer_lease.session_id`, exempted by the rule's own
+text). Two more were proposed on the day and the owner refused both, which is the part worth
+remembering:
+
+- **`PartsDontCover`** was kept as a "quotation" of `contracts:40`'s declared error name,
+  on the strength of `errors.py`'s convention that a contract's error name is the class name.
+  Presented to the owner as an unresolved tension between two rules; it was not one. The
+  convention is internal, has no consumer outside this repo, and the plan's spelling stays
+  findable in a docstring — so the rename to `ObligationsNotCovered` cost nothing and the
+  "tension" was a live retired word being defended by a rule that was never load-bearing.
+  **The quotation rule covers prose, not identifiers.**
+- **A local variable in `engine/gaps.py`** was listed as an exception "renamed on next touch
+  of that file" — a carve-out wearing a schedule. Renamed on the spot.
+
+The generalisable error in both: when a rule is broken and a fix is proposed, the proposal
+inherits the same lack of enforcement. An exceptions list is where a retirement quietly
+becomes a preference, and it needs the same scrutiny as the original rule.
+
+**The generalised lesson, and it applies to the product and not only to this build:** a
+vocabulary is enforced at the moment of *writing*, or it is not enforced. The three things
+that would have prevented this, in order of strength, are (1) a check that runs on every
+commit, (2) the glossary being present in the brief the writer is working from rather than
+read once at session start, and (3) the writer's attention. Only the third one was in place.
+See the open design question bound to the **M6 gate**: how a plan's own glossary reaches the
+code engine that must comply with it.
