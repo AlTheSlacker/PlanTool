@@ -16,11 +16,11 @@ import sqlite3
 import time
 import uuid
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
 from engine import schema
+from engine.clock import age_seconds, now
 from engine.errors import (
     LeaseLost,
     LockHeld,
@@ -39,15 +39,6 @@ WRITE_BUDGET_SECONDS = 30.0
 LEASE_SILENCE_SECONDS = 600.0
 
 PLAN_FILENAME = "plan.db"
-
-
-def now() -> str:
-    """requirements:48 — every entry carries a creation timestamp."""
-    return datetime.now(UTC).isoformat(timespec="microseconds")
-
-
-def _age_seconds(stamp: str) -> float:
-    return (datetime.now(UTC) - datetime.fromisoformat(stamp)).total_seconds()
 
 
 @dataclass(frozen=True, slots=True)
@@ -213,7 +204,7 @@ class Storage:
 
     # --- writer lock: contracts:63 / 53 / 54 ---
 
-    def acquire_writer_lock(self, session_id: str) -> Lease:
+    def acquire_writer_lock(self, session_key: str) -> Lease:
         """Claim the writer lock.
 
         The claim is an atomic INSERT inside a transaction rather than an O_EXCL file
@@ -228,21 +219,21 @@ class Storage:
                     "SELECT * FROM writer_lease WHERE guard = 1"
                 ).fetchone()
                 if held is not None:
-                    age = _age_seconds(held["renewed_at"])
+                    age = age_seconds(held["updated_at"])
                     if age < LEASE_SILENCE_SECONDS:
                         raise LockHeld(
                             "another live session holds the writer lock",
-                            holder=held["session_id"],
+                            holder=held["session_key"],
                             lease_age_seconds=round(age, 1),
                             claimable_in_seconds=round(LEASE_SILENCE_SECONDS - age, 1),
                         )
                     self.conn.execute("DELETE FROM writer_lease WHERE guard = 1")
-                lease = Lease(uuid.uuid4().hex, session_id, now(), now())
+                lease = Lease(uuid.uuid4().hex, session_key, now(), now())
                 self.conn.execute(
-                    "INSERT INTO writer_lease (guard, lease_id, session_id, "
-                    "acquired_at, renewed_at) VALUES (1, ?, ?, ?, ?)",
-                    (lease.lease_id, lease.session_id, lease.acquired_at,
-                     lease.renewed_at),
+                    "INSERT INTO writer_lease (guard, lease_key, session_key, "
+                    "created_at, updated_at) VALUES (1, ?, ?, ?, ?)",
+                    (lease.lease_key, lease.session_key, lease.created_at,
+                     lease.updated_at),
                 )
         except sqlite3.Error as exc:
             raise StorageUnavailable("lock acquisition failed", cause=str(exc)) from exc
@@ -255,20 +246,20 @@ class Storage:
         try:
             with self._immediate():
                 changed = self.conn.execute(
-                    "UPDATE writer_lease SET renewed_at = ? WHERE guard = 1 AND "
-                    "lease_id = ?",
-                    (stamp, lease.lease_id),
+                    "UPDATE writer_lease SET updated_at = ? WHERE guard = 1 AND "
+                    "lease_key = ?",
+                    (stamp, lease.lease_key),
                 ).rowcount
             if not changed:
                 raise LeaseLost(
                     "the writer lease was claimed by another session after prolonged "
                     "silence; stop writing and re-acquire",
-                    lease_id=lease.lease_id,
-                    session_id=lease.session_id,
+                    lease_key=lease.lease_key,
+                    session_key=lease.session_key,
                 )
         except sqlite3.Error as exc:
             raise StorageUnavailable("lease renewal failed", cause=str(exc)) from exc
-        return Lease(lease.lease_id, lease.session_id, lease.acquired_at, stamp)
+        return Lease(lease.lease_key, lease.session_key, lease.created_at, stamp)
 
     def release_writer_lock(self, lease: Lease) -> bool:
         """contracts:54 — idempotent; a lease already lost is safe to treat as
@@ -276,8 +267,8 @@ class Storage:
         try:
             with self._immediate():
                 self.conn.execute(
-                    "DELETE FROM writer_lease WHERE guard = 1 AND lease_id = ?",
-                    (lease.lease_id,),
+                    "DELETE FROM writer_lease WHERE guard = 1 AND lease_key = ?",
+                    (lease.lease_key,),
                 )
         except sqlite3.Error as exc:
             raise StorageUnavailable("lock release failed", cause=str(exc)) from exc
@@ -378,12 +369,12 @@ class Storage:
         if lease is None:
             return
         held = self.conn.execute(
-            "SELECT lease_id FROM writer_lease WHERE guard = 1"
+            "SELECT lease_key FROM writer_lease WHERE guard = 1"
         ).fetchone()
-        if held is None or held["lease_id"] != lease.lease_id:
+        if held is None or held["lease_key"] != lease.lease_key:
             raise WriterLockLost(
                 "the session's lease expired or was claimed; nothing was written",
-                lease_id=lease.lease_id,
+                lease_key=lease.lease_key,
             )
 
     @staticmethod
@@ -508,7 +499,7 @@ class Storage:
         try:
             with self._immediate():
                 cur = self.conn.execute(
-                    "INSERT INTO plan_versions (version, reason, payload, taken_at) "
+                    "INSERT INTO plan_versions (version, reason, payload, created_at) "
                     "VALUES (?, ?, ?, ?)",
                     (version, reason, json.dumps(payload), now()),
                 )

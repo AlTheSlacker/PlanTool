@@ -291,3 +291,59 @@ def test_missing_row_is_named(rows):
     with pytest.raises(RowNotFound) as exc:
         rows.get("decisions:42")
     assert exc.value.detail["ref"] == "decisions:42"
+
+
+# --- lineage as the answer to "what became of what I said?" (owner, 2026-07-21) ---
+
+
+def test_updated_at_is_derived_from_the_rows_own_lifecycle(rows):
+    """Never stored. A planning row is immutable (requirements:61), so a stored
+    `updated_at` would equal `created_at` forever — a column promising a change it cannot
+    deliver, and a second copy of what `superseded_at` already records."""
+    ref = rows.submit_rows(
+        [RowSubmission(table="decisions", content={"title": "first thought"})], "a"
+    ).verdicts[0].ref
+    original = rows.get(ref)
+    assert original.updated_at == original.created_at
+
+    rows.supersede_row(
+        ref, RowSubmission(table="decisions", content={"title": "second thought"}), "b"
+    )
+
+    superseded = rows.get(ref)
+    assert superseded.updated_at == superseded.superseded_at
+    assert superseded.updated_at != superseded.created_at
+
+
+def test_lineage_head_answers_where_a_decision_stands_now(rows):
+    """`lineage_root` is a thing's stable identity; `lineage_head` is its current state.
+    Both are needed, for opposite reasons."""
+    ref = rows.submit_rows(
+        [RowSubmission(table="decisions", content={"title": "first"})], "a"
+    ).verdicts[0].ref
+    second = rows.supersede_row(
+        ref, RowSubmission(table="decisions", content={"title": "second"}), "b"
+    )["new"]
+    third = rows.supersede_row(
+        second, RowSubmission(table="decisions", content={"title": "third"}), "c"
+    )["new"]
+
+    assert rows.lineage_head(ref) == third
+    assert rows.lineage_root(third) == ref
+    assert rows.lineage_head(third) == third
+
+
+def test_history_reads_the_whole_chain_with_each_versions_timestamp(rows):
+    """"I said something yesterday — find it" is a question about a lineage. Each version
+    carries its own created_at, so the answer is both when it was said and what it said."""
+    ref = rows.submit_rows(
+        [RowSubmission(table="decisions", content={"title": "first"})], "a"
+    ).verdicts[0].ref
+    rows.supersede_row(
+        ref, RowSubmission(table="decisions", content={"title": "second"}), "b"
+    )
+
+    chain = rows.history(ref)
+    assert [r.content["title"] for r in chain] == ["first", "second"]
+    assert all(r.created_at for r in chain)
+    assert chain[-1].is_live and not chain[0].is_live

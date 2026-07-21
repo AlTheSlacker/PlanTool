@@ -41,7 +41,8 @@ from dataclasses import dataclass, field
 from engine.errors import PlanToolError
 from engine.models import RowRef
 from engine.obligations import ObligationService
-from engine.storage import FromOp, Op, Storage, now
+from engine.clock import now
+from engine.storage import FromOp, Op, Storage
 from engine.tasks import PENDING
 
 INCLUDED = "included"
@@ -116,7 +117,7 @@ class Brief:
     is_draft: bool = False
     supersedes: int | None = None
     superseded_by: int | None = None
-    composed_at: str = ""
+    created_at: str = ""
 
     @property
     def included(self) -> tuple[RowRef, ...]:
@@ -236,7 +237,7 @@ class BriefComposer:
             "goal": subtask.title,
             "is_draft": 0 if self.tasks.is_finalized() else 1,
             "supersedes": previous.id if previous else None,
-            "composed_at": stamp,
+            "created_at": stamp,
         })]
         for ref, origin in candidates:
             ops.append(Op("insert", "brief_rows", {
@@ -510,7 +511,7 @@ class BriefComposer:
             is_draft=bool(r["is_draft"]),
             supersedes=r["supersedes"],
             superseded_by=r["superseded_by"],
-            composed_at=r["composed_at"],
+            created_at=r["created_at"],
         )
 
     def live_brief(self, subtask_id: int) -> Brief | None:

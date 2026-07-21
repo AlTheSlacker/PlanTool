@@ -16,7 +16,7 @@ def gaps(store, rows, refs):
 def test_empty_plan_reports_package_one_not_started(gaps):
     cluster = gaps.next_gaps()
     assert cluster.package == 1
-    assert any(g.rule_id == "package1_not_started" for g in cluster.gaps)
+    assert any(g.rule_key == "package1_not_started" for g in cluster.gaps)
 
 
 def test_gate_is_recommended_when_a_package_is_clean(gaps, rows):
@@ -35,7 +35,7 @@ def test_gate_is_recommended_when_a_package_is_clean(gaps, rows):
 def test_untraced_use_case_is_a_gap(gaps, rows):
     rows.submit_rows([RowSubmission("use_cases", {"title": "Place an order"})], "k")
     cluster = gaps.next_gaps(package=3)
-    untraced = [g for g in cluster.gaps if g.rule_id == "use_case_untraced"]
+    untraced = [g for g in cluster.gaps if g.rule_key == "use_case_untraced"]
     assert untraced
     assert "Place an order" in untraced[0].ask
     assert untraced[0].target == RowRef("use_cases", 1)
@@ -51,7 +51,7 @@ def test_traced_use_case_is_not_a_gap(gaps, rows):
         "k",
     )
     cluster = gaps.next_gaps(package=3)
-    assert not [g for g in cluster.gaps if g.rule_id == "use_case_untraced"]
+    assert not [g for g in cluster.gaps if g.rule_key == "use_case_untraced"]
 
 
 def test_unless_field_exempts_a_row(gaps, rows):
@@ -65,7 +65,7 @@ def test_unless_field_exempts_a_row(gaps, rows):
         "k",
     )
     cluster = gaps.next_gaps(package=2)
-    flagged = [g.target for g in cluster.gaps if g.rule_id == "step_without_extensions"]
+    flagged = [g.target for g in cluster.gaps if g.rule_key == "step_without_extensions"]
     assert RowRef("uc_steps", 1) in flagged
     assert RowRef("uc_steps", 2) not in flagged
 
@@ -80,7 +80,7 @@ def test_when_field_scopes_a_rule(gaps, rows):
         "k",
     )
     cluster = gaps.next_gaps(package=3)
-    flagged = [g.target for g in cluster.gaps if g.rule_id == "nfr_unquantified"]
+    flagged = [g.target for g in cluster.gaps if g.rule_key == "nfr_unquantified"]
     assert flagged == [RowRef("requirements", 2)]
 
 
@@ -97,8 +97,8 @@ def test_world_and_intent_assumptions_are_separated(gaps, rows):
         "k",
     )
     cluster = gaps.next_gaps(package=1, limit=20)
-    world = [g for g in cluster.gaps if g.rule_id == "world_assumption_open"]
-    intent = [g for g in cluster.gaps if g.rule_id == "intent_assumption_open"]
+    world = [g for g in cluster.gaps if g.rule_key == "world_assumption_open"]
+    intent = [g for g in cluster.gaps if g.rule_key == "intent_assumption_open"]
 
     assert "spike" in world[0].ask.lower()
     assert world[0].priority == 3
@@ -113,7 +113,7 @@ def test_uncited_section_becomes_a_gap(gaps, refs):
         source, "The measured settling time was 40 ms under nominal load.", "k2"
     )
     cluster = gaps.next_gaps(package=1, limit=20)
-    uncited = [g for g in cluster.gaps if g.rule_id == "source_section_uncited"]
+    uncited = [g for g in cluster.gaps if g.rule_key == "source_section_uncited"]
     headings = {g.ask.split(" section")[0].split("its ")[-1] for g in uncited}
     assert "Limitations" in headings
     assert "Results" not in headings
@@ -127,7 +127,7 @@ def test_reference_sections_are_not_gaps(gaps, refs):
     source = refs.add_source("With refs", paper, "k1")
     cluster = gaps.next_gaps(package=1, limit=50)
     headings = [
-        g.ask for g in cluster.gaps if g.rule_id == "source_section_uncited"
+        g.ask for g in cluster.gaps if g.rule_key == "source_section_uncited"
     ]
     assert not any("References" in h for h in headings)
 
@@ -168,7 +168,7 @@ def test_synthesize_guidance_makes_the_agent_the_source(gaps, rows):
 def test_dismissal_stops_the_gap_surfacing(gaps, rows):
     rows.submit_rows([RowSubmission("use_cases", {"title": "UC"})], "k")
     target = next(
-        g for g in gaps.next_gaps(package=3).gaps if g.rule_id == "use_case_untraced"
+        g for g in gaps.next_gaps(package=3).gaps if g.rule_key == "use_case_untraced"
     )
     gaps.dismiss_gap(target.key, "out of scope for v1")
     assert not [
@@ -180,7 +180,7 @@ def test_dismissal_is_reversible(gaps, rows):
     """requirements:15 — the dismissal is recorded and reversible."""
     rows.submit_rows([RowSubmission("use_cases", {"title": "UC"})], "k")
     target = next(
-        g for g in gaps.next_gaps(package=3).gaps if g.rule_id == "use_case_untraced"
+        g for g in gaps.next_gaps(package=3).gaps if g.rule_key == "use_case_untraced"
     )
     gaps.dismiss_gap(target.key, "later")
     gaps.reopen_gap(target.key, "changed my mind")
@@ -192,7 +192,7 @@ def test_dismissal_survives_supersession_of_its_row(gaps, rows):
     dismissal neither re-surfaces nor silently detaches when the row is superseded."""
     rows.submit_rows([RowSubmission("use_cases", {"title": "UC v1"})], "k1")
     target = next(
-        g for g in gaps.next_gaps(package=3).gaps if g.rule_id == "use_case_untraced"
+        g for g in gaps.next_gaps(package=3).gaps if g.rule_key == "use_case_untraced"
     )
     gaps.dismiss_gap(target.key, "deliberately untraced for now")
 
@@ -200,7 +200,7 @@ def test_dismissal_survives_supersession_of_its_row(gaps, rows):
         "use_cases:1", RowSubmission("use_cases", {"title": "UC v2"}), "k2"
     )
     still_dismissed = [
-        g for g in gaps.next_gaps(package=3).gaps if g.rule_id == "use_case_untraced"
+        g for g in gaps.next_gaps(package=3).gaps if g.rule_key == "use_case_untraced"
     ]
     assert not still_dismissed
 
@@ -215,7 +215,7 @@ def test_lineage_root_walks_the_whole_chain(gaps, rows):
 def test_reopen_requires_a_dismissal(gaps, rows):
     rows.submit_rows([RowSubmission("use_cases", {"title": "UC"})], "k")
     target = next(
-        g for g in gaps.next_gaps(package=3).gaps if g.rule_id == "use_case_untraced"
+        g for g in gaps.next_gaps(package=3).gaps if g.rule_key == "use_case_untraced"
     )
     with pytest.raises(GapNotFound):
         gaps.reopen_gap(target.key, "never dismissed")
@@ -224,7 +224,7 @@ def test_reopen_requires_a_dismissal(gaps, rows):
 def test_reopening_an_open_gap_is_refused(gaps, rows):
     rows.submit_rows([RowSubmission("use_cases", {"title": "UC"})], "k")
     target = next(
-        g for g in gaps.next_gaps(package=3).gaps if g.rule_id == "use_case_untraced"
+        g for g in gaps.next_gaps(package=3).gaps if g.rule_key == "use_case_untraced"
     )
     gaps.dismiss_gap(target.key, "later")
     gaps.reopen_gap(target.key, "back")
@@ -235,7 +235,7 @@ def test_reopening_an_open_gap_is_refused(gaps, rows):
 def test_dismissal_requires_a_reason(gaps, rows):
     rows.submit_rows([RowSubmission("use_cases", {"title": "UC"})], "k")
     target = next(
-        g for g in gaps.next_gaps(package=3).gaps if g.rule_id == "use_case_untraced"
+        g for g in gaps.next_gaps(package=3).gaps if g.rule_key == "use_case_untraced"
     )
     with pytest.raises(GapNotFound):
         gaps.dismiss_gap(target.key, "   ")

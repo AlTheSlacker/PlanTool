@@ -19,7 +19,8 @@ from dataclasses import dataclass
 
 from engine.errors import PlanToolError
 from engine.models import Provenance, RowRef
-from engine.storage import FromOp, Op, Storage, now
+from engine.clock import now
+from engine.storage import FromOp, Op, Storage
 
 # --- state_machines:5, the Spike lifecycle ---
 
@@ -453,6 +454,7 @@ class ValidationService:
                     "track": track,
                     "state": TRACK_OPEN,
                     "detail": _TRACK_DETAIL[track],
+                    "created_at": stamp,
                     "updated_at": stamp,
                 })
                 for track in _KIND_TRACKS[kind]

@@ -70,7 +70,7 @@ CREATE TABLE IF NOT EXISTS plan_versions (
     version    INTEGER NOT NULL,
     reason     TEXT    NOT NULL,
     payload    TEXT    NOT NULL,               -- JSON of every table
-    taken_at   TEXT    NOT NULL
+    created_at   TEXT    NOT NULL
 );
 
 -- decisions:43 — a replayed idempotency_key returns the original receipt.
@@ -84,10 +84,10 @@ CREATE TABLE IF NOT EXISTS idempotency (
 -- its lease inside the same transaction that applies it. See DEVIATIONS.md D5.
 CREATE TABLE IF NOT EXISTS writer_lease (
     guard       INTEGER PRIMARY KEY CHECK (guard = 1),
-    lease_id    TEXT NOT NULL,
-    session_id  TEXT NOT NULL,
-    acquired_at TEXT NOT NULL,
-    renewed_at  TEXT NOT NULL
+    lease_key    TEXT NOT NULL,
+    session_key  TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
 );
 
 -- Full source text: NOT a plan row. Large, and never loaded into context wholesale.
@@ -100,7 +100,7 @@ CREATE TABLE IF NOT EXISTS source_texts (
     content_hash TEXT PRIMARY KEY,
     text         TEXT NOT NULL,
     char_count   INTEGER NOT NULL,
-    stored_at    TEXT NOT NULL
+    created_at    TEXT NOT NULL
 );
 
 -- Structural segmentation of a source, for locators and the coverage meter (M2).
@@ -123,10 +123,11 @@ CREATE INDEX IF NOT EXISTS idx_sections_hash ON source_sections (content_hash);
 -- re-derivation and row supersession: it neither re-surfaces nor silently detaches.
 CREATE TABLE IF NOT EXISTS gap_overlay (
     gap_key    TEXT PRIMARY KEY,
-    rule_id    TEXT NOT NULL,
+    rule_key    TEXT NOT NULL,
     root_ref   TEXT,
     state      TEXT NOT NULL,            -- dismissed | resolved
     reason     TEXT NOT NULL,
+    created_at TEXT NOT NULL,            -- when this gap was first dismissed or resolved
     updated_at TEXT NOT NULL
 );
 
@@ -171,7 +172,7 @@ CREATE TABLE IF NOT EXISTS warnings (
     state        TEXT    NOT NULL,       -- active | suppressed | resolved
     reason       TEXT,                   -- the owner's explicit suppression reason
     resolved_by  TEXT,                   -- ref of the row whose fix resolved it
-    raised_at    TEXT    NOT NULL,
+    created_at    TEXT    NOT NULL,
     updated_at   TEXT    NOT NULL
 );
 
@@ -235,6 +236,7 @@ CREATE TABLE IF NOT EXISTS claim_tracks (
     state      TEXT    NOT NULL,        -- open | satisfied
     detail     TEXT    NOT NULL,
     spike_id   INTEGER,                 -- set when the spike track registers one
+    created_at TEXT    NOT NULL,        -- when this track was opened
     updated_at TEXT    NOT NULL,
     UNIQUE (claim_id, track)
 );
@@ -381,7 +383,7 @@ CREATE TABLE IF NOT EXISTS obligations (
     kind         TEXT    NOT NULL,      -- behaviour | error
     statement    TEXT    NOT NULL,      -- what discharging it means
     retired_at   TEXT,                  -- null == live; set only by a recorded amendment
-    frozen_at    TEXT    NOT NULL,
+    created_at    TEXT    NOT NULL,
     UNIQUE (contract_ref, key)
 );
 
@@ -461,7 +463,7 @@ CREATE TABLE IF NOT EXISTS briefs (
     is_draft      INTEGER NOT NULL DEFAULT 0,  -- requirements:40 watermark
     supersedes    INTEGER REFERENCES briefs (id),
     superseded_by INTEGER REFERENCES briefs (id),
-    composed_at   TEXT    NOT NULL
+    created_at   TEXT    NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_briefs_subtask ON briefs (subtask_id, superseded_by);
@@ -539,7 +541,7 @@ CREATE TABLE IF NOT EXISTS workspace_fingerprints (
     plan_version INTEGER NOT NULL,
     subtask_id   INTEGER,               -- set for brief_issue
     fingerprint  TEXT    NOT NULL,      -- JSON
-    captured_at  TEXT    NOT NULL
+    created_at  TEXT    NOT NULL
 );
 """
 

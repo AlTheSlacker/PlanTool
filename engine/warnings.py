@@ -20,7 +20,8 @@ from enum import StrEnum
 
 from engine.errors import PlanToolError
 from engine.models import RowRef
-from engine.storage import Op, Storage, now
+from engine.clock import now
+from engine.storage import Op, Storage
 
 ACTIVE = "active"
 SUPPRESSED = "suppressed"
@@ -59,7 +60,7 @@ class Warning:
     kind: str
     message: str
     state: str
-    raised_at: str
+    created_at: str
     source_ref: RowRef | None = None
     reason: str | None = None
     resolved_by: RowRef | None = None
@@ -109,7 +110,7 @@ class WarningService:
                     "message": message,
                     "source_ref": str(source_ref) if source_ref else None,
                     "state": ACTIVE,
-                    "raised_at": stamp,
+                    "created_at": stamp,
                     "updated_at": stamp,
                 })],
                 f"raise_warning:{warning_key}",
@@ -268,7 +269,7 @@ class WarningService:
             kind=record["kind"],
             message=record["message"],
             state=record["state"],
-            raised_at=record["raised_at"],
+            created_at=record["created_at"],
             source_ref=(
                 RowRef.parse(record["source_ref"]) if record["source_ref"] else None
             ),
