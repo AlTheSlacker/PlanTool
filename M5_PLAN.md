@@ -21,15 +21,20 @@ question (§4a).
   and a problem with *no* allocated gate locks *every* gate until one is assigned. The second
   clause removes the escape hatch of never allocating.
 
-Current outstanding items and their gates:
+Current outstanding items and their gates (updated 2026-07-21, after the audit):
 
 | Problem | Resolve-by gate |
 |---|---|
-| F15 — undefined stage-7 fix contracts | **M5a `state_machines:9` audit** (hard-locks M5a) |
+| ~~F15 — undefined stage-7 fix contracts~~ | **RESOLVED 2026-07-21** at the audit; hard lock lifted. The mechanisms all exist — see DEFECTS.md F15 |
+| F18 — `deps_satisfied`/`serve_brief` have no firing contract | **M5a gate** (hard-locks M5a) |
+| F19 — `rework_flagged` trap + early-banked verdict | **M5a gate** (hard-locks M5a) |
+| F17 — prose row citations break on supersession | M6 gate |
 | §4 Q1 — mandate/script by value or reference | M6 gate |
 | §4 Q2 — digest names what to fetch | M6 gate |
 
-Nothing is unallocated, so no global lock is in force.
+Nothing is unallocated, so no global lock is in force. F18 and F19 replace F15 as M5a's
+hard lock: both are fixed *while building* `task-graph`, which is what F15 was standing in
+for all along — but they are the real holes, and F15 was not one.
 
 ---
 
@@ -269,7 +274,30 @@ sub-questions are in D9.
 
 ---
 
-## 5. Pre-build audit (done — carry forward, do not redo)
+## 5. Pre-build audit — DONE 2026-07-21, results below (do not redo)
+
+**The `state_machines:9` audit is complete.** Results, superseding the "not yet audited"
+text that follows:
+
+- **F15 was a false alarm.** All four cited-but-undefined contracts have live successors:
+  `contracts:52`→`63`, `contracts:56`→`68`, `contracts:59`→`62`, `contracts:61` subsumed
+  into `contracts:64`. `contracts:60` was never missing. The `in_progress → done` path is
+  fully specified. The generalised real defect is **F17** (prose citations dangle on
+  supersession), bound to M6.
+- **Check 1 found two genuine holes → F18.** `deps_satisfied` and `serve_brief` appear
+  nowhere in the plan outside the state-machine table. `report_status` must *not* be made
+  to fire them (`crud_grid:35` splits system-readiness from engine-report; collapsing them
+  lets the engine assert its own readiness).
+- **Check 2 found two more → F19.** `rework_flagged` is a trap under edge-triggered
+  readiness, and `verify_completion` has no state precondition, so a passing verdict can be
+  banked before the work is served — re-opening `findings:9` through a side door.
+
+**Build order consequence:** F18 and F19 are fixed *as part of* building `task-graph`, and
+they share a root decision — **readiness is a level-triggered predicate, not an edge
+event**. Settle that first; it resolves F19(a) structurally and shapes F18's readiness
+contract. It is a deviation (the plan makes no such decision) and needs a DEVIATIONS entry.
+
+### Original §5 text (kept for the record)
 
 Per `v2-build-conventions`, two mechanical checks before building anything with a state
 machine.

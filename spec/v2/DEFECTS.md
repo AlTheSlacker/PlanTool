@@ -401,11 +401,11 @@ blind-spot inheritance recorded at F5 and F11. The drive catches it because read
 
 ## F15 — Stage-7 fixes cited as contract rows that were never written
 
-**Status: OPEN. Resolve-by gate: the M5a `state_machines:9` audit — HARD LOCK.** M5a is
-not passed while F15 is open, and because F15 is allocated to that gate it does not lock
-the others. (Per the outstanding-problem rule, 2026-07-20: an unresolved problem is either
-fixed now or bound to a named resolve-by gate; a gate cannot pass with an open problem
-allocated to it; an *un*allocated open problem locks every gate.)
+**Status: RESOLVED at the M5a `state_machines:9` audit, 2026-07-21 — and the diagnosis
+below was WRONG.** See **Resolved** at the end of this entry before reading the rest. The
+original text is kept unedited because the error is the interesting part: a mechanical
+check was run correctly and its *interpretation* was wrong, which no amount of re-running
+the check would have caught. The hard lock on M5a is lifted.
 
 First defect in this log recorded before its fix rather than after. The distinction is
 deliberate: logging a defect is cheap and must never wait (the never-batch discipline of
@@ -450,6 +450,47 @@ audit at the top of M5a must confirm each of these absences against the built en
 decide, per row, whether it is genuinely missing (→ write it, as F12 did for the spike
 events) or subsumed by an existing contract.
 
+**Resolved (2026-07-21, M5a audit): every one of the four mechanisms exists. Nothing is
+missing.** The per-row check the entry above demanded was run, and each cited id has a
+live successor carrying the same behaviour and linking the same finding:
+
+| Cited in fix-note | Live row | Evidence |
+|---|---|---|
+| `contracts:52` (lock hardening, `findings:8`) | **`contracts:63`** `acquire_writer_lock` | links `findings:8`, `decisions:58`; already built in M1 |
+| `contracts:56` (redesigned `compose_brief`, `findings:3`/`findings:18`) | **`contracts:68`** `compose_brief` | links `findings:3` *and* `requirements:79` — the accounting rule F18's fix demanded |
+| `contracts:59` (delivery verification, `findings:9`) | **`contracts:62`** `verify_completion` | links `findings:9`; "a pass is the sole enabler of the in_progress->done transition" |
+| `contracts:61` (drift computation, `findings:10`) | **subsumed into `contracts:64`** `plan_status` | links `findings:10`, `requirements:73`; drift computation is stated inline in its signature |
+
+`contracts:60` (`report_status`) was never missing at all — it is defined, live, and
+already carries the `VerificationMissing` error the entry above worried was absent. The
+`in_progress → done` path is fully specified: `contracts:62` verifies, `contracts:60`
+refuses `done` without that verdict.
+
+**So the real defect is a different and much narrower one:** the frozen plan is a
+**live-rows export**, so superseded rows are dropped from it — but the *prose* of a
+finding's fix-note is frozen at the moment it was written and keeps naming the row id as
+it stood then. When that row is later superseded, the citation dangles. Four fix-notes
+point at ids the export no longer contains. Nothing is unbuildable; four citations do not
+resolve. Generalised and logged as **F17**, because the mechanism that produced it is a
+v2 product defect, not a v1 wart.
+
+**What the wrong diagnosis cost, and why it was wrong.** The grep was correct: those four
+ids genuinely have no definition row. The inference — "not defined ⇒ never written ⇒
+mechanism missing" — was not, and F15 even states the counter-case in its own text
+("contracts 3, 4, 16, 36, 39, 47 are also absent but those are the *superseded
+originals*… a different thing"). Having identified the exact alternative explanation, the
+entry did not test the four rows against it. The test is cheap: look for a live contract
+with the same behaviour linking the same finding. All four pass it in about five minutes.
+
+This inverts the entry's own "six for six" claim. F15 is **not** an instance of the
+F2/F4/F7/F9/F12 pattern; the running count of that pattern stands at five, not six, and
+the claim that the adversarial pass asserted fixes it never wrote is withdrawn — stage 7
+wrote every one of them. **The pattern was over-fitted:** five prior confirmations made
+the sixth reading feel like recognition rather than a hypothesis needing a test. Worth
+carrying: a defect log that names a recurring class starts to *recruit* ambiguous
+evidence into that class, and the pre-build audit's mechanical checks cannot detect that
+failure because the check is not what went wrong.
+
 ---
 
 ## F16 — Resume cost is bounded by undefined terms
@@ -484,3 +525,172 @@ against a term the plan leaves undefined, so the requirement is unfalsifiable as
 The resolution came from design discussion, not from a mechanical audit; worth noting that
 the pre-build audit catches missing *events* cleanly but says nothing about undefined
 *terms*, which still need reading the prose (the F12 limit, restated).
+
+---
+
+## F17 — Row citations inside prose are unvalidated and break silently on supersession
+
+**Status: OPEN. Resolve-by gate: M6 (surface).** Chosen because the fix is a read-time
+concern — how a row's text is served, and how an unresolvable prose ref is surfaced — and
+M6 is where `plan_status` and the MCP surface are built. It does not block M5.
+
+**Rows:** `findings:3`, `findings:8`, `findings:9`, `findings:10` (the four carrying
+dangling citations); mechanism rows `requirements:61`, `decisions:42` (write-once
+supersession), `contracts:14`/`contracts:15`/`contracts:58` (link-graph, which validates
+the *other* kind of reference).
+
+**Insufficient:** the plan enforces referential integrity on **structured links** — edges
+are validated at write time and reads carry `DanglingRef` — but a row's free text is never
+scanned. Row ids embedded in prose (`` `contracts:59` `` inside a fix-note, the
+`(requirements:32)` parentheticals throughout every contract signature) are just
+characters. Nothing validates them at write time and nothing re-checks them when the target
+is superseded.
+
+Supersession then breaks them silently, and by design: `decisions:42` makes `superseded_by`
+write-once and frozen history immutable, so the *correct* behaviour is that old prose keeps
+its old ids. A live-rows export drops the superseded target, and the citation now points at
+nothing. F15 is the demonstration — four such citations in the frozen plan, and they cost a
+wrong diagnosis that hard-locked a milestone.
+
+**Why this matters more than a broken cross-reference.** This is the citation invariant of
+the whole product (`V2_BUILD_PLAN.md` §5) leaking. v2's central mechanism is serving stored
+row text **verbatim** into scoped briefs (`requirements:36`). A brief that cites
+`contracts:59` serves prose naming a row the reader cannot fetch — and the reader's most
+natural inference is the one F15 made: *it was never written*. That inference is wrong,
+expensive, and points work at inventing a mechanism that already exists. F13 is the
+comparison: both are silent, and both look like a specification hole from the reading end.
+
+Note the interaction with the retired-assumption decision (2026-07-20): a retired row also
+drops out of live reads while its dependents still link to it. That was accepted as a known
+cost on the assumption that structured links carry the lineage. They do — prose does not.
+This is a second mechanism producing the same "cited row is not there" symptom from a
+different direction.
+
+**What is needed:** a decision among these, to be made at M6 and not pre-empted here.
+
+1. **Resolve at read time.** When serving row text, annotate prose ids through the
+   supersession chain (`contracts:59` -> "superseded by `contracts:62`"). Preserves
+   immutable stored text; the fix lives in the reader, exactly where the retired-assumption
+   decision said such fixes belong. Cost: every text-serving path needs it, and the
+   annotation must not corrupt the verbatim guarantee.
+2. **Validate at write time.** Scan prose for row-id patterns and refuse unknown targets.
+   Catches typos at the source but cannot help here — the ids were valid when written.
+   Necessary, not sufficient.
+3. **Accept and surface.** Leave text alone; have the reader flag unresolvable prose ids
+   rather than repair them. Cheapest, keeps the tool out of rewriting recorded judgment, and
+   would have been enough to prevent F15 — the flag says "superseded", not "missing".
+
+(3) is the current lean: smallest change consistent with the design spine, and F15 shows the
+flag alone carries the load-bearing information. But (1) and (3) differ on whether a brief
+should *repair* a citation or merely *report* it, and briefs are consumed by a code engine
+that cannot go and look — which is the argument for (1). Settle at M6.
+
+**Class:** new. Not F9's (nothing is missing) and not F16's (nothing is undefined). This is
+the first defect where the plan is *complete and correct* and still misleads its reader — an
+artefact of how the plan is exported and read rather than of what it says. It could only
+surface once enough rows had been superseded for frozen prose to fall out of step, which is
+exactly the condition a long-lived plan is guaranteed to reach.
+
+---
+
+## F18 — Two `state_machines:9` events have no contract that fires them
+
+**Status: OPEN. Resolve-by gate: M5a (this milestone) — fix before `task-graph` ships.**
+
+**Rows:** `state_machines:9`, `sm_cells:130` (pending + deps_satisfied -> ready),
+`sm_cells:137` (ready + serve_brief -> in_progress), `sm_cells:152` (blocked + unblock ->
+ready), `sm_cells:160` (rework_flagged + deps_satisfied -> ready), `contracts:38`
+(`graph_status`), `contracts:55` (`next_subtask`), `contracts:60` (`report_status`),
+`contracts:68` (`compose_brief`), `crud_grid:35`.
+
+**Insufficient:** check 1 of the pre-build audit — every state-machine event needs a named
+contract that fires it. Two of the six do not have one. The strings `deps_satisfied` and
+`serve_brief` appear **nowhere in the frozen plan except the state-machine table itself**
+(verified by grep over the whole document).
+
+- **`deps_satisfied`** — drives three transitions, including the only exit from
+  `rework_flagged`. `task-graph`'s responsibility prose claims it "maintains build-state
+  truth: readiness", but its only readiness contract is `graph_status` (`contracts:38`),
+  which *reports* built/in-flight/blocked/stale and is a pure read. No contract transitions
+  `pending -> ready`.
+- **`serve_brief`** — the sole entry to `in_progress`. `next_subtask` (`contracts:55`)
+  returns candidates plus closure and explicitly does *not* compose (composition is a
+  separate second call, per `findings:3`'s fix), so it cannot be the firing contract: a
+  sub-task may be offered as a candidate and never briefed. `compose_brief` (`contracts:68`)
+  returns an immutable Brief and says nothing about sub-task state. Between them, nothing
+  declares the sub-task started.
+
+**`report_status` is not the answer, and this is the load-bearing part.** Its signature
+accepts `status: SubTaskStatus (state_machines:9 events)` — nominally all six, so an
+implementer could route both missing events through it. `crud_grid:35` forbids exactly that:
+update responsibility is split, "**System** (graph/readiness) **and** code engine status
+reports via tool API". Readiness is the system's judgment; the report is the engine's claim.
+Collapsing them lets the code engine assert its own readiness, which voids `sm_cells:131`'s
+entire purpose ("dependencies unfinished — unbuildable work is never served"). A gate the
+graded party can open is not a gate. Same shape as `findings:9`, where `done` meaning "the
+engine said so" was the defect.
+
+**What is needed:** two contracts on `task-graph`, in the F12 pattern (write the missing
+firing mechanism, do not repurpose an existing one) — a system-side readiness evaluation
+firing `deps_satisfied`, and a serve/checkout step firing `serve_brief` at the moment a
+brief is actually handed over. Their design interacts with F19; resolve together.
+
+**Class:** F12's exactly — a state machine with events no contract fires — now the third
+entity to have it (spikes at M4, findings at M4, SubTask here). Three for three on entities
+audited *before* building. Note what this says about check 1's value: it has never once come
+back clean, and it costs ten minutes.
+
+---
+
+## F19 — `rework_flagged` is a trap, and a verification verdict can be banked early
+
+**Status: OPEN. Resolve-by gate: M5a (this milestone).**
+
+**Rows:** `sm_cells:159`/`sm_cells:160`/`sm_cells:163`, `contracts:62` (`verify_completion`),
+`contracts:60` (`report_status`), `requirements:52`.
+
+Check 2 of the pre-build audit — every outcome a contract's signature offers must be
+reachable from the states the entity can actually be in. Two findings, both traceable to one
+underspecified thing: **whether readiness is edge-triggered or level-triggered.** The plan
+never says, and each branch breaks something different.
+
+**(a) `rework_flagged` may have no exit.** Its only transitions out are `deps_satisfied ->
+ready` (`sm_cells:160`) and `block -> blocked` (`sm_cells:163`), and it is entered from
+`done` (`sm_cells:159`) when a revision flags built work for rework (`requirements:52`). A
+node that reached `done` had all its dependencies `done` already. If `deps_satisfied` is
+**edge-triggered** — fired when a predecessor transitions to `done` — then for a
+rework_flagged node that edge has already fired and will never fire again: its predecessors
+are all terminal. The node is trapped, and the only escape is `block`, reaching the right
+state via `blocked -> unblock -> ready` (`sm_cells:152`) by declaring a block that does not
+exist. If readiness is instead a **level-triggered predicate** recomputed on demand, the
+transition is immediate and correct. The plan supports either reading; only one works.
+
+**(b) A passing verdict can be recorded before the work is served.** `verify_completion`
+(`contracts:62`) declares no state precondition and no wrong-state error — its errors are
+`SubTaskNotFound`, `EvidenceIncomplete`, `StorageUnavailable`. It therefore accepts a
+sub-task in *any* state, including `pending`. Its verdict is recorded durably and is "the
+sole enabler of the in_progress -> done transition". So the sequence `pending ->
+verify_completion(pass) -> ... -> ready -> in_progress -> report_status(complete)` satisfies
+`contracts:60`'s `VerificationMissing` guard with a verdict recorded before the brief was
+ever served. The guard checks that a passing verdict *exists*, never that it postdates the
+work — re-opening `findings:9`'s honour-system hole through a side door and defeating the
+fix `findings:9` shipped.
+
+**What is needed:**
+
+- Decide readiness is a **level-triggered predicate** over dependency states, recomputed
+  whenever the graph is read or a status is reported. This resolves (a) structurally rather
+  than by adding a rework-specific edge, and it is what `graph_status` already implies by
+  computing readiness on read. Record as a deviation — it is a decision the plan does not
+  make.
+- Give `verify_completion` a state precondition (`in_progress`, plausibly also
+  `rework_flagged`) with its own error, **or** scope the verdict to the serving episode so a
+  verdict predating the current `serve_brief` does not satisfy the guard. The second is
+  stronger — it also invalidates a stale verdict after rework, which the first does not — and
+  rework is precisely when a banked pass is most dangerous.
+
+**Class:** F13's for (b) — a contract signature offering an outcome from states where it is
+meaningless — and F14's for (a): silent, invisible to any test written from the
+specification, discoverable only by walking the table and asking what actually fires each
+edge. Both were invisible to check 1, which passes happily on events that *are* fired; these
+are about *when*.
