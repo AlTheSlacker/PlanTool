@@ -85,7 +85,16 @@ If `plan_status` serves counts and ids, a resuming model may simply not fetch an
 confidently on the digest alone — silent, and the same class as F14. The countermeasure is
 the digest naming its own next action, which is `requirements:58` doing real work.
 
-### 2.6 D9 — the hard-lock as a product requirement
+### 2.6 D9 — the hard-lock as a product requirement — **DECIDED 2026-07-21 as D15**
+Settled: a gate locks on every open item **allocated to it**; `resolve_by` is required at
+creation and `NOT NULL`; the two exits are resolve, or re-allocate to a later gate with a
+reason. Gaps are outside the scheme — they are closable by the agent now, so deferring one is
+procrastination. No infinite-deferral brake is needed: you cannot defer to a gate that does
+not exist, so the worst case is a pile-up at freeze, which correctly refuses to freeze.
+**D16** follows from the same session: assumptions are attacked on arrival, not audited at
+package 6. Both are unbuilt. The original statement of the item follows.
+
+
 Decided 2026-07-20; built here, in gate-engine. **The load-bearing work is drawing the
 severity line, and it must stay narrow.** v2's gates warn, they don't block
 (`decisions:31`, D7); the only hard block today is `requirements:32`. D9 generalises that to

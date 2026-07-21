@@ -558,3 +558,110 @@ enforcement lands when those links are written.
 
 **Related:** `GLOSSARY.md`; DEVIATIONS.md D3, D9, D12, D13; DEFECTS.md F20, F23, F24;
 `decisions:12`, `decisions:61`, `findings:4`, `requirements:56`, `requirements:71`.
+
+---
+
+## D15 — D9's product form: a gate locks on what was allocated to it
+
+**Decided 2026-07-21 by the owner.** D9 established that gates hard-lock on outstanding
+problems; it left the severity line open, and the M6 gate bound the decision here.
+
+**The line proposed and rejected.** I proposed that only *findings* hard-lock, on the test
+"does this class have a cheap, legitimate exit?" — findings have `resolve_finding`'s
+`accepted_risk`, an open assumption has only an expensive spike, so blocking on assumptions
+would resurrect the cry-wolf failure D7 fixed (`decisions:31`). The owner rejected it:
+**"we should not be passing gates with unresolved issues logged for that gate."**
+
+He was right, and the flaw in my test is worth recording because it is a general one. I read
+the exit set as a fixed property of each class. **The outstanding-problem rule creates a
+universal exit** — bind the item to a named later gate. That costs one call and a reason, for
+every class. I drew a severity line using an exit set that the governing rule had already
+widened.
+
+**The rule, as the product form of `M5_PLAN.md` §0:**
+
+- Every open item carries a `resolve_by` gate.
+- A gate refuses while any open item is allocated to it.
+- An item with no allocation locks *every* gate — the clause that stops "never allocate"
+  being the escape hatch.
+- Two exits, both one call: resolve it, or re-allocate to a later gate with a reason.
+
+**`resolve_by` is required at creation and `NOT NULL` in the schema.** Unallocated is
+unrepresentable rather than detected. F28 is the argument: a `NOT NULL` column is a mechanism,
+and a runtime check for a condition the schema could forbid is a rule waiting to be forgotten.
+The clause-3 lock stays as the backstop for rows arriving by migration or import, with a test
+proving it can fire. The side effect is the valuable one: raising a finding forces "by when?"
+while the context is live.
+
+**Infinite deferral is not a risk, and the owner's argument is why:** *you cannot defer to a
+gate that does not exist.* The gate list is finite and known, so the worst case is everything
+piling up at freeze, at which point freeze blocks and the plan does not finish — the correct
+outcome, reached automatically. No brake is built. `plan_status` reports the pile ("4 items
+now due at freeze") as a **forecast**, so the pile-up is visible while there is room to act.
+
+**Gaps are outside the scheme**, and the owner's criterion is better than the one it replaced.
+I argued gaps are excluded because they are *derived, not durable* — a fact about storage. His
+test is a fact about the work: **who can close it, and when?** A gap is closable by the agent
+immediately, from what it already has. An assumption needs the owner or reality; a finding
+needs a judgment. Deferring something you could do now is procrastination, and giving it a
+`resolve_by` would dignify it. The discipline is authoring-time: analyse each step as it is
+written and record the outcome either way.
+
+That also justifies keeping gaps derived rather than stored. Closing one by writing rows has
+repercussions — a new extension may need a requirement, or step on a decision — and because
+gaps are recomputed on every call, those show up on the *next* call rather than needing a
+checklist someone maintains. Stated with its limit: that is *mechanical* repercussion only
+(traceability and coverage). The engine will not notice a new row contradicting
+`decisions:12`; that is the conflict path and it needs the agent to read.
+
+**Coverage still locks, through gate criteria.** `step_without_extensions` (gap rule) and
+`step_has_extensions` (package-2 gate criterion) are the same rule at two moments: the gap
+engine asks during the interview, the criterion decides at the gate. Gaps are the early-warning
+system for a lock that already exists, not a second weaker lock.
+
+**Related:** D7, D9, D10; DEFECTS.md F28; `decisions:31`, `requirements:32`, `requirements:79`.
+
+---
+
+## D16 — An assumption is attacked when it is made, not audited five packages later
+
+**Decided 2026-07-21 by the owner:** *"assumptions are incredibly dangerous to any plan, there
+really should be an attempt to always remove them by experimentation and validation as they
+happen."*
+
+**The hole that prompted it.** The only mechanism challenging an unbacked world-assumption is
+`world_assumption_backed`, a **package-6** gate criterion. Package 1 is context and goals —
+where the most load-bearing assumptions are made. An assumption filed in the first hour
+therefore survives five packages, with requirements, a domain model, dependencies and an
+architecture built on top of it, before anything mechanically asks whether it is true. If it
+is false, all of that is rework: the milestone-time re-planning failure this tool exists to
+prevent, reproduced inside the tool.
+
+**Registration is separated from conclusion, and that is what makes "as they happen"
+affordable.** Concluding a spike is expensive — the experiment has to run against the real
+dependency, and often cannot run now. *Registering* one is cheap: the hypothesis, what would
+confirm or refute it, and an `open` row.
+
+- **A world-assumption cannot be filed without a spike registered against it, atomically, in
+  the same act.** Unbacked becomes unrepresentable rather than detected later — the F28 move,
+  where a constraint at the moment of writing beats a check someone must remember to run.
+  `world_assumption_backed` stops being the first line of defence and becomes a backstop with
+  nothing to find.
+- **An intent-assumption goes to the owner in the same turn.** No engine mechanism can force
+  the conversation, so this is methodology: the package script leads. The upgrade-in-place
+  path already exists (`contracts:11`).
+
+**The owner-accepted risk survives, gated behind the attempt.** `world_assumption_backed`
+accepts `[spikes, accepted_risks]`, so accepting a risk already counts as backing — a fact I
+asserted the opposite of in discussion, without reading the criterion. It is not deleted,
+because a genuinely untestable assumption would otherwise wedge the plan forever. It becomes
+**admissible only once a spike exists and has concluded**, including `inconclusive` and
+`blocked`. The owner can always accept the risk; they cannot accept it *instead of looking*.
+
+**Stated with its limit.** None of this catches an assumption nobody labelled as one. A row
+filed `decided` that is really a guess is invisible to every mechanism here. That is what the
+mandate's divergence rounds and the red-team package are for, and they are judgment, not
+enforcement.
+
+**Related:** D15; `requirements:5`, `requirements:26`, `contracts:11`, `contracts:30`,
+`decisions:61`, `findings:4`.

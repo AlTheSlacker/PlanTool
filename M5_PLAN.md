@@ -41,7 +41,8 @@ session):
 | F17 — prose row citations break on supersession | M6 gate |
 | §4 Q1 — mandate/script by value or reference | M6 gate |
 | §4 Q2 — digest names what to fetch | M6 gate |
-| D9 — gates hard-lock on outstanding problems (product form) | M6 gate |
+| ~~D9 — gates hard-lock on outstanding problems (product form)~~ | **DECIDED 2026-07-21** as **D15** — a gate locks on what was allocated to it; `resolve_by` required at creation. Build outstanding in M6 |
+| **D16 — assumptions attacked on arrival** — a world-assumption cannot be filed without a spike registered atomically; accepted risk admissible only after a concluded spike | **M6 gate** |
 | **Glossary delivery to the writer** — F27: a plan's vocabulary is enforced at the moment of writing or not at all. How does a plan's own glossary reach the code engine, and should `compose_brief` carry it as a first-class section rather than as a row that can be omitted? | **M6 gate** |
 
 Nothing is unallocated, so no global lock is in force. **The M5b gate is clear**: F23–F26 were
