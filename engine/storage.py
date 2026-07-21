@@ -16,11 +16,11 @@ import sqlite3
 import time
 import uuid
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
 from engine import schema
+from engine.clock import age_seconds, now
 from engine.errors import (
     LeaseLost,
     LockHeld,
@@ -39,15 +39,6 @@ WRITE_BUDGET_SECONDS = 30.0
 LEASE_SILENCE_SECONDS = 600.0
 
 PLAN_FILENAME = "plan.db"
-
-
-def now() -> str:
-    """requirements:48 — every entry carries a creation timestamp."""
-    return datetime.now(UTC).isoformat(timespec="microseconds")
-
-
-def _age_seconds(stamp: str) -> float:
-    return (datetime.now(UTC) - datetime.fromisoformat(stamp)).total_seconds()
 
 
 @dataclass(frozen=True, slots=True)
@@ -228,7 +219,7 @@ class Storage:
                     "SELECT * FROM writer_lease WHERE guard = 1"
                 ).fetchone()
                 if held is not None:
-                    age = _age_seconds(held["renewed_at"])
+                    age = age_seconds(held["renewed_at"])
                     if age < LEASE_SILENCE_SECONDS:
                         raise LockHeld(
                             "another live session holds the writer lock",

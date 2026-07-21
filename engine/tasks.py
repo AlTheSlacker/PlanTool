@@ -36,7 +36,8 @@ from dataclasses import dataclass, field
 from engine.errors import PlanToolError
 from engine.models import RowRef
 from engine.obligations import ObligationService
-from engine.storage import FromOp, Op, Storage, now
+from engine.clock import age_seconds, now
+from engine.storage import FromOp, Op, Storage
 
 # --- state_machines:9, the SubTask lifecycle ---
 
@@ -632,7 +633,7 @@ class TaskGraphService:
         stale = []
         for subtask in self._all():
             buckets[self.readiness_of(subtask)].append(subtask.id)
-            if subtask.state == IN_PROGRESS and self._age(subtask.updated_at) > STALENESS_SECONDS:
+            if subtask.state == IN_PROGRESS and age_seconds(subtask.updated_at) > STALENESS_SECONDS:
                 stale.append(subtask.id)
         return GraphStatus(
             built=tuple(buckets[DONE]),
@@ -982,10 +983,3 @@ class TaskGraphService:
     def is_finalized(self) -> bool:
         return self.storage.plan_handle().get("state") == "finalized"
 
-    @staticmethod
-    def _age(stamp: str) -> float:
-        from datetime import UTC, datetime
-
-        if not stamp:
-            return 0.0
-        return (datetime.now(UTC) - datetime.fromisoformat(stamp)).total_seconds()

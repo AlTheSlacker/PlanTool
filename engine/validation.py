@@ -19,7 +19,8 @@ from dataclasses import dataclass
 
 from engine.errors import PlanToolError
 from engine.models import Provenance, RowRef
-from engine.storage import FromOp, Op, Storage, now
+from engine.clock import now
+from engine.storage import FromOp, Op, Storage
 
 # --- state_machines:5, the Spike lifecycle ---
 

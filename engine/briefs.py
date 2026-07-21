@@ -41,7 +41,8 @@ from dataclasses import dataclass, field
 from engine.errors import PlanToolError
 from engine.models import RowRef
 from engine.obligations import ObligationService
-from engine.storage import FromOp, Op, Storage, now
+from engine.clock import now
+from engine.storage import FromOp, Op, Storage
 from engine.tasks import PENDING
 
 INCLUDED = "included"

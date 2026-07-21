@@ -35,7 +35,8 @@ from engine.models import (
     RowSubmission,
     RowVerdict,
 )
-from engine.storage import Op, Storage, now
+from engine.clock import now
+from engine.storage import Op, Storage
 
 #: A contradiction detector: given a candidate submission and the store, return a
 #: human-readable description of what stored row it contradicts, or None.

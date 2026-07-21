@@ -36,7 +36,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from engine.errors import PlanToolError
-from engine.storage import FromOp, Op, Storage, now
+from engine.clock import now
+from engine.storage import FromOp, Op, Storage
 
 BEHAVIOUR = "behaviour"
 ERROR = "error"

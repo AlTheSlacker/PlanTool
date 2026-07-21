@@ -20,7 +20,8 @@ from enum import StrEnum
 
 from engine.errors import PlanToolError
 from engine.models import RowRef
-from engine.storage import Op, Storage, now
+from engine.clock import now
+from engine.storage import Op, Storage
 
 ACTIVE = "active"
 SUPPRESSED = "suppressed"

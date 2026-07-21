@@ -21,7 +21,8 @@ from engine.methodology import Methodology, Rule, load
 from engine.models import PlanRow, RowRef, RowSelector
 from engine.references import EXTRACTS_TABLE, SOURCES_TABLE, ReferenceService
 from engine.rows import RowService
-from engine.storage import Op, Storage, now
+from engine.clock import now
+from engine.storage import Op, Storage
 
 #: Vendored from v1 (archive/v1/engine/gaps.py): return a coherent batch per call so the
 #: session asks the owner one joined-up set of questions, not a drip feed.

@@ -21,7 +21,8 @@ from dataclasses import dataclass
 
 from engine.errors import PlanToolError
 from engine.models import RowRef, RowSubmission
-from engine.storage import FromOp, Op, Storage, now
+from engine.clock import now
+from engine.storage import FromOp, Op, Storage
 
 #: The edge type by which a submitted row declares what it contradicts.
 CONTRADICTS = "contradicts"

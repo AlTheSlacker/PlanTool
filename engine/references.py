@@ -33,7 +33,8 @@ from engine.errors import (
 )
 from engine.models import LinkSpec, PlanRow, Provenance, RowRef, RowSubmission
 from engine.rows import RowService
-from engine.storage import Op, Storage, now
+from engine.clock import now
+from engine.storage import Op, Storage
 
 SOURCES_TABLE = "sources"
 EXTRACTS_TABLE = "extracts"
