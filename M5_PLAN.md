@@ -21,20 +21,28 @@ question (§4a).
   and a problem with *no* allocated gate locks *every* gate until one is assigned. The second
   clause removes the escape hatch of never allocating.
 
-Current outstanding items and their gates (updated 2026-07-21, after the audit):
+Current outstanding items and their gates (updated 2026-07-21, end of the M5b vocabulary
+session):
 
 | Problem | Resolve-by gate |
 |---|---|
 | ~~F15 — undefined package-7 fix contracts~~ | **RESOLVED 2026-07-21** at the audit; hard lock lifted. The mechanisms all exist — see DEFECTS.md F15 |
-| F18 — `deps_satisfied`/`serve_brief` have no firing contract | **M5a gate** (hard-locks M5a) |
-| F19 — `rework_flagged` trap + early-banked verdict | **M5a gate** (hard-locks M5a) |
+| ~~F18 — `deps_satisfied`/`serve_brief` have no firing contract~~ | **RESOLVED** in M5a |
+| ~~F19 — `rework_flagged` trap + early-banked verdict~~ | **RESOLVED** in M5a |
+| ~~F22 — narrowing an attachment was a silent no-op~~ | **RESOLVED** in M5a |
+| **F23** — `PartsDontCover` can never fire; no accounting denominator | **M5b gate** (hard-locks M5b) |
+| **F24** — task membership lost in the package-6 flattening | **M5b gate** (hard-locks M5b) |
+| **v1 foreign-key sweep** — F20 and F24 are two instances; check every remaining v1 FK against v2 rather than finding a third by accident | **M6 gate** |
+| **Methodology rev 3, second half** — rev 3 carries v2's vocabulary but still names v1's tool surface (`submit_use_cases`, …) | **M6 gate** |
 | F17 — prose row citations break on supersession | M6 gate |
 | §4 Q1 — mandate/script by value or reference | M6 gate |
 | §4 Q2 — digest names what to fetch | M6 gate |
+| D9 — gates hard-lock on outstanding problems (product form) | M6 gate |
 
-Nothing is unallocated, so no global lock is in force. F18 and F19 replace F15 as M5a's
-hard lock: both are fixed *while building* `task-graph`, which is what F15 was standing in
-for all along — but they are the real holes, and F15 was not one.
+Nothing is unallocated, so no global lock is in force. **F23 and F24 hard-lock M5b**: both are
+fixed *while building* `brief-composer`, because the obligation surface (D12) is what gives
+`PartsDontCover` a denominator and the `belongs_to` link is what makes task membership
+derivable.
 
 ---
 

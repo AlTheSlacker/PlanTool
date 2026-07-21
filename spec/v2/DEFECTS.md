@@ -863,7 +863,7 @@ record the operation just wrote.
 
 ## F23 — `PartsDontCover` can never fire: the split has no accounting denominator
 
-**Status:** OPEN — resolved by DEVIATIONS.md D12, built in M5b.
+**Status:** OPEN — bound to the **M5b package gate** (hard-locks it). Resolved by DEVIATIONS.md D12, built in M5b.
 
 **Rows:** `contracts:40` (`split_subtask`), `requirements:37`, `decisions:63`,
 `findings:11`.
@@ -916,7 +916,7 @@ invariant over obligations rather than a procedure over contract refs.
 
 ## F24 — Task membership was a v1 foreign key that the v2 flattening dropped
 
-**Status:** OPEN — resolved by DEVIATIONS.md D13, built in M5b.
+**Status:** OPEN — bound to the **M5b package gate** (hard-locks it). Resolved by DEVIATIONS.md D13, built in M5b. The generalised v1-foreign-key sweep it implies is bound to the **M6 gate**.
 
 **Rows:** `entities:15` (Link), `components:*`, `contracts:*`; v1 `contracts.component_id`.
 
