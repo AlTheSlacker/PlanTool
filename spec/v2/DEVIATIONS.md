@@ -359,7 +359,7 @@ Back-filling the edges for the dogfood plan is an M8 concern.
 
 ## D12 — A sub-task owns an explicit obligation surface; split redistributes it
 
-**Resolves:** DEFECTS.md F23. Built in M5b.
+**Resolves:** DEFECTS.md F23. **Built in M5b, 2026-07-21** — `engine/obligations.py`.
 
 **The plan says:** a sub-task is the implementation unit of exactly one contract
 (`decisions:63`), `split_subtask` "divides along the contract's param/error surface"
@@ -425,7 +425,8 @@ silently permitting an unaccountable split.
 ## D13 — Four structural levels: Plan → Package → Task → Sub-task
 
 **Supersedes the three-level scheme in D8.** Resolves DEFECTS.md F24. Owner decision,
-2026-07-21. The binding definitions live in `GLOSSARY.md`; this entry records why.
+2026-07-21. **Built in M5b** — `declare_package`/`assign_task`, the `belongs_to` link read at
+finalization, and a finalization guard that refuses an unpackaged task. The binding definitions live in `GLOSSARY.md`; this entry records why.
 
 **The plan says:** nothing. There is no grouping level between the plan and its components,
 and no vocabulary for one. `M5_PLAN.md` §2.3 invented three levels — project / milestone /

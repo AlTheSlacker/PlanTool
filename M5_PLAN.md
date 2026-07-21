@@ -30,8 +30,10 @@ session):
 | ~~F18 — `deps_satisfied`/`serve_brief` have no firing contract~~ | **RESOLVED** in M5a |
 | ~~F19 — `rework_flagged` trap + early-banked verdict~~ | **RESOLVED** in M5a |
 | ~~F22 — narrowing an attachment was a silent no-op~~ | **RESOLVED** in M5a |
-| **F23** — `PartsDontCover` can never fire; no accounting denominator | **M5b gate** (hard-locks M5b) |
-| **F24** — task membership lost in the package-6 flattening | **M5b gate** (hard-locks M5b) |
+| ~~F23 — `PartsDontCover` can never fire~~ | **RESOLVED** in M5b — obligation surface built |
+| ~~F24 — task membership lost in the package-6 flattening~~ | **RESOLVED** in M5b — `belongs_to`, plus live `packages`/`tasks` |
+| ~~F25 — "supersedes the original in the graph" has no mechanism~~ | **RESOLVED** in M5b |
+| ~~F26 — `audit_brief`'s denominator is re-derived at read time~~ | **RESOLVED** in M5b — closure frozen into the brief |
 | **v1 foreign-key sweep** — F20 and F24 are two instances; check every remaining v1 FK against v2 rather than finding a third by accident | **M6 gate** |
 | **Methodology rev 3, second half** — rev 3 carries v2's vocabulary but still names v1's tool surface (`submit_use_cases`, …) | **M6 gate** |
 | F17 — prose row citations break on supersession | M6 gate |
@@ -39,10 +41,22 @@ session):
 | §4 Q2 — digest names what to fetch | M6 gate |
 | D9 — gates hard-lock on outstanding problems (product form) | M6 gate |
 
-Nothing is unallocated, so no global lock is in force. **F23 and F24 hard-lock M5b**: both are
-fixed *while building* `brief-composer`, because the obligation surface (D12) is what gives
-`PartsDontCover` a denominator and the `belongs_to` link is what makes task membership
-derivable.
+Nothing is unallocated, so no global lock is in force. **The M5b gate is clear**: F23–F26 were
+all fixed while building `brief-composer`, as their binding required. Everything still open is
+bound to the M6 gate.
+
+**The pre-build audit is now three checks, not two** (added by F23, amended by F26):
+
+1. Every state-machine event has a contract that fires it.
+2. Every outcome a contract's signature offers is reachable from the states the entity can be in.
+3. For every coverage/accounting/completeness check: **name the set, say where it comes from,
+   and say at what moment it is fixed.** A denominator re-derived at read time measures against
+   a moving target — that is F26, caught by this check on its first use.
+
+A fourth is worth considering after F25: a contract that says it *supersedes*, *replaces* or
+*supplants* something in the execution layer must say what that does to the thing's edges and
+its lifecycle. Plan-row supersession (`requirements:61`) is a defined primitive and reading it
+as transferable to a graph node is what F25 is.
 
 ---
 

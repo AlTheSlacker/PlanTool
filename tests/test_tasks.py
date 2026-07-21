@@ -37,7 +37,19 @@ def _contracts(rows, n, deps=None):
         subs.append(
             RowSubmission(
                 table="contracts",
-                content={"title": f"contract {i}"},
+                # The obligation surface a planning session declares on a contract
+                # (DEVIATIONS.md D12). Without it the sub-task has no accounting
+                # denominator and verify_completion refuses — which is F23's fix
+                # working, not a test-fixture detail.
+                content={
+                    "title": f"contract {i}",
+                    "obligations": [
+                        {"key": "behaviour", "kind": "behaviour",
+                         "statement": f"contract {i} does what it says"},
+                        {"key": "NotFound", "kind": "error",
+                         "statement": f"contract {i} names a missing id"},
+                    ],
+                },
                 links=links,
             )
         )
@@ -155,10 +167,14 @@ def test_rework_flagged_becomes_ready_again(tasks, rows):
     assert tasks.readiness_of(reworked) == READY
 
 
+def _evidence(tasks, subtask_id, artifact="pytest -q passed"):
+    """One evidence item per *obligation* (D12), not per contract."""
+    return {o.ref: artifact for o in tasks.obligations.for_subtask(subtask_id)}
+
+
 def _drive_to_done(tasks, subtask_id):
     tasks.serve_brief(subtask_id)
-    subtask = tasks.get(subtask_id)
-    tasks.verify_completion(subtask_id, {str(subtask.contract_ref): "pytest -q passed"})
+    tasks.verify_completion(subtask_id, _evidence(tasks, subtask_id))
     return tasks.report_status(subtask_id, "complete", "built and tested")
 
 
@@ -326,3 +342,60 @@ def test_next_subtask_returns_the_closure_not_a_brief(tasks, rows):
     candidates = tasks.next_subtask()
     assert RowRef.parse("contracts:1") in candidates.closure
     assert not hasattr(candidates, "brief")
+
+
+# --- the package/task levels (DEVIATIONS.md D13, DEFECTS.md F24) ---
+
+
+def test_finalization_refuses_an_unpackaged_task(tasks, rows):
+    """D13 — every task belongs to exactly one package, and there is deliberately no
+    catch-all: a default bucket satisfies the invariant while quietly restoring the
+    three-level model, and a grouping nobody chose is a grouping nobody reviews."""
+    from engine.tasks import UnpackagedTask
+
+    rows.submit_rows(
+        [RowSubmission(table="components", content={"title": "brief-composer"})], "comp"
+    )
+    with pytest.raises(UnpackagedTask) as exc:
+        tasks.finalize_plan()
+    assert "components:1" in str(exc.value)
+
+
+def test_task_membership_survives_as_a_typed_link(tasks, rows):
+    """DEFECTS.md F24 — v1 carried this as `contracts.component_id`, a real foreign key,
+    and the package-6 flattening kept the rows and dropped the relation. D13 restores it
+    as `edge_type='belongs_to'`, member -> owner."""
+    rows.submit_rows(
+        [RowSubmission(table="components", content={"title": "brief-composer"})], "comp"
+    )
+    package = tasks.declare_package("the engine", "everything behind the surface")
+    task = tasks.assign_task("components:1", package.id)
+    rows.submit_rows([RowSubmission(
+        table="contracts",
+        content={"title": "compose_brief", "obligations": [
+            {"key": "behaviour", "statement": "composes"}]},
+        links=[LinkSpec(target="components:1", edge_type="belongs_to")],
+    )], "contract")
+
+    graph = tasks.finalize_plan()
+    assert graph.subtasks[0].task_id == task.id
+
+
+def test_a_contract_with_no_owner_is_reported_never_guessed(tasks, rows):
+    """Choosing an owner — or a package — would be the tool exercising judgment
+    (`decisions:12`). None is the honest answer."""
+    _finalize(tasks, rows, n=1)
+    assert tasks.get(1).task_id is None
+
+
+def test_a_package_is_referenced_by_id_never_by_name(tasks, rows):
+    """A name-keyed grouping yields an empty context set on a typo, and a sub-task quietly
+    missing its mid-level context is the failure `decisions:14` measures. This is the
+    mistake the retired `milestone` column made."""
+    from engine.tasks import PackageNotFound
+
+    rows.submit_rows(
+        [RowSubmission(table="components", content={"title": "brief-composer"})], "comp"
+    )
+    with pytest.raises(PackageNotFound):
+        tasks.assign_task("components:1", 99)

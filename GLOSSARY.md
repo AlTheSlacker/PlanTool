@@ -46,7 +46,7 @@ no name from us.
 | Package | **declared** | 1..n per plan | `packages` |
 | Task | derived | 1..n per package; exactly 1 package each | `tasks` |
 | Sub-task | derived | 1..n per task | `subtasks` |
-| Obligation | enumerated once, frozen | 1..n per sub-task | (M5b) |
+| Obligation | enumerated once, frozen | 1..n per sub-task | `obligations` |
 
 ### Two layers, and why only one of them is generic
 

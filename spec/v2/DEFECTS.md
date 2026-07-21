@@ -863,7 +863,14 @@ record the operation just wrote.
 
 ## F23 — `PartsDontCover` can never fire: the split has no accounting denominator
 
-**Status:** OPEN — bound to the **M5b package gate** (hard-locks it). Resolved by DEVIATIONS.md D12, built in M5b.
+**Status:** RESOLVED in M5b (2026-07-21) — the obligation surface (DEVIATIONS.md D12) is
+built: `engine/obligations.py`, frozen at finalization, and `PartsDontCover` now fires
+against it. Verification accounts per obligation, and a sub-task with no enumerated surface
+refuses to be split or verified rather than passing vacuously.
+
+**The third pre-build check it proposed is adopted, and has already paid** — it caught F26 on
+its first use, one build package later. Amended by that catch to: *name the set, say where it
+comes from, and say at what moment it is fixed.*
 
 **Rows:** `contracts:40` (`split_subtask`), `requirements:37`, `decisions:63`,
 `findings:11`.
@@ -916,7 +923,10 @@ invariant over obligations rather than a procedure over contract refs.
 
 ## F24 — Task membership was a v1 foreign key that the v2 flattening dropped
 
-**Status:** OPEN — bound to the **M5b package gate** (hard-locks it). Resolved by DEVIATIONS.md D13, built in M5b. The generalised v1-foreign-key sweep it implies is bound to the **M6 gate**.
+**Status:** RESOLVED in M5b (2026-07-21) — `edge_type='belongs_to'` is read at finalization
+(`TaskGraphService._owning_task_id`), and `packages`/`tasks` are live: `declare_package`,
+`assign_task`, and a finalization guard that refuses an unpackaged task. The generalised
+v1-foreign-key sweep it implies remains bound to the **M6 gate**.
 
 **Rows:** `entities:15` (Link), `components:*`, `contracts:*`; v1 `contracts.component_id`.
 
@@ -947,3 +957,94 @@ same way, and the remaining v1 FKs should be swept before M6 rather than found o
 directed contract → component (member → owner), exactly mirroring D11's treatment of the
 dependency edge. Same argument: the column already exists, the direction is the one the
 owning row can write, and typing it keeps traversal deterministic.
+
+---
+
+## F25 — "superseding the original in the graph" has no mechanism
+
+**Status:** RESOLVED in M5b (2026-07-21) — `subtasks.superseded_by` is written by
+`split_subtask` and read as a liveness filter by every graph read; dependants are repointed
+from the original to the parts, and serving/reporting/verifying a superseded node is refused
+(`SubTaskSuperseded`).
+
+**Rows:** `contracts:40` (`split_subtask`), `state_machines:9`, `requirements:37`.
+
+**The defect.** `contracts:40` returns "list[SubTask] **superseding the original in the
+graph**". Nothing in the plan says what supersession *does* to a graph node. `state_machines:9`
+has no `split` event and no terminal state for a sub-task that was divided, so the original
+does not leave the lifecycle by any transition the plan defines. Three concrete consequences
+in the built engine, all silent:
+
+1. `TaskGraphService._all()` is `SELECT * FROM subtasks` with no liveness filter, so a split
+   original stays in `graph_status()` — in `in_flight` forever, since the state it was in when
+   its brief proved too large is `in_progress`. It also trips the 24h staleness flag
+   (`dep_failure_modes:6`) permanently.
+2. `next_subtask` can serve it again. It is a candidate whenever `readiness_of` returns
+   `ready`, and nothing knows it was replaced.
+3. **Dependants deadlock.** `subtask_deps` edges point at the original's id. The original can
+   never reach `done` — its work is being carried by the parts — so every consumer sits in
+   `pending` behind a node that will never complete. `split_subtask` on a node with dependants
+   silently bricks that branch of the graph.
+
+The column exists — `subtasks.superseded_by`, added in M5a and annotated "split_subtask
+lineage (M5b)" — and is written by nothing and read by nothing.
+
+**Class: plan insufficiency** — the seventh instance of F2/F4/F7/F9/F12/F23, behaviour named
+in prose without the mechanism. Closest to the *missing trigger* sub-class, but a variant
+worth naming: the trigger is present (`split_subtask` fires) and the **effect** is
+unspecified. "Supersedes in the graph" reads as though it means something because
+supersession *is* a defined primitive elsewhere (`requirements:61`, for plan rows) — the
+defect is assuming a plan-row primitive transfers to an execution-layer node with edges and a
+lifecycle.
+
+**Resolution:** built in M5b — supersession is a liveness filter on every graph read, and the
+split rewires `subtask_deps` from the original to the parts. Which part a dependant should
+follow is not guessable in general, so the edge is redirected to *every* part: the dependant
+waits for all of them, which is the only reading that preserves "no sub-task precedes its
+dependencies" (`requirements:34`) without the tool guessing.
+
+---
+
+## F26 — `audit_brief`'s denominator is not frozen with the brief
+
+**Status:** RESOLVED in M5b (2026-07-21) — the closure is frozen into `brief_rows` at
+composition; `audit_brief` accounts against it and reports drift as a separate, non-failing
+number.
+
+**Rows:** `contracts:41` (`audit_brief`), `contracts:68` (`compose_brief`),
+`requirements:44`, `decisions:52`, `entities:13`.
+
+**The defect.** Two contracts account the same brief against the same set at two different
+times, and only one of them is anchored:
+
+- `compose_brief` rejects with `IncompleteAccounting` when a candidate row is neither
+  included nor recorded-omitted. Denominator: the link-graph closure, computed *now*.
+- `audit_brief` compares "brief contents against the sub-task's link-graph closure" —
+  computed *at audit time*, against a plan that has kept moving. `decisions:3` makes the plan
+  a living source of truth; rows are added, superseded and revised throughout execution.
+
+So a brief that passed 100% accounting at composition reports as incomplete later, purely
+because the plan grew. `requirements:44`'s "100% accounting target" is the metric, and the
+metric drifts on its own. Worse, the two failures are indistinguishable in the output: *the
+composer skipped a row* and *the plan changed after composition* both surface as an
+unaccounted ref, and the first is a defect while the second is normal life.
+
+This also contradicts `entities:13`, which makes the brief immutable "so defect forensics can
+always answer 'what exactly did the engine see'". A brief whose accounting is measured against
+a set nobody recorded cannot answer that question: the closure the engine's brief was built
+from is not stored anywhere.
+
+**Class: missing denominator** — the second instance of F23's sub-class, and the **first catch
+by the third pre-build check** F23 proposed ("for every coverage/accounting/completeness
+check, name the set and confirm the plan says where it comes from"). Applied to
+`audit_brief`, the check does not fail on *whether* the plan defines the set — it does,
+`requirements:36`'s traversal — but on *when*, which is the same weakness one level down: an
+accounting whose denominator is re-derived at read time is measured against a moving target.
+**The check is hereby amended: name the set, say where it comes from, and say at what moment
+it is fixed.**
+
+**Resolution:** built in M5b — the closure is frozen into the brief at composition
+(`brief_rows`, one row per candidate with its included/omitted disposition). `audit_brief`
+accounts against the frozen closure, which is what `requirements:44` measures, and reports
+plan drift since composition as a *separate*, non-failing observation. Two numbers, because
+they are two different facts.

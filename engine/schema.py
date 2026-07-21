@@ -330,9 +330,15 @@ CREATE INDEX IF NOT EXISTS idx_tasks_package ON tasks (package_id);
 -- `serve_epoch` counts how many times a brief has been served for this sub-task. It is
 -- what scopes a verification verdict to the serving episode that produced it: a verdict
 -- recorded under an earlier epoch cannot satisfy a later completion. See DEFECTS.md F19(b).
+-- `contract_ref` is deliberately NOT unique. It was in M5a, and D12 removed it: after a
+-- split every part carries the same contract ref, so the constraint made `split_subtask`
+-- literally unbuildable — the second part's insert would be rejected. The constraint was
+-- never really about the contract anyway; it was expressing "nothing is owed twice", which
+-- live obligation ownership states directly and enforces exactly (idx_obligation_live_owner).
 CREATE TABLE IF NOT EXISTS subtasks (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    contract_ref  TEXT    NOT NULL UNIQUE,   -- the one contract this implements
+    contract_ref  TEXT    NOT NULL,          -- the contract this implements; shared by the
+                                             -- parts of a split (D12)
     title         TEXT    NOT NULL,
     task_id       INTEGER REFERENCES tasks (id),  -- owning task, resolved at finalization
                                                -- from the contract's belongs_to link.
@@ -349,6 +355,69 @@ CREATE TABLE IF NOT EXISTS subtasks (
 );
 
 CREATE INDEX IF NOT EXISTS idx_subtasks_state ON subtasks (state);
+
+-- The obligation surface (DEVIATIONS.md D12, fixing DEFECTS.md F23).
+--
+-- An obligation is one dischargeable commitment of a contract: the primary behaviour of its
+-- signature, or one of its enumerated error conditions. It is the denominator F23 found
+-- missing — `contracts:40` rejects a split whose parts "do not jointly cover the original's
+-- contracts", but under `decisions:63` every part names the same one contract, so the check
+-- runs, passes, and means nothing.
+--
+-- Enumerated by the *planning session* and frozen at finalization, before any split that will
+-- later be measured against it. The two rejected sources are recorded in D12: the tool
+-- deriving it from the contract's prose is the tool exercising judgment (`decisions:12`), and
+-- the splitting session declaring it at split time hands the denominator to the party being
+-- audited — which is exactly how `findings:18` was gamed.
+--
+-- Frozen does not mean unchangeable: a correction is legitimate but is a recorded,
+-- owner-visible act (`obligation_amendments`), the same friction shape as requirements:79's
+-- waiver log and D8's promotion reason. The accounting can change, but not silently.
+CREATE TABLE IF NOT EXISTS obligations (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    contract_ref TEXT    NOT NULL,      -- the contract this commitment belongs to
+    key          TEXT    NOT NULL,      -- stable id within the contract, e.g. 'behaviour'
+                                        -- or the error name ('PartsDontCover')
+    kind         TEXT    NOT NULL,      -- behaviour | error
+    statement    TEXT    NOT NULL,      -- what discharging it means
+    retired_at   TEXT,                  -- null == live; set only by a recorded amendment
+    frozen_at    TEXT    NOT NULL,
+    UNIQUE (contract_ref, key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_obligations_contract ON obligations (contract_ref, retired_at);
+
+-- Who owes what, now. Coverage is enforced here as a database invariant rather than as a
+-- procedural comparison of contract refs: the partial unique index makes "every obligation is
+-- owned by exactly one live sub-task" impossible to violate, which is what D12 buys over
+-- re-checking it at each call site.
+--
+-- Supersession rather than update, because the redistribution history IS the audit trail of
+-- the act being audited — the same reasoning as scope_attachments' promotion history.
+CREATE TABLE IF NOT EXISTS obligation_ownership (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    obligation_id INTEGER NOT NULL REFERENCES obligations (id),
+    subtask_id    INTEGER NOT NULL REFERENCES subtasks (id),
+    superseded_at TEXT,                 -- null == the live ownership
+    created_at    TEXT    NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_obligation_live_owner
+    ON obligation_ownership (obligation_id) WHERE superseded_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_obligation_owner_subtask
+    ON obligation_ownership (subtask_id, superseded_at);
+
+-- Changing a frozen enumeration. D12: legitimate, never silent. Gaming the accounting should
+-- require lying in a log the owner reads.
+CREATE TABLE IF NOT EXISTS obligation_amendments (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    obligation_id INTEGER REFERENCES obligations (id),  -- null for an addition, until written
+    contract_ref  TEXT    NOT NULL,
+    action        TEXT    NOT NULL,     -- added | retired | restated
+    reason        TEXT    NOT NULL,
+    created_at    TEXT    NOT NULL
+);
 
 -- Graph edges: this sub-task cannot start until `depends_on` is done.
 -- Derived at finalization from `depends_on`-typed links between contract rows
@@ -375,6 +444,57 @@ CREATE TABLE IF NOT EXISTS subtask_verifications (
 
 CREATE INDEX IF NOT EXISTS idx_verifications_subtask
     ON subtask_verifications (subtask_id, serve_epoch);
+
+-- The composed brief (entities:13, contracts:68). Immutable by design, so defect forensics
+-- can always answer "what exactly did the engine see". There is no lifecycle and no update
+-- path: regeneration writes a *new* brief that supersedes the old by reference, and the old
+-- stays frozen (requirements:61's bidirectional lineage, applied to a non-row entity).
+--
+-- `serve_epoch` records which serving episode the brief was composed for, so a brief is
+-- forensically attributable to the delivery it drove — the same scoping verify_completion
+-- verdicts use (DEFECTS.md F19b).
+CREATE TABLE IF NOT EXISTS briefs (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    subtask_id    INTEGER NOT NULL REFERENCES subtasks (id),
+    serve_epoch   INTEGER NOT NULL,
+    goal          TEXT    NOT NULL,     -- the sub-task goal (requirements:36)
+    is_draft      INTEGER NOT NULL DEFAULT 0,  -- requirements:40 watermark
+    supersedes    INTEGER REFERENCES briefs (id),
+    superseded_by INTEGER REFERENCES briefs (id),
+    composed_at   TEXT    NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_briefs_subtask ON briefs (subtask_id, superseded_by);
+
+-- The frozen candidate closure, one row per candidate with its disposition. This table is
+-- DEFECTS.md F26's fix and the reason it exists at all.
+--
+-- `contracts:41` audits "brief contents against the sub-task's link-graph closure". Computed
+-- at audit time that closure has moved — `decisions:3` makes the plan a living source of
+-- truth — so a brief that passed 100% accounting at composition reports as incomplete later
+-- purely because the plan grew, and "the composer skipped a row" becomes indistinguishable
+-- from "the plan changed afterwards". requirements:44's meter would drift on its own.
+--
+-- So the denominator is frozen here with the brief. audit_brief accounts against *this* set,
+-- which is what requirements:44 measures, and reports drift against the current closure as a
+-- separate, non-failing observation. Two numbers, because they are two different facts.
+--
+-- `origin` distinguishes a row reached by link-graph traversal (requirements:36) from one
+-- present because a planning session allocated it to an enclosing scope (D8). Both are
+-- candidates and both are subject to 100% accounting: an allocated row omitted with a reason
+-- is how the "too high" attachment failure becomes visible in a log the owner reads.
+CREATE TABLE IF NOT EXISTS brief_rows (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    brief_id    INTEGER NOT NULL REFERENCES briefs (id),
+    target_ref  TEXT    NOT NULL,
+    origin      TEXT    NOT NULL,       -- closure | allocation
+    disposition TEXT    NOT NULL,       -- included | omitted
+    reason      TEXT    NOT NULL DEFAULT '',  -- required on omitted (requirements:79)
+    UNIQUE (brief_id, target_ref)
+);
+
+CREATE INDEX IF NOT EXISTS idx_brief_rows_disposition
+    ON brief_rows (brief_id, disposition);
 
 -- Plan-time context allocation (DEVIATIONS.md D8, M5_PLAN.md section 2).
 --
