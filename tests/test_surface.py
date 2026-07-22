@@ -661,3 +661,14 @@ class TestSettlingADefinition:
             (surface.storage.workspace / "glossary.json").read_text(encoding="utf-8")
         )
         assert written["terms"][0]["approved"] is False
+
+    def test_an_unsettled_definition_reaches_the_planner_as_a_gap(self, surface):
+        """The gap text quotes the proposed definition and names the call that settles it,
+        so it has to survive the door like anything else the tool composes."""
+        surface.dispatch(ToolCall("define_term", {
+            "term": "widget", "definition": "the thing that settles",
+        }))
+        result = surface.dispatch(ToolCall("next_gaps", {"package": 2}))
+        assert result.ok, result.problem
+        asks = [g["ask"] for g in result.payload["gaps"]]
+        assert any("approve_term" in a and "widget" in a for a in asks)

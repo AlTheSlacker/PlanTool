@@ -1073,10 +1073,31 @@ ever had, so `contracts:8`'s success path is reachable for the first time.
 that already has one, where the two words share no letters — `packet` and `sub-task`, say.
 Nothing without judgment can see that the two mean the same thing.
 
-**One counting move would help, and is deliberately not built.** The tool could count how
-often each word appears across submitted rows, and ask the owner to define any word that
-keeps turning up without a glossary entry of its own. That is pure counting, the same shape
-as the section-coverage meter, and it converts *you must notice* into *the tool asks* — with
-the existing entries in front of him at the moment he answers, which is where a duplicate
-name gets spotted. It needs a threshold, though, and a threshold set too low asks the owner
-what "system" means. Bound to the M6 gate rather than left floating.
+**The counting rule is dead, and what replaced it is better.** The design proposed counting
+how often each word appeared across submitted rows and asking about any that recurred with no
+definition. The owner killed it on sight — *"are we going to make a glossary entry for
+'the'?"* — and the objection is not about the threshold, it is about the kind of thing being
+decided: whether a word is load-bearing is a **judgment**, and no count is a proxy for one. It
+is the same error the tool refuses everywhere else, wearing arithmetic as a disguise.
+
+His replacement puts the judgment where every other judgment in this system lives — with the
+planning session, recorded by the tool:
+
+- **Mandate clause 7**, new: when a round leaves the planner leaning on a word, propose a
+  definition for it; and ask the owner which words *they* want pinned down, the ones they
+  would be annoyed to see used loosely.
+- **`no_glossary`**, a gap at package 2: the plan has content and has agreed the meaning of
+  nothing. It asks once, where a use-case round has just made the words matter, and it is
+  dismissible — a plan whose vocabulary is genuinely uncontentious is a legitimate answer,
+  recorded on the owner's say-so rather than by silence.
+- **`unsettled_term`**, a gap per proposed definition. The same shape as an assumed-intent
+  row and for the same reason: it carries the planner's best answer, it is visible as
+  unsettled, and only the owner can close it. Keyed on the word, so a dismissal survives the
+  entry being superseded.
+
+Methodology revision stamp `plantool-rev3-2026-07-22d`, which is F31's rule — content changed,
+so the stamp moves.
+
+**What still nothing catches**, and now honestly: a word invented for a concept that already
+has one, where the two share no letters — `packet` and `sub-task`. The mandate asks a planner
+to notice; nothing mechanical does, and nothing mechanical could without judgment.

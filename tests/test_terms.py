@@ -23,6 +23,13 @@ def terms(store, rows):
     return TermService(store, rows)
 
 
+@pytest.fixture
+def gaps(store, rows):
+    from engine.gaps import GapEngine
+
+    return GapEngine(store, rows)
+
+
 def _row(rows, content, name="a row", key=None):
     receipt = rows.submit_rows(
         [RowSubmission(table="requirements", content=content, name=name)],
@@ -456,3 +463,57 @@ def test_a_migration_with_no_path_is_still_refused(store):
 
     with pytest.raises(MigrationFailed):
         store.migrate(99)
+
+
+# --- the interview asks for the words (D23, the owner's replacement for a count) ---
+
+
+def test_the_owner_is_asked_for_the_words_once_the_plan_has_content(gaps, rows):
+    """Not a count of how often a word appears — the owner killed that on sight, and was
+    right: the line between a load-bearing word and ordinary English is a judgment. The
+    planner names the words; this makes sure the owner is asked at all."""
+    assert [g.rule_key for g in gaps.open_gaps() if g.rule_key == "no_glossary"] == []
+
+    rows.submit_rows(
+        [RowSubmission(table="use_cases", content={"title": "settle a widget"},
+                       name="settle a widget")],
+        "uc",
+    )
+    asked = [g for g in gaps.open_gaps() if g.rule_key == "no_glossary"]
+    assert len(asked) == 1
+    assert "define_term" in asked[0].ask
+
+
+def test_the_question_stops_once_any_word_is_defined(gaps, rows, store):
+    rows.submit_rows(
+        [RowSubmission(table="use_cases", content={"title": "settle a widget"},
+                       name="settle a widget")],
+        "uc",
+    )
+    TermService(store).define_term("widget", "the thing that settles")
+    assert [g for g in gaps.open_gaps() if g.rule_key == "no_glossary"] == []
+
+
+def test_an_unsettled_definition_is_an_open_question_for_the_owner(gaps, store):
+    """The same shape as an assumed-intent row: it carries the planner's best answer, it
+    is visible as unsettled, and only the owner can close it."""
+    terms = TermService(store)
+    terms.define_term("widget", "the thing that settles")
+    gap = [g for g in gaps.open_gaps() if g.rule_key == "unsettled_term"][0]
+    assert "widget" in gap.ask
+    assert "the thing that settles" in gap.ask
+    assert "approve_term" in gap.ask
+
+    terms.approve_term("widget")
+    assert [g for g in gaps.open_gaps() if g.rule_key == "unsettled_term"] == []
+
+
+def test_the_question_survives_the_definition_being_rewritten(gaps, store):
+    """Keyed on the word, which is this table's identity everywhere else — so a dismissal
+    does not silently detach when the entry behind it is superseded."""
+    terms = TermService(store)
+    terms.define_term("widget", "the thing that settles")
+    first = [g for g in gaps.open_gaps() if g.rule_key == "unsettled_term"][0]
+    terms.redefine_term("widget", "the thing that settles, within 40 ms")
+    again = [g for g in gaps.open_gaps() if g.rule_key == "unsettled_term"][0]
+    assert again.key == first.key

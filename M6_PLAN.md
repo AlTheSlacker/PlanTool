@@ -174,10 +174,12 @@ planning method is DEFECTS.md F40. Definitions are **proposed by the planner and
 settled by the owner** — his instruction, 2026-07-22 — so `define_term` drafts and
 `approve_term` records him accepting or rewriting it.
 
-**One piece of §3.4 is deliberately not built:** counting how often each word appears across
-submitted rows, and asking the owner to define any word that keeps turning up with no
-glossary entry of its own. It is bound to the **M6 gate** rather than left floating, and what
-it needs is a threshold — set too low, the tool asks him what "system" means.
+**§3.4's counting rule is cancelled, not deferred** (owner, 2026-07-22: *"are we going to
+make a glossary entry for 'the'?"*). Whether a word is load-bearing is a judgment, and a
+count is not a proxy for one. Replaced by mandate clause 7 — the planner names the words a
+round made it lean on, and asks the owner which words he wants pinned down — plus two gap
+rules, `no_glossary` at package 2 and `unsettled_term` per proposed definition. Nothing is
+left open here.
 
 ### 2.8 Every row has a name — added 2026-07-22, **CLOSED 2026-07-22**
 See §6. The item that changes the most: it puts a required field on `submit_rows`, a migration
@@ -202,9 +204,8 @@ D18) and the door now resolves every call name in outgoing text against the regi
 > - Two schema departures, both so that the *word* is the identity: the replacement is
 >   `use_instead`, the word itself, not a `terms.id`; and `superseded_by` is `superseded_at`,
 >   since ordering one word's entries by id already *is* the lineage.
-> - All three delivery points below are built. The counting rule in §3.4 — ask about a word
->   that keeps appearing with no definition of its own — is **not**, and is bound to the M6
->   gate (§2.7).
+> - All three delivery points below are built. **§3.4's counting rule is cancelled** on the
+>   owner's judgment, and replaced by mandate clause 7 plus two gap rules — see §2.7.
 > - **Definitions are proposed, then settled by the owner** (his instruction, after reading
 >   the first cut): `define_term` drafts, `approve_term` accepts or replaces the wording, and
 >   a rewrite supersedes the proposal so both survive.

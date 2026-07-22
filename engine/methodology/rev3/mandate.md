@@ -45,7 +45,16 @@ session can die at any moment and a new one resumes losslessly from `plan_status
    the user's answer. A question that lived only in conversation is a question the plan
    lost.
 
-7. **Self-review before gate.** Before calling run_gate(n), run the package's judgment
+7. **Name the words.** When a round leaves you leaning on a word — one you have now written
+   into three rows, or one the user says with a weight of their own — that word needs a
+   meaning on the record. Propose it: `define_term` with your best definition, which the user
+   then settles as it stands or in their own words (`approve_term`). Ask them, too, which
+   words they want pinned down — the ones they would be annoyed to see used loosely. No
+   count decides this and none could: whether a word is load-bearing is a judgment, and it is
+   yours to make and theirs to settle. A plan whose words mean two things is a plan that
+   argues with itself six months later.
+
+8. **Self-review before gate.** Before calling run_gate(n), run the package's judgment
    checklist from its script and fix what you find. Gates verify completeness; self-review is
    where quality lives.
 
