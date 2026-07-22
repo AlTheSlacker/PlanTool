@@ -538,6 +538,44 @@ CREATE TABLE IF NOT EXISTS workspace_fingerprints (
     fingerprint  TEXT    NOT NULL,      -- JSON
     created_at  TEXT    NOT NULL
 );
+
+-- requirements:10 / uc_steps:5 — gate history, which a resuming planner is owed and which
+-- nothing recorded until M6 (DEFECTS.md F30): run_gate computed a verdict and returned it.
+-- The verdict is stored; the holes are not, because re-running the gate re-derives them
+-- mechanically and history's job is to say what happened, not to answer what is true now.
+CREATE TABLE IF NOT EXISTS gate_runs (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    package       INTEGER NOT NULL,
+    passed        INTEGER NOT NULL,
+    hole_count    INTEGER NOT NULL,
+    warning_count INTEGER NOT NULL,
+    created_at    TEXT    NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_gate_runs_package ON gate_runs (package, id);
+
+-- contracts:48 — an informal learning that is not a formal plan row (requirements:57),
+-- written durably the moment it arises and never batched to session end (requirements:56).
+-- `package` is the package current when the note was recorded: it is what bounds the digest
+-- to the working set (requirements:62) rather than to the whole life of the plan.
+CREATE TABLE IF NOT EXISTS journal_notes (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    package    INTEGER NOT NULL,
+    note       TEXT    NOT NULL,
+    task_ref   TEXT,                    -- the task the learning arose from, if any
+    created_at TEXT    NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_journal_package ON journal_notes (package, id);
+
+-- contracts:49 — the next intended action, which is the resume point a fresh planner is
+-- given (requirements:58). Append-only: the newest row is live, and the older ones are the
+-- record of what successive planners meant to do next.
+CREATE TABLE IF NOT EXISTS checkpoints (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    intent     TEXT    NOT NULL,
+    created_at TEXT    NOT NULL
+);
 """
 
 # Lexical retrieval (V2_BUILD_PLAN.md 5.4). Separate because FTS5 is a compile-time
