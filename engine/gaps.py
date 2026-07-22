@@ -410,7 +410,7 @@ class GapEngine:
 
     # --- contracts:66 ---
 
-    def dismiss_gap(self, gap_key: str, reason: str, lease=None) -> Gap:
+    def dismiss_gap(self, gap_key: str, reason: str) -> Gap:
         """Record the dismissal reason, stop surfacing the gap, keep it reversible
         (requirements:15)."""
         if not reason or not reason.strip():
@@ -427,12 +427,12 @@ class GapEngine:
                 "resolved gaps cannot be dismissed; nothing written", gap_key=gap_key
             )
 
-        self._write_overlay(gap, "dismissed", reason, lease)
+        self._write_overlay(gap, "dismissed", reason)
         return replace(gap, state="dismissed", reason=reason)
 
     # --- contracts:67 ---
 
-    def reopen_gap(self, gap_key: str, reason: str, lease=None) -> Gap:
+    def reopen_gap(self, gap_key: str, reason: str) -> Gap:
         entry = self._overlay().get(gap_key)
         if entry is None:
             raise GapNotFound("no overlay recorded for this gap", gap_key=gap_key)
@@ -447,12 +447,11 @@ class GapEngine:
                 {"state": "open", "reason": reason, "updated_at": now()},
                 where={"gap_key": gap_key})],
             key("reopen", gap_key),
-            lease=lease,
         )
         gap = self._find(gap_key, allow_missing=True)
         return replace(gap, state="open", reason=reason)
 
-    def _write_overlay(self, gap: Gap, state: str, reason: str, lease) -> None:
+    def _write_overlay(self, gap: Gap, state: str, reason: str) -> None:
         existing = self._overlay().get(gap.key)
         op = (
             Op("update", "gap_overlay",
@@ -469,7 +468,7 @@ class GapEngine:
                 "updated_at": now(),
             })
         )
-        self.storage.write_atomic([op], key(state, gap.key), lease=lease)
+        self.storage.write_atomic([op], key(state, gap.key))
 
     def _find(self, gap_key: str, allow_missing: bool = False) -> Gap:
         rule_key = gap_key.split("|")[0]

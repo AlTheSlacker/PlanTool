@@ -89,7 +89,6 @@ class AttachmentService:
         scope_level: str,
         scope_key: str = "",
         reason: str = "",
-        lease=None,
     ) -> Attachment:
         """Attach a row to a scope, keyed on its lineage root.
 
@@ -136,7 +135,7 @@ class AttachmentService:
         })
         ops.append(op)
         receipt = self.storage.write_atomic(
-            ops, key("attach", root, scope_level, scope_key or None), lease=lease
+            ops, key("attach", root, scope_level, scope_key or None)
         )
         # From the receipt, not from `op.result`: a replayed key executes no ops
         # (decisions:43). Unreachable while the key carried a timestamp.

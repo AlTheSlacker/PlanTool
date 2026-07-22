@@ -107,7 +107,7 @@ class GateEngine:
 
     # --- contracts:22 ---
 
-    def run_gate(self, package: int, lease=None) -> GateResult:
+    def run_gate(self, package: int) -> GateResult:
         low, high = self.methodology.package_range
         if isinstance(package, bool) or not isinstance(package, int) or not low <= package <= high:
             raise UnknownPackage(
@@ -137,7 +137,7 @@ class GateEngine:
         for criterion in criteria:
             holes.extend(self._evaluate(criterion))
 
-        warnings = self._raise_warnings(package, lease=lease)
+        warnings = self._raise_warnings(package)
         passed = not holes
         return GateResult(
             package=package,
@@ -185,7 +185,7 @@ class GateEngine:
 
     # --- warnings (requirements:21, decisions:31) ---
 
-    def _raise_warnings(self, package: int, lease=None) -> list[Warning]:
+    def _raise_warnings(self, package: int) -> list[Warning]:
         """Every open gap and unresolved assumption, raised as an explicit warning.
 
         Raising is idempotent on the warning key, so a deficiency that survives three
@@ -223,7 +223,6 @@ class GateEngine:
                 kind="open_gap",
                 message=f"open gap ({gap.rule_key}): {gap.ask}",
                 source_ref=gap.target,
-                lease=lease,
             )
         for row in self._open_assumptions():
             root = self.gaps.lineage_root(row.ref)
@@ -236,12 +235,11 @@ class GateEngine:
                     f"{title_of(row)}"
                 ),
                 source_ref=row.ref,
-                lease=lease,
             )
-        self._clear_settled_warnings(lease=lease)
+        self._clear_settled_warnings()
         return self.warnings.active_warnings()
 
-    def _clear_settled_warnings(self, lease=None) -> None:
+    def _clear_settled_warnings(self) -> None:
         """Retire warnings whose underlying condition no longer holds.
 
         Without this, the ledger only ever grows: the first drive showed a
@@ -267,7 +265,6 @@ class GateEngine:
             self.warnings.settle_warning(
                 warning.id,
                 "the condition that raised this warning no longer holds",
-                lease=lease,
             )
 
     def _open_assumptions(self) -> list[PlanRow]:

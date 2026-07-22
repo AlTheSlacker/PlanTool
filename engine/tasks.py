@@ -314,7 +314,7 @@ class TaskGraphService:
 
     # --- the package/task levels (DEVIATIONS.md D13, GLOSSARY.md) ---
 
-    def declare_package(self, name: str, intent: str = "", lease=None) -> Package:
+    def declare_package(self, name: str, intent: str = "") -> Package:
         """Declare a build package — "the GUI", "the controller", "the persistence layer".
 
         The **only** level a human chooses rather than derives, which is why it is the only
@@ -328,10 +328,10 @@ class TaskGraphService:
         op = Op("insert", "packages", {
             "name": name, "intent": intent, "created_at": stamp, "updated_at": stamp,
         })
-        self.storage.write_atomic([op], key("package", name), lease=lease)
+        self.storage.write_atomic([op], key("package", name))
         return Package(id=op.result["id"], name=name, intent=intent, created_at=stamp)
 
-    def assign_task(self, source_ref: RowRef | str, package_id: int, lease=None) -> Task:
+    def assign_task(self, source_ref: RowRef | str, package_id: int) -> Task:
         """Place the task described by `source_ref` into a package — the recorded
         judgment. `source_ref` is a `components:N` row: that is the frozen plan's
         read-only spelling of **task**, one entity with one id space (`GLOSSARY.md`)."""
@@ -356,13 +356,13 @@ class TaskGraphService:
             op = Op("update", "tasks",
                     {"package_id": package_id, "updated_at": stamp},
                     where={"id": existing[0]["id"]})
-            self.storage.write_atomic([op], key("task", ref, package_id), lease=lease)
+            self.storage.write_atomic([op], key("task", ref, package_id))
             return Task(existing[0]["id"], ref, name, package_id)
         op = Op("insert", "tasks", {
             "source_ref": ref, "name": name, "package_id": package_id,
             "created_at": stamp, "updated_at": stamp,
         })
-        self.storage.write_atomic([op], key("task", ref, package_id), lease=lease)
+        self.storage.write_atomic([op], key("task", ref, package_id))
         return Task(op.result["id"], ref, name, package_id)
 
     def _guard_packaging(self) -> None:
@@ -394,7 +394,7 @@ class TaskGraphService:
 
     # --- contracts:35 ---
 
-    def finalize_plan(self, lease=None, required_packages: list[int] | None = None) -> TaskGraph:
+    def finalize_plan(self, required_packages: list[int] | None = None) -> TaskGraph:
         """Derive the task graph and move the plan out of `draft`.
 
         This is the sole contract firing `state_machines:1`'s `finalize` event
@@ -439,7 +439,7 @@ class TaskGraphService:
                 ))
             else:
                 unenumerated.append(str(ref))
-        self.storage.write_atomic(ops, key("finalize", "nodes"), lease=lease)
+        self.storage.write_atomic(ops, key("finalize", "nodes"))
 
         by_ref = {str(s.contract_ref): s.id for s in self._all()}
         dep_ops = [
@@ -450,9 +450,9 @@ class TaskGraphService:
             for consumer, provider in edges
         ]
         dep_ops.append(Op("update", "plan", {"state": "finalized"}, where={"guard": 1}))
-        self.storage.write_atomic(dep_ops, key("finalize", "edges"), lease=lease)
+        self.storage.write_atomic(dep_ops, key("finalize", "edges"))
 
-        self._capture_fingerprint("finalization", lease=lease)
+        self._capture_fingerprint("finalization")
 
         subtasks = self._all()
         ordered = [by_ref[str(ref)] for ref in order]
@@ -710,7 +710,7 @@ class TaskGraphService:
 
     # --- DEFECTS.md F18's missing `serve_brief` ---
 
-    def serve_brief(self, subtask_id: int, lease=None) -> SubTask:
+    def serve_brief(self, subtask_id: int) -> SubTask:
         """Fire `serve_brief` (sm_cells:137) at the moment a brief is handed over.
 
         Separate from `next_subtask` because candidacy is not delivery: a sub-task may be
@@ -732,14 +732,14 @@ class TaskGraphService:
                 "serve_epoch": subtask.serve_epoch + 1,
                 "updated_at": stamp},
                where={"id": subtask_id}),
-        ], key("serve", subtask_id, subtask.serve_epoch + 1), lease=lease)
-        self._capture_fingerprint("brief_issue", subtask_id=subtask_id, lease=lease)
+        ], key("serve", subtask_id, subtask.serve_epoch + 1))
+        self._capture_fingerprint("brief_issue", subtask_id=subtask_id)
         return self.get(subtask_id)
 
     # --- contracts:62 ---
 
     def verify_completion(
-        self, subtask_id: int, evidence: dict[str, str], lease=None
+        self, subtask_id: int, evidence: dict[str, str]
     ) -> VerificationVerdict:
         """Check delivered evidence against every contract in the sub-task's scope.
 
@@ -772,7 +772,7 @@ class TaskGraphService:
                 "unaccounted": json.dumps(list(unaccounted)) if unaccounted else None,
                 "created_at": now(),
             }),
-        ], key("verify", subtask_id, subtask.serve_epoch), lease=lease)
+        ], key("verify", subtask_id, subtask.serve_epoch))
 
         if unaccounted:
             raise EvidenceIncomplete(
@@ -825,7 +825,7 @@ class TaskGraphService:
     # --- contracts:60 ---
 
     def report_status(
-        self, subtask_id: int, status: str, detail: str = "", lease=None
+        self, subtask_id: int, status: str, detail: str = ""
     ) -> SubTask:
         """The code engine's half of crud_grid:35: what it observed, not what it is owed.
 
@@ -870,7 +870,6 @@ class TaskGraphService:
         self.storage.write_atomic(
             [Op("update", "subtasks", values, where={"id": subtask_id})],
             key("report", subtask_id, status, subtask.state),
-            lease=lease,
         )
         return self.get(subtask_id)
 
@@ -901,7 +900,7 @@ class TaskGraphService:
     # --- requirements:73 ---
 
     def _capture_fingerprint(
-        self, occasion: str, subtask_id: int | None = None, lease=None
+        self, occasion: str, subtask_id: int | None = None
     ) -> None:
         """The drift baseline. Captured at finalization and at each brief issue, which is
         what makes plan_status's drift flags computable at all — before this contract
@@ -921,7 +920,7 @@ class TaskGraphService:
                 "fingerprint": json.dumps(fingerprint, sort_keys=True),
                 "created_at": stamp,
             }),
-        ], key("fingerprint", occasion, subtask_id, handle.get("version") or 1), lease=lease)
+        ], key("fingerprint", occasion, subtask_id, handle.get("version") or 1))
 
     def _resurfaced_warnings(self) -> list[str]:
         """requirements:23 — finalization is a critical point, so suppressed warnings

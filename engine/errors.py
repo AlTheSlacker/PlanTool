@@ -56,25 +56,9 @@ class MigrationFailed(PlanToolError):
     """contracts:8 — pre-migration snapshot restored; silent migration is forbidden."""
 
 
-class LockHeld(PlanToolError):
-    """contracts:63 — another live session holds the lock.
-
-    Names the holder and lease age. A lock silent 10+ minutes is claimable
-    (decisions:44).
-    """
-
-
-class LeaseLost(PlanToolError):
-    """contracts:53 — the lease expired or was claimed by another session.
-
-    requirements:68 — enforcement sits at the write boundary: every write validates the
-    lease inside the same transaction that would apply it, so a stale holder's next
-    write is rejected atomically.
-    """
-
-
-class WriterLockLost(LeaseLost):
-    """contracts:2 — write rejected because the lease was lost; nothing was written."""
+# The writer-lock errors (LockHeld, LeaseLost, WriterLockLost) were removed on
+# 2026-07-22 with the writer lock itself. See engine/storage.py's module docstring for
+# why the lock is gone and why it should not come back.
 
 
 # --- row-service (components:2) ---

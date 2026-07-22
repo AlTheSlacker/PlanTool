@@ -1116,9 +1116,10 @@ complete the sweep that was believed finished.
 - records every exception in `GLOSSARY.md` **with a reason**, so an exception is a visible act
   — the same friction shape as `requirements:79`'s waiver log and D8's promotion reason.
 
-**Exactly one exception survives** (`writer_lease.session_id`, exempted by the rule's own
-text). Two more were proposed on the day and the owner refused both, which is the part worth
-remembering:
+**One exception survived the day** (`writer_lease.session_id`, exempted by the rule's own
+text) and it is gone too: the writer lock was removed on 2026-07-22 and took its only `session`
+identifier with it, so the banned list now has no exceptions at all. Two more were proposed on
+the day and the owner refused both, which is the part worth remembering:
 
 - **`PartsDontCover`** was kept as a "quotation" of `contracts:40`'s declared error name,
   on the strength of `errors.py`'s convention that a contract's error name is the class name.

@@ -176,7 +176,6 @@ class ReferenceService:
         year: int | None = None,
         identifier: str | None = None,
         path: str | None = None,
-        lease=None,
     ) -> RowRef:
         """Store a source and its full text.
 
@@ -237,7 +236,7 @@ class ReferenceService:
             })
         )
 
-        receipt = self.storage.write_atomic(ops, idempotency_key, lease=lease)
+        receipt = self.storage.write_atomic(ops, idempotency_key)
         if not receipt.get("replayed"):
             self._index_text(content_hash, text)
         return RowRef.parse(receipt["results"][-1]["ref"])
@@ -263,7 +262,6 @@ class ReferenceService:
         paraphrase: str | None = None,
         links: list[LinkSpec] | None = None,
         context_chars: int = 240,
-        lease=None,
     ) -> RowRef:
         """File an extract, refusing any quote that is not in the source.
 
@@ -319,7 +317,7 @@ class ReferenceService:
             provenance=Provenance.DERIVED,
             links=[LinkSpec(source_ref, "cites"), *(links or [])],
         )
-        receipt = self.rows.submit_rows([submission], idempotency_key, lease=lease)
+        receipt = self.rows.submit_rows([submission], idempotency_key)
         verdict = receipt.verdicts[0]
         if not verdict.accepted:
             raise QuoteNotVerified(

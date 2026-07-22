@@ -184,7 +184,7 @@ class BriefComposer:
     # --- contracts:68 ---
 
     def compose_brief(
-        self, subtask_id: int, selection: BriefSelection, lease=None
+        self, subtask_id: int, selection: BriefSelection
     ) -> Brief:
         """Record the planning session's selection as an immutable brief.
 
@@ -263,7 +263,6 @@ class BriefComposer:
                 subtask.serve_epoch,
                 previous.id if previous else 0,
             ),
-            lease=lease,
         )
         # Read the id off the receipt, not off `ops[0].result`. On a replayed key the ops
         # were never executed and carry no result — decisions:43, and the same reason
@@ -380,7 +379,7 @@ class BriefComposer:
     # --- contracts:40 ---
 
     def split_subtask(
-        self, subtask_id: int, into: list[tuple[str, list[int]]], lease=None
+        self, subtask_id: int, into: list[tuple[str, list[int]]]
     ) -> list:
         """Divide a sub-task whose brief proved too large; silent trimming is never a
         remedy (`requirements:37`).
@@ -452,7 +451,7 @@ class BriefComposer:
                 "created_at": stamp,
                 "updated_at": stamp,
             }))
-        self.storage.write_atomic(ops, key("split", subtask_id, "nodes"), lease=lease)
+        self.storage.write_atomic(ops, key("split", subtask_id, "nodes"))
 
         new_ids = [ops[i].result["id"] for i in node_indexes]
         by_subtask = {new_ids[i]: ids for i, (_, ids) in enumerate(into)}
@@ -484,7 +483,7 @@ class BriefComposer:
                     "subtask_id": consumer, "depends_on": new_id,
                 }))
         wiring.extend(self.obligations.redistribute_ops(subtask_id, by_subtask))
-        self.storage.write_atomic(wiring, key("split", subtask_id, "wiring"), lease=lease)
+        self.storage.write_atomic(wiring, key("split", subtask_id, "wiring"))
 
         return [self.tasks.get(new_id) for new_id in new_ids]
 

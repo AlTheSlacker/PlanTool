@@ -89,7 +89,27 @@ dependency-heavy and of unproven value, and the manual path works on day one.
 
 ---
 
-## D5 — Writer lock is a database lease, not an O_EXCL lock file
+## D5 — There is no writer lock (superseded 2026-07-22)
+
+**Superseding decision, owner's ruling 2026-07-22: the writer lock is removed entirely,
+and this deviation is moot.** Both the plan's design and the one below argued about *how*
+to lock; neither asked whether the tool needs locking. It does not. The owner plans in one
+session and will never run two, so the lock protected against a situation that cannot
+arise, at the cost of a `lease` parameter on nearly every write in the engine and a
+ten-minute silence rule that let elapsed time decide who owned the data. SQLite locks the
+file for the duration of a write regardless, so nothing guards against corruption that
+was not already guarded.
+
+`contracts:63`, `contracts:53`, `contracts:54`, `decisions:44` and `decisions:58` are
+therefore **not implemented**, deliberately. `requirements:67`/`68` are moot: they
+constrain how two simultaneous writers must be arbitrated, and there is only ever one.
+
+The original deviation is kept below because it records why the plan's file-based design
+was rejected, which still holds if locking is ever genuinely needed.
+
+---
+
+### Original entry — writer lock as a database lease, not an O_EXCL lock file
 
 **Plan:** `contracts:63` — the writer lock is "claimed via atomic O_EXCL create", with
 `decisions:58` adding sharing-violation retries on network mounts, and

@@ -75,7 +75,7 @@ class RowService:
     # --- contracts:9 ---
 
     def submit_rows(
-        self, batch: list[RowSubmission], idempotency_key: str, lease=None
+        self, batch: list[RowSubmission], idempotency_key: str
     ) -> BatchReceipt:
         """Submit a batch of rows.
 
@@ -198,7 +198,7 @@ class RowService:
                     )
                 )
 
-        receipt = self.storage.write_atomic(ops, idempotency_key, lease=lease)
+        receipt = self.storage.write_atomic(ops, idempotency_key)
 
         # Read assignments from the receipt, not from the ops: on an idempotent replay
         # the ops were never executed and carry no results, but the stored receipt has
@@ -484,7 +484,6 @@ class RowService:
         quote: str,
         resolution: str,
         idempotency_key: str,
-        lease=None,
         retire_reason: str | None = None,
     ) -> PlanRow:
         """Upgrade the SAME row in place to decided, with the owner's answer quoted.
@@ -537,7 +536,7 @@ class RowService:
 
         op = Op("update", "plan_rows", values,
                 where={"table_name": ref.table, "ordinal": ref.ordinal})
-        receipt = self.storage.write_atomic([op], idempotency_key, lease=lease)
+        receipt = self.storage.write_atomic([op], idempotency_key)
         result = receipt["results"][0]
         if result is not None and result.get("rows") == 0:
             raise UpgradeFailed("upgrade could not be applied", ref=str(ref))
@@ -550,7 +549,6 @@ class RowService:
         old: RowRef | str,
         replacement: RowSubmission,
         idempotency_key: str,
-        lease=None,
     ) -> dict[str, Any]:
         """requirements:61 — the replacement is created with a supersedes pointer, the
         old row is stamped once with superseded_by and a timestamp, and content is
@@ -581,7 +579,7 @@ class RowService:
                 "created_at": stamp,
             },
         )
-        receipt = self.storage.write_atomic([insert], idempotency_key, lease=lease)
+        receipt = self.storage.write_atomic([insert], idempotency_key)
         new_ref = RowRef.parse(receipt["results"][0]["ref"])
 
         stamp_old = Op(
@@ -592,14 +590,14 @@ class RowService:
             where={"table_name": old.table, "ordinal": old.ordinal},
         )
         self.storage.write_atomic(
-            [stamp_old], key(idempotency_key, "stamp"), lease=lease
+            [stamp_old], key(idempotency_key, "stamp")
         )
         return {"old": old, "new": new_ref, "superseded_at": stamp}
 
     # --- contracts:13 ---
 
     def retire_row(
-        self, ref: RowRef | str, reason: str, idempotency_key: str, lease=None
+        self, ref: RowRef | str, reason: str, idempotency_key: str
     ) -> PlanRow:
         ref = RowRef.coerce(ref)
         row = self._row(ref)
@@ -618,5 +616,5 @@ class RowService:
              "retire_reason": reason},
             where={"table_name": ref.table, "ordinal": ref.ordinal},
         )
-        self.storage.write_atomic([op], idempotency_key, lease=lease)
+        self.storage.write_atomic([op], idempotency_key)
         return self.get(ref)

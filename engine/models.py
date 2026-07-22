@@ -256,12 +256,3 @@ class Closure:
     reached: tuple[RowRef, ...]
     depth_of: dict[str, int]
 
-
-@dataclass(frozen=True, slots=True)
-class Lease:
-    """The writer lock's lease (contracts:63, requirements:67/68)."""
-
-    lease_key: str
-    session_key: str
-    created_at: str
-    updated_at: str
