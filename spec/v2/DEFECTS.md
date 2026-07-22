@@ -1301,3 +1301,96 @@ with a comment explaining why, ten feet away.
 `parts` — a word retired the previous day, by me, in a session about retired words leaking in
 at the point of least attention. `tests/test_vocabulary.py` failed the suite in 0.1s. The rule
 was fully in mind and still broken; the mechanism is what held.
+
+---
+
+## F30 — Gate history has three readers and no writer
+
+**Found:** 2026-07-22, at M6's pre-build audit, before `engine/resume.py` existed.
+
+**The promise, made three times.** `uc_steps:5` — the tool returns "stage, gate history,
+warnings, mandate, current script". `requirements:10` — a planner opening a workspace gets
+back "current stage, gate history, outstanding warnings…". `contracts:64` — `plan_status`
+serves a digest including "gate history". A resuming planner is owed the record of which
+gates have been run and how they went.
+
+**What was there instead.** `run_gate` evaluated the criteria, raised its warnings, built a
+`GateResult` and returned it. Nothing stored it. No table, no column, no contract. The verdict
+existed for the duration of one call and was then unrecoverable, so a planner resuming after a
+context clear could not learn that package 3 had been gated at all, let alone that it had
+failed twice on the same hole.
+
+**Why the existing checks did not catch it.** The three pre-build checks look at the plan's
+*contracts* — a state-machine event with no contract firing it, an outcome unreachable from
+any state, an accounting with no denominator. This is none of those. Every contract here is
+well-formed; the gap is between two of them, and it is directional: `contracts:64` consumes a
+thing that `contracts:22` was never asked to produce. It is the mirror image of the
+schema-only fix (a write path with no reader) recorded at M5a, and the two together suggest
+the general question worth asking of any digest field: **which contract writes this, and does
+its signature admit that it did?**
+
+It was found by reading `contracts:64` field by field and asking where each one would come
+from — which is what the audit is for, and it took about a minute once the question was posed
+that way.
+
+**Resolution.** A `gate_runs` table; `GateEngine._record_run` writes one row per run, keyed by
+how many runs that package already has so that a re-run records a second verdict rather than
+replaying the first. The *holes* are deliberately not stored: re-running the gate re-derives
+them mechanically and deterministically (`requirements:46`), and history's job is to say what
+happened, not to answer what is true now. `plan_status` shows the newest verdict per package
+and counts the rest, naming `gate_runs()` — otherwise the history grows without bound and
+breaks the compactness `requirements:62` requires, which is exactly what the driver showed on
+its first run.
+
+---
+
+## F31 — Methodology rev 3 identified itself as rev 2
+
+**Found:** 2026-07-22, by reading a line of driver output that said
+`methodology plantool-rev2-2026-07-15` while the engine was loading `rev3/`.
+
+**The promise.** `requirements:71` ships the methodology as versioned content assets carrying
+a **content-revision stamp**, with an update path that migrates a plan from one revision to
+the next. `decisions:61` vendors the content rather than inventing it, and the stamp is what
+makes "which methodology produced this plan?" answerable at all. It was the red team's
+pre-answer to the fossilization premortem in `findings:4`.
+
+**What was there instead.** `rev3/manifest.yaml` was created by copying `rev2/manifest.yaml`,
+and the copy included `revision: 2` and `revision_stamp: "plantool-rev2-2026-07-15"` — along
+with a header paragraph explaining that this file was rev 2 and that rev 3 would come later.
+The content diverged (the vocabulary sweep of D14 landed in rev 3 and not rev 2); the identity
+did not. Every caller asking which revision was in force got the wrong answer, `load(3)` and
+`load(2)` reported the same stamp, and the migration path `requirements:71` requires had no
+way to tell the two apart.
+
+**The shape, which is now familiar.** The stamp is a *denominator for identity*, and it was
+derived from the thing it was supposed to distinguish. Nothing failed: every read succeeded,
+every test passed, and the wrong answer was well-formed. This is the same silent-success class
+as F23, F28 and F29 — and, like F29, it was produced by copying rather than by reasoning, at
+the point of least attention.
+
+**A test asserted the stamp, and asserted the wrong one.** My first write-up of this entry
+said no test could have failed on it. That was wrong, and the truth is worse:
+`tests/test_guidance.py` had a test called `test_script_carries_the_revision_stamp` whose body
+was `assert script.revision_stamp == "plantool-rev2-2026-07-15"` — a **literal**, checked
+against whatever revision happened to be default. When the default moved to rev 3 the test
+kept passing, because rev 3 was answering with rev 2's string. The one test standing guard
+over the identity mechanism had been handed the copy and told to confirm it.
+
+That is the reusable lesson, and it is sharper than the defect: **a test that asserts a copied
+literal cannot detect that the literal was copied.** Its replacement asserts the
+*relationship* — the stamp of revision N contains `revN` — which no amount of copying can
+satisfy accidentally. Fixing the manifest without fixing the test would have left the next
+revision free to repeat this exactly.
+
+**How it surfaced.** Not from the suite, which was green and complicit. `plan_status` prints
+the revision in its digest, the driver printed the digest, and a person read the line. Third
+consecutive build package where driving the engine end to end found what the tests could not,
+and the first where the finding was in a *data* asset rather than in code.
+
+**Resolution.** `rev3/manifest.yaml` now declares `revision: 3` and
+`revision_stamp: "plantool-rev3-2026-07-21"`, and its header states that changing content
+means changing the stamp. The drift baseline (`engine/fingerprint.py`) carries the stamp, so a
+plan whose methodology changed under it is now visible as drift at resume — which was the
+mechanism `requirements:71` intended and which could not have worked while every revision
+answered with the same string.

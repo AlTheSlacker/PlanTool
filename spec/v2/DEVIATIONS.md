@@ -104,6 +104,16 @@ was not already guarded.
 therefore **not implemented**, deliberately. `requirements:67`/`68` are moot: they
 constrain how two simultaneous writers must be arbitrated, and there is only ever one.
 
+**`requirements:70` and `findings:12` are moot for the same reason** — noticed at M6's
+pre-build audit, 2026-07-22, and added here because the deletion swept the mechanism and left
+this consequence unstated. `requirements:70` parks a checkpoint-class write in a spill journal
+when the writer lock rejects it, and reconciles it on the next lock acquisition. With no lock
+there is no contention, no rejection, and nothing to park; `findings:12`'s collision between
+zero-loss checkpointing and single-writer rejection dissolved along with the lock that caused
+it. The zero-loss guarantee itself (`requirements:56`/`60`) is untouched and is what
+`session-service` builds: every checkpoint is written durably at the moment the unit
+completes.
+
 The original deviation is kept below because it records why the plan's file-based design
 was rejected, which still holds if locking is ever genuinely needed.
 
@@ -685,3 +695,49 @@ enforcement.
 
 **Related:** D15; `requirements:5`, `requirements:26`, `contracts:11`, `contracts:30`,
 `decisions:61`, `findings:4`.
+
+---
+
+## D17 — The digest points at what it stands for; it never carries it
+
+**Decided 2026-07-22 by the owner**, settling the two questions M6 was hard-locked on:
+whether `plan_status` returns the mandate and package script by value or by reference, and
+whether the digest names what to fetch.
+
+**Plan:** `requirements:10` says a session opening in a workspace with a plan gets back "the
+full plan state: current stage, gate history, outstanding warnings, the engineer's mandate,
+the current stage script, and row contents on demand". Read plainly, the mandate and the
+current script come back as text.
+
+**v2:** `plan_status` names them and the calls that fetch them — `get_mandate`,
+`get_package_script` — and carries neither. It carries no row content either. Every count it
+reports is accompanied by the call that retrieves what the count stands for, and the digest
+closes by stating the single next action in a sentence.
+
+**Why, on the by-reference half.** The two documents total about 7 KB and change only when
+the methodology revision changes. They need to reach a session **once**, and the only party
+who knows whether they have already arrived is the caller. Attaching them to every call
+spends that 7 KB on every mid-package status check, which is most calls.
+
+The reasoning that produced the question is worth recording, because it was wrong in an
+instructive way. Three options were weighed — by value, by reference, and by value on the
+first call only — and all three assumed the *tool* had to work out when the documents were
+needed. The third was an attempt to make the tool remember who had called it, which is
+session state, the exact thing this build spent M6b deleting. The caller already holds the
+knowledge. Nothing needs remembering, and the question dissolves rather than being traded off.
+
+`requirements:62` is the row that agrees: rehydration is a compact digest plus targeted
+reads, and a full dump is never the default path. `requirements:10`'s list is what a resuming
+session must be able to *reach*, not what must arrive in one payload.
+
+**Why, on the naming half — this is the part that does the safety work.** A count on its own
+invites a session to reason about the number instead of reading what it counts: *only three
+warnings, that's fine.* And a resuming session handed a tidy summary with no instruction
+invents a plausible next step rather than asking for one. Both are the same failure — read
+the digest, feel informed, fetch nothing, proceed on a summary — and it is F14's shape: a
+check that ran, passed, and meant nothing. `requirements:58`'s "next intended action" stops
+being a stored string and becomes the digest's closing sentence.
+
+**The cost, stated.** By reference is one extra round trip at the start of every cold
+session. That is the whole price, and it buys a status call that stays small for the life of
+the plan.

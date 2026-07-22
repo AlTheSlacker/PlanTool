@@ -39,8 +39,8 @@ session):
 | **When does contract ownership bite?** — the other six containment relations are enforced at submission; `contracts`→`components` is enforced at finalization (F24). One relation, two moments. Owner's call, not a side effect | **M7 gate** |
 | **Methodology rev 3, second half** — rev 3 carries v2's vocabulary but still names v1's tool surface (`submit_use_cases`, …) | **M6 gate** |
 | F17 — prose row citations break on supersession | M6 gate |
-| §4 Q1 — mandate/script by value or reference | M6 gate |
-| §4 Q2 — digest names what to fetch | M6 gate |
+| ~~§4 Q1 — mandate/script by value or reference~~ | **DECIDED 2026-07-22** as **D17** — by reference; the digest names the fetching call and carries no text |
+| ~~§4 Q2 — digest names what to fetch~~ | **DECIDED 2026-07-22** as **D17** — every count names its fetching call, and the digest closes by stating the next action |
 | ~~D9 — gates hard-lock on outstanding problems (product form)~~ | **DECIDED 2026-07-21** as **D15** — a gate locks on what was allocated to it; `resolve_by` required at creation. Build outstanding in M6 |
 | **D16 — assumptions attacked on arrival** — a world-assumption cannot be filed without a spike registered atomically; accepted risk admissible only after a concluded spike | **M6 gate** |
 | **Glossary delivery to the writer** — F27: a plan's vocabulary is enforced at the moment of writing or not at all. How does a plan's own glossary reach the code engine, and should `compose_brief` carry it as a first-class section rather than as a row that can be omitted? | **M6 gate** |

@@ -14,8 +14,11 @@ Three rules shape this module, and every design choice below follows from one of
     "is this *good*?", it does not belong in a gate.
 
   requirements:46 — results are deterministic. Criteria evaluate in file order, holes
-    emit in row order, and nothing here reads a clock or a random source. Running the
-    same gate twice against an unchanged plan returns the same result.
+    emit in row order, and no criterion reads a clock or a random source. Running the
+    same gate twice against an unchanged plan returns the same result. Since M6 the run
+    is also *recorded*, with a timestamp — that is history being written after the
+    verdict is decided, and nothing in the evaluation reads it back. A clock may record
+    what happened; it never decides what happens (engine/clock.py).
 
   decisions:31 — gates warn, they do not block, on open gaps and unresolved
     assumptions. The one thing that *does* block is an open conflict contesting a row
@@ -29,8 +32,11 @@ from dataclasses import dataclass
 from itertools import product
 from typing import Any
 
+from engine.clock import now
 from engine.conflicts import Conflict, ConflictService, GateScope
 from engine.errors import PlanToolError
+from engine.idempotency import key
+from engine.storage import Op
 from engine.gaps import GapEngine, title_of
 from engine.methodology import Criterion, Methodology, load
 from engine.models import PlanRow, RowRef, RowSelector, RowState
@@ -139,6 +145,7 @@ class GateEngine:
 
         warnings = self._raise_warnings(package)
         passed = not holes
+        self._record_run(package, passed, len(holes), len(warnings))
         return GateResult(
             package=package,
             passed=passed,
@@ -146,6 +153,34 @@ class GateEngine:
             warnings=tuple(warnings),
             cross_checks_run=tuple(c.id for c in criteria if c.cross_check),
             next_package=package + 1 if passed and package < high else None,
+        )
+
+    def _record_run(
+        self, package: int, passed: bool, hole_count: int, warning_count: int
+    ) -> None:
+        """Write the verdict to the gate history a resuming planner reads.
+
+        `requirements:10` and `uc_steps:5` both promise gate history on session open and
+        nothing stored one until M6 (DEFECTS.md F30) — the verdict was computed, returned
+        and forgotten, so the promise had a reader and no writer.
+
+        The key is discriminated by how many runs this package already has, which is the
+        "attempt number" `engine/idempotency.py` asks for. Running the same gate twice is
+        a legitimate repeat that must produce two rows: history that collapsed re-runs
+        would show a package passing without ever showing that it had failed first.
+        """
+        sequence = self.storage.query(
+            "SELECT COUNT(*) AS n FROM gate_runs WHERE package = ?", (package,)
+        )[0]["n"]
+        self.storage.write_atomic(
+            [Op("insert", "gate_runs", {
+                "package": package,
+                "passed": 1 if passed else 0,
+                "hole_count": hole_count,
+                "warning_count": warning_count,
+                "created_at": now(),
+            })],
+            key("gate_run", package, sequence),
         )
 
     def scope(self, package: int) -> GateScope:
