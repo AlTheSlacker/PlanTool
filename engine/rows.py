@@ -35,6 +35,7 @@ from engine.models import (
     RowState,
     RowSubmission,
     RowVerdict,
+    content_fingerprint,
 )
 from engine.clock import now
 from engine.idempotency import key
@@ -109,6 +110,8 @@ class RowService:
             problem = self._validate(submission, index, len(batch))
             if problem is None:
                 problem = self._containment_problem(submission, batch)
+            if problem is None:
+                problem = self._duplicate_name_problem(submission, index, batch)
             if problem is not None:
                 problems[index] = problem
                 continue
@@ -155,6 +158,8 @@ class RowService:
                     {
                         "table_name": submission.table,
                         "content": json.dumps(submission.content),
+                        "name": submission.name.strip(),
+                        "named_for": content_fingerprint(submission.content),
                         "provenance": str(submission.provenance),
                         "assumption_kind": submission.assumption_kind,
                         "state": str(submission.initial_state()),
@@ -243,6 +248,13 @@ class RowService:
             return f"table name {submission.table!r} is not a valid identifier"
         if not isinstance(submission.content, dict) or not submission.content:
             return "content must be a non-empty object"
+        if not submission.name or not submission.name.strip():
+            return (
+                "every row needs a name: a short phrase saying what this row is. The row "
+                "is addressed as table:ordinal, and an address on its own makes the reader "
+                "go and look it up — so the name is what gets shown and the address rides "
+                "alongside it"
+            )
         if submission.provenance is Provenance.ASSUMED and not submission.assumption_kind:
             return (
                 "an assumed row must carry an assumption_kind (requirements:5); "
@@ -265,6 +277,65 @@ class RowService:
                     return "a row cannot link to itself"
             elif self._row(link.target) is None:
                 return f"link target {link.target} does not exist"
+        return None
+
+    def _duplicate_name_problem(
+        self, submission: RowSubmission, index: int, batch: list[RowSubmission]
+    ) -> str | None:
+        """No two live rows in one table share a name (M6_PLAN.md §6.5).
+
+        The database enforces this with a partial unique index; this check exists so the
+        planner gets told which row it collided with and why, rather than an integrity
+        error naming a constraint. A duplicate is a real signal every time — either the
+        same thing has been filed twice, or there are two things and nobody has
+        distinguished them.
+
+        Checked against the batch as well as the store, because two identically named
+        rows arriving together is the same collision and the index would reject the
+        second one with no explanation of the first.
+        """
+        name = submission.name.strip()
+
+        for other_index, other in enumerate(batch):
+            if other_index >= index or other.table != submission.table:
+                continue
+            if other.name.strip().casefold() == name.casefold():
+                return (
+                    f"another row in this batch (index {other_index}) is already named "
+                    f"{other.name.strip()!r} in {submission.table}. Two live rows in a "
+                    f"table cannot share a name: either this is the same thing filed "
+                    f"twice, or they are two things and need names that tell them apart"
+                )
+
+        clash = self._live_name_clash(submission.table, name)
+        if clash:
+            existing = RowRef(submission.table, clash["ordinal"])
+            return (
+                f"{clash['name']} ({existing}) already has this name. Two live rows "
+                f"in a table cannot share a name: either this is the same thing filed "
+                f"twice — supersede it instead — or they are two things and need names "
+                f"that tell them apart"
+            )
+        return None
+
+    def _live_name_clash(
+        self, table: str, name: str, exclude_ordinal: int | None = None
+    ) -> dict[str, Any] | None:
+        """The live row in `table` already holding `name`, if any.
+
+        One owner for the liveness-scoped name lookup, used by submission and by the
+        in-place upgrade. Case-insensitive: two rows differing only in capitalisation are
+        the collision this exists to catch, not two distinct names.
+        """
+        found = self.storage.query(
+            "SELECT ordinal, name FROM plan_rows WHERE table_name = ? "
+            "AND superseded_by IS NULL AND state != 'retired' "
+            "AND lower(name) = lower(?)",
+            (table, name.strip()),
+        )
+        for row in found:
+            if exclude_ordinal is None or row["ordinal"] != exclude_ordinal:
+                return dict(row)
         return None
 
     def _containment_problem(
@@ -461,6 +532,7 @@ class RowService:
         return PlanRow(
             ref=ref,
             content=json.loads(row["content"]),
+            name=row["name"],
             provenance=Provenance(row["provenance"]),
             state=RowState(row["state"]),
             created_at=row["created_at"],
@@ -485,6 +557,7 @@ class RowService:
         resolution: str,
         idempotency_key: str,
         retire_reason: str | None = None,
+        name: str | None = None,
     ) -> PlanRow:
         """Upgrade the SAME row in place to decided, with the owner's answer quoted.
 
@@ -496,6 +569,17 @@ class RowService:
         thing that can settle an assumption: validation-service closes world-assumptions
         from spike evidence (requirements:25), and recording those as "rejected by the
         owner" would put a falsehood in the audit trail. See DEFECTS.md F14.
+
+        `name` is **required when the resolution is `revise`** and optional otherwise
+        (M6_PLAN.md §6.6). This is the one write that changes a live row's content in
+        place, so it is the one write where a name can quietly stop being true. A
+        `confirm` records that the owner agreed and changes no meaning; a `reject` retires
+        the row, which takes it out of live reads altogether. Demanding a re-name in
+        either case would be friction with nothing behind it, and a check that fires when
+        nothing happened is a check people learn to click through.
+
+        Supplying a name on a `confirm` is still allowed — re-affirming deliberately is
+        exactly the act this design wants to be possible.
         """
         ref = RowRef.coerce(ref)
         row = self._row(ref)
@@ -520,12 +604,34 @@ class RowService:
                 ref=str(ref),
             )
 
+        if resolution == "revise" and (not name or not name.strip()):
+            raise UpgradeFailed(
+                f"revising {row['name']} ({ref}) changes what the row says, so it needs "
+                f"a name for what it says now — pass the same one to keep it "
+                f"deliberately, or a new one",
+                ref=str(ref),
+                resolution=resolution,
+            )
+        if name and name.strip():
+            clash = self._live_name_clash(ref.table, name, exclude_ordinal=ref.ordinal)
+            if clash:
+                raise UpgradeFailed(
+                    f"{clash['name']} ({RowRef(ref.table, clash['ordinal'])}) already "
+                    f"has this name; two live rows in a table cannot share one",
+                    ref=str(ref),
+                )
+
         content = json.loads(row["content"])
         content["owner_answer"] = {"quote": quote, "resolution": resolution,
                                    "resolved_at": now()}
         target_state = RowState.RETIRED if resolution == "reject" else RowState.ACTIVE
         values: dict[str, Any] = {
             "content": json.dumps(content),
+            "name": name.strip() if name and name.strip() else row["name"],
+            # Refreshed even on a confirm, which appends the owner's answer to content:
+            # leaving the fingerprint stale would make the *next* write look like a
+            # change of meaning when the change already happened here.
+            "named_for": content_fingerprint(content),
             "provenance": str(Provenance.DECIDED),
             "state": str(target_state),
             "assumption_kind": None,
@@ -564,6 +670,14 @@ class RowService:
                 superseded_by=row["superseded_by"],
             )
 
+        if not replacement.name or not replacement.name.strip():
+            raise RowNotFound(
+                f"the row replacing {row['name']} ({old}) needs a name — pass the same "
+                f"one if this sharpens what the row already said, or a new one if it "
+                f"says something different",
+                ref=str(old),
+            )
+
         stamp = now()
         insert = Op(
             "insert_row",
@@ -571,6 +685,8 @@ class RowService:
             {
                 "table_name": replacement.table,
                 "content": json.dumps(replacement.content),
+                "name": replacement.name.strip(),
+                "named_for": content_fingerprint(replacement.content),
                 "provenance": str(replacement.provenance),
                 "assumption_kind": replacement.assumption_kind,
                 "state": str(replacement.initial_state()),
@@ -579,19 +695,27 @@ class RowService:
                 "created_at": stamp,
             },
         )
-        receipt = self.storage.write_atomic([insert], idempotency_key)
-        new_ref = RowRef.parse(receipt["results"][0]["ref"])
-
-        stamp_old = Op(
-            "update",
-            "plan_rows",
-            {"superseded_by": str(new_ref), "superseded_at": stamp,
-             "state": str(RowState.SUPERSEDED)},
-            where={"table_name": old.table, "ordinal": old.ordinal},
-        )
-        self.storage.write_atomic(
-            [stamp_old], key(idempotency_key, "stamp")
-        )
+        # All three writes ride one transaction, in this order, and the order is load-
+        # bearing. A replacement may keep its original's name — that is the *redefinition*
+        # case, the same thing said more sharply — so the old row has to leave the live
+        # name index before the replacement enters it. Its state goes first; its
+        # superseded_by pointer can only be written once the insert has assigned a ref,
+        # which `FromOp` reads back from the earlier op in the same batch.
+        #
+        # It was two separate write_atomic calls until 2026-07-22, which meant a crash
+        # between them left the old row live and unstamped beside its own replacement.
+        where_old = {"table_name": old.table, "ordinal": old.ordinal}
+        batch = [
+            Op("update", "plan_rows",
+               {"state": str(RowState.SUPERSEDED), "superseded_at": stamp},
+               where=where_old),
+            insert,
+            Op("update", "plan_rows",
+               {"superseded_by": FromOp(1, "ref")},
+               where=where_old),
+        ]
+        receipt = self.storage.write_atomic(batch, idempotency_key)
+        new_ref = RowRef.parse(receipt["results"][1]["ref"])
         return {"old": old, "new": new_ref, "superseded_at": stamp}
 
     # --- contracts:13 ---

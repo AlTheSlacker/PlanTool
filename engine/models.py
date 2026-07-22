@@ -7,6 +7,8 @@ insufficiency is logged in spec/v2/DEFECTS.md.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -112,12 +114,30 @@ class LinkSpec:
         return isinstance(self.target, int)
 
 
+def content_fingerprint(content: dict[str, Any]) -> str:
+    """The fingerprint a row's name was given for (M6_PLAN.md §6.6).
+
+    Key-order-independent, so re-serialising an unchanged dict does not read as a change
+    and demand a pointless re-naming — a check that fires when nothing happened is a check
+    people learn to click through.
+    """
+    canonical = json.dumps(content, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
 @dataclass(slots=True)
 class RowSubmission:
-    """One row offered to submit_rows (contracts:9)."""
+    """One row offered to submit_rows (contracts:9).
+
+    `name` is required and has no default. M6_PLAN.md §6: a row is addressed as
+    `table:ordinal`, and an address on its own forces the reader to go and look it up —
+    which a person does not do, and which a model answers by inventing something
+    plausible. The name is what the tool says; the address is detail beside it.
+    """
 
     table: str
     content: dict[str, Any]
+    name: str
     provenance: Provenance = Provenance.DECIDED
     assumption_kind: str | None = None
     links: list[LinkSpec] = field(default_factory=list)
@@ -137,6 +157,7 @@ class PlanRow:
 
     ref: RowRef
     content: dict[str, Any]
+    name: str
     provenance: Provenance
     state: RowState
     created_at: str

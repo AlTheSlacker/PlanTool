@@ -21,6 +21,7 @@ def _contract(rows, key, declared, title="a contract"):
         [RowSubmission(
             table="contracts",
             content={"title": title, "obligations": declared},
+            name=title,
         )],
         key,
     ).verdicts[0].ref
@@ -49,7 +50,7 @@ def test_an_undeclared_surface_is_reported_never_invented(tasks, rows, obligatio
     obligations nobody declared yields an empty set and a named report — not a guess
     parsed out of the contract's prose, which is the source D12 rejected."""
     rows.submit_rows(
-        [RowSubmission(table="contracts", content={"title": "undeclared"})], "c1"
+        [RowSubmission(table="contracts", content={"title": "undeclared"}, name="undeclared")], "c1"
     )
     graph = tasks.finalize_plan()
 
@@ -73,7 +74,7 @@ def test_verification_refuses_a_subtask_with_no_surface(tasks, rows):
     nothing, `all()` is vacuously true and a pass is recorded for an empty question. It
     must fail instead."""
     rows.submit_rows(
-        [RowSubmission(table="contracts", content={"title": "undeclared"})], "c1"
+        [RowSubmission(table="contracts", content={"title": "undeclared"}, name="undeclared")], "c1"
     )
     tasks.finalize_plan()
     tasks.serve_brief(1)

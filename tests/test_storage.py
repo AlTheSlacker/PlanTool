@@ -78,7 +78,7 @@ def test_no_writer_lock_surface_exists(store):
 def test_integrity_check_names_unreadable_rows(store, rows):
     from engine.models import RowSubmission
 
-    rows.submit_rows([RowSubmission("requirements", {"text": "fine"})], "k")
+    rows.submit_rows([RowSubmission("requirements", {"text": "fine"}, name="fine")], "k")
     store.conn.execute("UPDATE plan_rows SET content = '{not json' WHERE ordinal = 1")
     store.conn.commit()
 
@@ -90,7 +90,7 @@ def test_integrity_check_names_unreadable_rows(store, rows):
 def test_snapshot_and_restore_round_trip(store, rows):
     from engine.models import RowSubmission
 
-    rows.submit_rows([RowSubmission("requirements", {"text": "original"})], "k")
+    rows.submit_rows([RowSubmission("requirements", {"text": "original"}, name="original")], "k")
     store.snapshot_version("before damage")
     store.conn.execute("DELETE FROM plan_rows")
     store.conn.commit()
@@ -109,8 +109,8 @@ def test_salvage_drops_only_the_unreadable(store, rows):
     from engine.models import RowSubmission
 
     rows.submit_rows(
-        [RowSubmission("requirements", {"text": "keep"}),
-         RowSubmission("requirements", {"text": "lose"})],
+        [RowSubmission("requirements", {"text": "keep"}, name="keep"),
+         RowSubmission("requirements", {"text": "lose"}, name="lose")],
         "k",
     )
     store.conn.execute("UPDATE plan_rows SET content = 'broken' WHERE ordinal = 2")
@@ -126,7 +126,7 @@ def test_migration_with_no_path_fails_loudly_and_restores(store, rows):
     """decisions:45 — silent migration is forbidden; failure restores the snapshot."""
     from engine.models import RowSubmission
 
-    rows.submit_rows([RowSubmission("requirements", {"text": "survives"})], "k")
+    rows.submit_rows([RowSubmission("requirements", {"text": "survives"}, name="survives")], "k")
     with pytest.raises(MigrationFailed):
         store.migrate(99)
     assert len(store.query("SELECT * FROM plan_rows")) == 1

@@ -35,6 +35,7 @@ def _assumption(rows, kind="world", text="SMB honours fsync"):
         [RowSubmission(
             table="assumptions",
             content={"text": text},
+            name=text,
             provenance=Provenance.ASSUMED,
             assumption_kind=kind,
         )],
@@ -49,6 +50,7 @@ def _dependent(rows, on, text="store the plan on the share", key=None):
         [RowSubmission(
             table="decisions",
             content={"text": text},
+            name=text,
             links=[LinkSpec(target=RowRef.coerce(on))],
         )],
         key or f"dep:{text}",

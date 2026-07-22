@@ -18,7 +18,7 @@ from engine.models import RowSubmission
 
 def _row(rows, text, key):
     return rows.submit_rows(
-        [RowSubmission(table="decisions", content={"text": text})], key
+        [RowSubmission(table="decisions", content={"text": text}, name=text)], key
     ).verdicts[0].ref
 
 
@@ -59,7 +59,7 @@ def test_attachment_keys_on_lineage_root(attachments, rows):
 
     replacement = rows.supersede_row(
         original,
-        RowSubmission(table="decisions", content={"text": "settling is 40ms"}),
+        RowSubmission(table="decisions", content={"text": "settling is 40ms"}, name="settling is 40ms"),
         "supersede",
     )
     root = rows.lineage_root(replacement["new"])

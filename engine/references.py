@@ -31,7 +31,14 @@ from engine.errors import (
     SourceNotFound,
     SourceTextUnavailable,
 )
-from engine.models import LinkSpec, PlanRow, Provenance, RowRef, RowSubmission
+from engine.models import (
+    LinkSpec,
+    PlanRow,
+    Provenance,
+    RowRef,
+    RowSubmission,
+    content_fingerprint,
+)
 from engine.rows import RowService
 from engine.clock import now
 from engine.storage import Op, Storage
@@ -215,19 +222,23 @@ class ReferenceService:
                 for ordinal, (heading, start, end) in enumerate(sections, start=1)
             )
 
+        source_content = {
+            "title": title,
+            "authors": authors,
+            "year": year,
+            "identifier": identifier,
+            "path": path,
+            "content_hash": content_hash,
+            "char_count": len(text),
+            "sections": len(sections),
+        }
         ops.append(
             Op("insert_row", "plan_rows", {
                 "table_name": SOURCES_TABLE,
-                "content": _json({
-                    "title": title,
-                    "authors": authors,
-                    "year": year,
-                    "identifier": identifier,
-                    "path": path,
-                    "content_hash": content_hash,
-                    "char_count": len(text),
-                    "sections": len(sections),
-                }),
+                "content": _json(source_content),
+                # A source's title is its name; nothing needs inventing here.
+                "name": title,
+                "named_for": content_fingerprint(source_content),
                 "provenance": str(Provenance.DECIDED),
                 "assumption_kind": None,
                 "state": "active",
@@ -292,7 +303,7 @@ class ReferenceService:
                 "the quote does not appear in this source's stored text; the extract "
                 "was not filed",
                 source=str(source_ref),
-                source_title=source_row.content.get("title"),
+                source_title=source_row.name,
                 quote_preview=quote[:120],
             )
 
@@ -300,7 +311,14 @@ class ReferenceService:
         window_start = max(0, start - context_chars)
         window_end = min(len(raw), end + context_chars)
 
+        # An extract's name is the reader's own paraphrase where there is one — it is
+        # already a short statement of what the quote says. Otherwise the opening of the
+        # quote itself, which is at least the source's own words rather than an address.
+        extract_name = (paraphrase or "").strip() or " ".join(
+            raw[start:end].split()
+        )[:80]
         submission = RowSubmission(
+            name=extract_name,
             table=EXTRACTS_TABLE,
             content={
                 "source": str(source_ref),

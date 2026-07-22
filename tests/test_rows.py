@@ -17,9 +17,9 @@ from engine.rows import RowService
 def test_submit_assigns_per_table_ordinals(rows):
     receipt = rows.submit_rows(
         [
-            RowSubmission("requirements", {"text": "first"}),
-            RowSubmission("requirements", {"text": "second"}),
-            RowSubmission("decisions", {"text": "other table"}),
+            RowSubmission("requirements", {"text": "first"}, name="first"),
+            RowSubmission("requirements", {"text": "second"}, name="second"),
+            RowSubmission("decisions", {"text": "other table"}, name="other table"),
         ],
         "k",
     )
@@ -32,9 +32,9 @@ def test_one_bad_row_is_rejected_alone(rows):
     """requirements:14 — reject only that row, naming the specific problem."""
     receipt = rows.submit_rows(
         [
-            RowSubmission("requirements", {"text": "good"}),
-            RowSubmission("requirements", {}),  # empty content
-            RowSubmission("requirements", {"text": "also good"}),
+            RowSubmission("requirements", {"text": "good"}, name="good"),
+            RowSubmission("requirements", {}, name="empty"),  # empty content
+            RowSubmission("requirements", {"text": "also good"}, name="also good"),
         ],
         "k",
     )
@@ -47,7 +47,7 @@ def test_assumed_row_must_declare_its_kind(rows):
     """requirements:5 — provenance, and for assumptions the assumption kind."""
     receipt = rows.submit_rows(
         [RowSubmission("decisions", {"text": "guessing"},
-                       provenance=Provenance.ASSUMED)],
+                       provenance=Provenance.ASSUMED, name="guessing")],
         "k",
     )
     assert receipt.verdicts[0].accepted is False
@@ -55,10 +55,10 @@ def test_assumed_row_must_declare_its_kind(rows):
 
 
 def test_links_are_written_with_their_row(rows):
-    rows.submit_rows([RowSubmission("use_cases", {"text": "uc"})], "k1")
+    rows.submit_rows([RowSubmission("use_cases", {"text": "uc"}, name="uc")], "k1")
     rows.submit_rows(
         [RowSubmission("requirements", {"text": "req"},
-                       links=[LinkSpec(RowRef("use_cases", 1))])],
+                       links=[LinkSpec(RowRef("use_cases", 1))], name="req")],
         "k2",
     )
     row = rows.get("requirements:1")
@@ -70,8 +70,8 @@ def test_row_can_link_to_a_sibling_in_the_same_batch(rows):
     how a row references a sibling whose ref does not exist yet."""
     receipt = rows.submit_rows(
         [
-            RowSubmission("use_cases", {"text": "uc"}),
-            RowSubmission("requirements", {"text": "req"}, links=[LinkSpec(0)]),
+            RowSubmission("use_cases", {"text": "uc"}, name="uc"),
+            RowSubmission("requirements", {"text": "req"}, links=[LinkSpec(0)], name="req"),
         ],
         "k",
     )
@@ -84,9 +84,9 @@ def test_sibling_link_to_a_rejected_row_cascades(rows):
     than it declared."""
     receipt = rows.submit_rows(
         [
-            RowSubmission("use_cases", {}),  # rejected: empty content
-            RowSubmission("requirements", {"text": "req"}, links=[LinkSpec(0)]),
-            RowSubmission("contracts", {"text": "con"}, links=[LinkSpec(1)]),
+            RowSubmission("use_cases", {}, name="empty"),  # rejected: empty content
+            RowSubmission("requirements", {"text": "req"}, links=[LinkSpec(0)], name="req"),
+            RowSubmission("contracts", {"text": "con"}, links=[LinkSpec(1)], name="con"),
         ],
         "k",
     )
@@ -96,7 +96,7 @@ def test_sibling_link_to_a_rejected_row_cascades(rows):
 
 def test_sibling_link_out_of_range_is_rejected(rows):
     receipt = rows.submit_rows(
-        [RowSubmission("requirements", {"text": "r"}, links=[LinkSpec(7)])], "k"
+        [RowSubmission("requirements", {"text": "r"}, links=[LinkSpec(7)], name="r")], "k"
     )
     assert receipt.verdicts[0].accepted is False
     assert "outside this batch" in receipt.verdicts[0].problem
@@ -104,7 +104,7 @@ def test_sibling_link_out_of_range_is_rejected(rows):
 
 def test_self_link_is_rejected(rows):
     receipt = rows.submit_rows(
-        [RowSubmission("requirements", {"text": "r"}, links=[LinkSpec(0)])], "k"
+        [RowSubmission("requirements", {"text": "r"}, links=[LinkSpec(0)], name="r")], "k"
     )
     assert receipt.verdicts[0].accepted is False
     assert "cannot link to itself" in receipt.verdicts[0].problem
@@ -115,13 +115,13 @@ def test_replay_returns_the_original_verdicts(rows):
     presented on replay is not re-evaluated."""
     first = rows.submit_rows(
         [
-            RowSubmission("requirements", {"text": "kept"}),
-            RowSubmission("requirements", {}),  # rejected
+            RowSubmission("requirements", {"text": "kept"}, name="kept"),
+            RowSubmission("requirements", {}, name="empty"),  # rejected
         ],
         "same-key",
     )
     second = rows.submit_rows(
-        [RowSubmission("decisions", {"text": "totally different batch"})], "same-key"
+        [RowSubmission("decisions", {"text": "totally different batch"}, name="totally different batch")], "same-key"
     )
     assert second.replayed is True
     assert [str(v.ref) if v.ref else None for v in second.verdicts] == [
@@ -135,7 +135,7 @@ def test_replay_returns_the_original_verdicts(rows):
 def test_link_to_a_missing_row_is_rejected(rows):
     receipt = rows.submit_rows(
         [RowSubmission("requirements", {"text": "req"},
-                       links=[LinkSpec(RowRef("use_cases", 99))])],
+                       links=[LinkSpec(RowRef("use_cases", 99))], name="req")],
         "k",
     )
     assert receipt.verdicts[0].accepted is False
@@ -153,8 +153,8 @@ def test_contradiction_blocks_the_whole_batch(store):
     with pytest.raises(ConflictRequired):
         service.submit_rows(
             [
-                RowSubmission("requirements", {"text": "fine"}),
-                RowSubmission("requirements", {"text": "contradictory"}),
+                RowSubmission("requirements", {"text": "fine"}, name="fine"),
+                RowSubmission("requirements", {"text": "contradictory"}, name="contradictory"),
             ],
             "k",
         )
@@ -164,9 +164,9 @@ def test_contradiction_blocks_the_whole_batch(store):
 def test_read_rows_selectors(rows):
     rows.submit_rows(
         [
-            RowSubmission("requirements", {"text": "a"}, package=3),
-            RowSubmission("requirements", {"text": "b"}, package=4),
-            RowSubmission("decisions", {"text": "c"}, package=3),
+            RowSubmission("requirements", {"text": "a"}, package=3, name="a"),
+            RowSubmission("requirements", {"text": "b"}, package=4, name="b"),
+            RowSubmission("decisions", {"text": "c"}, package=3, name="c"),
         ],
         "k",
     )
@@ -178,7 +178,8 @@ def test_read_rows_selectors(rows):
 def test_read_rows_paginates(rows):
     """requirements:62 — resume cost scales with the working set, never a full dump."""
     rows.submit_rows(
-        [RowSubmission("requirements", {"text": str(i)}) for i in range(10)], "k"
+        [RowSubmission("requirements", {"text": str(i)}, name=f"req {i}")
+         for i in range(10)], "k"
     )
     page = rows.read_rows(RowSelector(table="requirements", limit=4))
     assert len(page.rows) == 4
@@ -196,10 +197,10 @@ def test_bad_selector_names_the_field(rows):
 
 
 def test_neighbourhood_selector_walks_links(rows):
-    rows.submit_rows([RowSubmission("use_cases", {"text": "uc"})], "k1")
+    rows.submit_rows([RowSubmission("use_cases", {"text": "uc"}, name="uc")], "k1")
     rows.submit_rows(
         [RowSubmission("requirements", {"text": "req"},
-                       links=[LinkSpec(RowRef("use_cases", 1))])],
+                       links=[LinkSpec(RowRef("use_cases", 1))], name="req")],
         "k2",
     )
     page = rows.read_rows(RowSelector(neighbourhood_of=RowRef("use_cases", 1)))
@@ -210,7 +211,7 @@ def test_resolve_assumption_upgrades_in_place(rows):
     """contracts:11 / decisions:28(a) — the SAME row upgrades; no duplicate appears."""
     rows.submit_rows(
         [RowSubmission("decisions", {"text": "assumed thing"},
-                       provenance=Provenance.ASSUMED, assumption_kind="intent")],
+                       provenance=Provenance.ASSUMED, assumption_kind="intent", name="assumed thing")],
         "k1",
     )
     upgraded = rows.resolve_assumption(
@@ -226,7 +227,7 @@ def test_resolve_requires_a_verbatim_quote(rows):
 
     rows.submit_rows(
         [RowSubmission("decisions", {"text": "x"},
-                       provenance=Provenance.ASSUMED, assumption_kind="intent")],
+                       provenance=Provenance.ASSUMED, assumption_kind="intent", name="x")],
         "k1",
     )
     with pytest.raises(UpgradeFailed):
@@ -234,16 +235,16 @@ def test_resolve_requires_a_verbatim_quote(rows):
 
 
 def test_resolve_rejects_non_assumptions(rows):
-    rows.submit_rows([RowSubmission("decisions", {"text": "decided"})], "k1")
+    rows.submit_rows([RowSubmission("decisions", {"text": "decided"}, name="decided")], "k1")
     with pytest.raises(NotAssumed):
         rows.resolve_assumption("decisions:1", "quote", "confirm", "k2")
 
 
 def test_supersede_sets_both_pointers_once(rows):
     """requirements:61 — stamped once, content never edited, lineage bidirectional."""
-    rows.submit_rows([RowSubmission("decisions", {"text": "old"})], "k1")
+    rows.submit_rows([RowSubmission("decisions", {"text": "old"}, name="old")], "k1")
     result = rows.supersede_row(
-        "decisions:1", RowSubmission("decisions", {"text": "new"}), "k2"
+        "decisions:1", RowSubmission("decisions", {"text": "new"}, name="new"), "k2"
     )
     old = rows.get("decisions:1")
     new = rows.get(result["new"])
@@ -257,16 +258,16 @@ def test_supersede_sets_both_pointers_once(rows):
 
 
 def test_supersession_lineage_is_write_once(rows):
-    rows.submit_rows([RowSubmission("decisions", {"text": "old"})], "k1")
-    rows.supersede_row("decisions:1", RowSubmission("decisions", {"text": "a"}), "k2")
+    rows.submit_rows([RowSubmission("decisions", {"text": "old"}, name="old")], "k1")
+    rows.supersede_row("decisions:1", RowSubmission("decisions", {"text": "a"}, name="a"), "k2")
     with pytest.raises(AlreadySuperseded):
         rows.supersede_row(
-            "decisions:1", RowSubmission("decisions", {"text": "b"}), "k3"
+            "decisions:1", RowSubmission("decisions", {"text": "b"}, name="b"), "k3"
         )
 
 
 def test_retire_is_recorded_exactly_once(rows):
-    rows.submit_rows([RowSubmission("decisions", {"text": "x"})], "k1")
+    rows.submit_rows([RowSubmission("decisions", {"text": "x"}, name="x")], "k1")
     retired = rows.retire_row("decisions:1", "no longer relevant", "k2")
     assert retired.is_live is False
     assert retired.retire_reason == "no longer relevant"
@@ -276,11 +277,11 @@ def test_retire_is_recorded_exactly_once(rows):
 
 def test_live_only_excludes_superseded_and_retired(rows):
     rows.submit_rows(
-        [RowSubmission("decisions", {"text": "a"}),
-         RowSubmission("decisions", {"text": "b"})],
+        [RowSubmission("decisions", {"text": "a"}, name="a"),
+         RowSubmission("decisions", {"text": "b"}, name="b")],
         "k1",
     )
-    rows.supersede_row("decisions:1", RowSubmission("decisions", {"text": "a2"}), "k2")
+    rows.supersede_row("decisions:1", RowSubmission("decisions", {"text": "a2"}, name="a2"), "k2")
     rows.retire_row("decisions:2", "gone", "k3")
 
     live = rows.read_rows(RowSelector(table="decisions", live_only=True))
@@ -301,13 +302,13 @@ def test_updated_at_is_derived_from_the_rows_own_lifecycle(rows):
     `updated_at` would equal `created_at` forever — a column promising a change it cannot
     deliver, and a second copy of what `superseded_at` already records."""
     ref = rows.submit_rows(
-        [RowSubmission(table="decisions", content={"title": "first thought"})], "a"
+        [RowSubmission(table="decisions", content={"title": "first thought"}, name="first thought")], "a"
     ).verdicts[0].ref
     original = rows.get(ref)
     assert original.updated_at == original.created_at
 
     rows.supersede_row(
-        ref, RowSubmission(table="decisions", content={"title": "second thought"}), "b"
+        ref, RowSubmission(table="decisions", content={"title": "second thought"}, name="second thought"), "b"
     )
 
     superseded = rows.get(ref)
@@ -319,13 +320,13 @@ def test_lineage_head_answers_where_a_decision_stands_now(rows):
     """`lineage_root` is a thing's stable identity; `lineage_head` is its current state.
     Both are needed, for opposite reasons."""
     ref = rows.submit_rows(
-        [RowSubmission(table="decisions", content={"title": "first"})], "a"
+        [RowSubmission(table="decisions", content={"title": "first"}, name="first")], "a"
     ).verdicts[0].ref
     second = rows.supersede_row(
-        ref, RowSubmission(table="decisions", content={"title": "second"}), "b"
+        ref, RowSubmission(table="decisions", content={"title": "second"}, name="second"), "b"
     )["new"]
     third = rows.supersede_row(
-        second, RowSubmission(table="decisions", content={"title": "third"}), "c"
+        second, RowSubmission(table="decisions", content={"title": "third"}, name="third"), "c"
     )["new"]
 
     assert rows.lineage_head(ref) == third
@@ -337,10 +338,10 @@ def test_history_reads_the_whole_chain_with_each_versions_timestamp(rows):
     """"I said something yesterday — find it" is a question about a lineage. Each version
     carries its own created_at, so the answer is both when it was said and what it said."""
     ref = rows.submit_rows(
-        [RowSubmission(table="decisions", content={"title": "first"})], "a"
+        [RowSubmission(table="decisions", content={"title": "first"}, name="first")], "a"
     ).verdicts[0].ref
     rows.supersede_row(
-        ref, RowSubmission(table="decisions", content={"title": "second"}), "b"
+        ref, RowSubmission(table="decisions", content={"title": "second"}, name="second"), "b"
     )
 
     chain = rows.history(ref)

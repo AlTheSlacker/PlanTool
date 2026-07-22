@@ -37,7 +37,7 @@ from engine.conflicts import Conflict, ConflictService, GateScope
 from engine.errors import PlanToolError
 from engine.idempotency import key
 from engine.storage import Op
-from engine.gaps import GapEngine, title_of
+from engine.gaps import GapEngine, name_of
 from engine.methodology import Criterion, Methodology, load
 from engine.models import PlanRow, RowRef, RowSelector, RowState
 from engine.rows import RowService
@@ -267,7 +267,7 @@ class GateEngine:
                 kind="unresolved_assumption",
                 message=(
                     f"unresolved {kind}-assumption {row.ref}: "
-                    f"{title_of(row)}"
+                    f"{name_of(row)}"
                 ),
                 source_ref=row.ref,
             )
@@ -331,7 +331,7 @@ class GateEngine:
         self, criterion: Criterion, row: PlanRow | None = None, **fmt: Any
     ) -> Hole:
         context = {
-            "title": title_of(row) if row is not None else "",
+            "name": name_of(row) if row is not None else "",
             "ref": str(row.ref) if row is not None else "",
             **fmt,
         }

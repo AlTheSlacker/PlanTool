@@ -18,8 +18,8 @@ from engine.rows import RowService
 def two_rows(rows):
     rows.submit_rows(
         [
-            RowSubmission("decisions", {"text": "store plans in SQLite"}),
-            RowSubmission("decisions", {"text": "store plans in Postgres"}),
+            RowSubmission("decisions", {"text": "store plans in SQLite"}, name="store plans in SQLite"),
+            RowSubmission("decisions", {"text": "store plans in Postgres"}, name="store plans in Postgres"),
         ],
         "k",
     )
@@ -150,7 +150,7 @@ def test_a_declared_contradiction_is_refused_until_a_conflict_is_raised(store):
     filed."""
     conflicts = ConflictService(store)
     rows = RowService(store, detector=conflicts.detector())
-    rows.submit_rows([RowSubmission("decisions", {"text": "SQLite"})], "k1")
+    rows.submit_rows([RowSubmission("decisions", {"text": "SQLite"}, name="SQLite")], "k1")
 
     with pytest.raises(ConflictRequired) as exc:
         rows.submit_rows(
@@ -159,7 +159,7 @@ def test_a_declared_contradiction_is_refused_until_a_conflict_is_raised(store):
                     "decisions",
                     {"text": "Postgres"},
                     links=[LinkSpec(RowRef("decisions", 1), edge_type="contradicts")],
-                )
+                 name="Postgres")
             ],
             "k2",
         )
@@ -170,7 +170,7 @@ def test_a_declared_contradiction_is_refused_until_a_conflict_is_raised(store):
 def test_the_row_files_once_the_conflict_exists(store):
     conflicts = ConflictService(store)
     rows = RowService(store, detector=conflicts.detector())
-    rows.submit_rows([RowSubmission("decisions", {"text": "SQLite"})], "k1")
+    rows.submit_rows([RowSubmission("decisions", {"text": "SQLite"}, name="SQLite")], "k1")
     conflicts.raise_conflict(
         [RowRef("decisions", 1)],
         "the new row says Postgres",
@@ -182,7 +182,7 @@ def test_the_row_files_once_the_conflict_exists(store):
                 "decisions",
                 {"text": "Postgres"},
                 links=[LinkSpec(RowRef("decisions", 1), edge_type="contradicts")],
-            )
+             name="Postgres")
         ],
         "k2",
     )
@@ -193,10 +193,10 @@ def test_an_ordinary_link_is_not_a_contradiction(store):
     """The detector is mechanical: only a `contradicts` edge triggers it."""
     conflicts = ConflictService(store)
     rows = RowService(store, detector=conflicts.detector())
-    rows.submit_rows([RowSubmission("use_cases", {"title": "Order"})], "k1")
+    rows.submit_rows([RowSubmission("use_cases", {"title": "Order"}, name="Order")], "k1")
     receipt = rows.submit_rows(
         [RowSubmission("requirements", {"title": "Orders persist"},
-                       links=[LinkSpec(RowRef("use_cases", 1))])],
+                       links=[LinkSpec(RowRef("use_cases", 1))], name="Orders persist")],
         "k2",
     )
     assert all(v.accepted for v in receipt.verdicts)

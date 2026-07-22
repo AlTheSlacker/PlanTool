@@ -1394,3 +1394,79 @@ means changing the stamp. The drift baseline (`engine/fingerprint.py`) carries t
 plan whose methodology changed under it is now visible as drift at resume — which was the
 mechanism `requirements:71` intended and which could not have worked while every revision
 answered with the same string.
+
+---
+
+## F32 — A row's name was guessed from free-form content, three times, and fell back to an address
+
+**Found:** 2026-07-22, while building the naming design of `M6_PLAN.md` §6 — the owner had
+asked for the rule after a session in which almost every sentence written to him was made of
+bare addresses he could not read without going and fetching something.
+
+**The promise.** Nothing states it, and that is the defect's first half: no row type in the
+frozen plan carries a name, `plan_rows` had no name column, and `submit_rows` validated
+content only as "a non-empty object". The tool nevertheless has to *say things about rows* —
+gap asks, gate holes, task names, brief sections — and every one of those needs a handle.
+
+**What was there instead.** Three separate implementations of the same guess, in two modules,
+with two different key lists:
+
+- `gaps.title_of` tried `title`, `name`, `text`, `quote`, `description`, truncated to 120
+  characters, and returned `str(row.ref)` when none matched.
+- `tasks.py` (task creation) tried `title`, `name`, and fell back to the ref.
+- `tasks.py` (contract specs) tried `title`, `name`, and fell back to the ref.
+
+`title_of`'s own docstring admitted the situation: *"there is no title column to read — this
+is the agreed order of preference across every table."* An agreed order of preference over
+free-form JSON is exactly what D12 refused for accounting denominators, and for the same
+reason: `content` has no per-table schema, so nothing may be inferred from it.
+
+**Why the fallback is the worse half.** A row whose content used none of the five keys got
+announced to the reader as an address and nothing else. That is not hypothetical: `crud_grid`
+rows carry `op` and `actor`, and `sm_cells` rows carry `state`, `event` and `transition_to`.
+Both were served to the reader as `crud_grid:4` — the precise failure the owner had just
+described, produced by the code rather than by the writer.
+
+**The DRY reading.** Three copies of one decision, two of them already disagreeing about which
+keys count, is the duplication this product exists to prevent, inside the engine that exists
+to prevent it. The second occurrence was the moment to extract; there were three.
+
+**Resolution.** `plan_rows.name` is a real column, `NOT NULL`, supplied at creation and
+rejected pedagogically when missing. All three guesses are deleted; `gaps.name_of` is the
+single owner and reads the column. A partial unique index makes two live rows in one table
+unable to share a name, so a duplicate is a signal at the moment of typing rather than a
+collision found a week later. `plan_rows.named_for` records the content fingerprint the name
+was given for, so a name cannot silently survive a change of meaning. Tests in
+`tests/test_naming.py`. The `{title}` placeholder in the methodology's gap rules and gate
+criteria is now `{name}`, closing the second spelling of the same column role.
+
+---
+
+## F33 — Supersession was two transactions, so a crash between them orphaned the old row
+
+**Found:** 2026-07-22, while adding the live-name uniqueness index — the index rejected a
+replacement that legitimately kept its original's name, which exposed the write ordering.
+
+**The promise.** `requirements:61` — the replacement is created with a `supersedes` pointer
+and the old row is stamped once with `superseded_by` and a timestamp. `contracts:12` presents
+this as one act, and liveness is "the single check that `superseded_by` is null".
+
+**What was there instead.** `supersede_row` called `write_atomic` twice: once to insert the
+replacement, then again, under a derived key, to stamp the old row. Between them the old row
+was live, unstamped, and sitting beside its own replacement — both live, both claiming to be
+current, with nothing recording the relationship. A crash in the gap left the plan in exactly
+that state permanently, and the second call's derived idempotency key meant a retry could not
+tell "never stamped" from "stamped already".
+
+The atomicity work of M6b covered a row and its links, which was the instance found then. This
+is the same class one call over, and it went unlooked-at because the two writes were separated
+by a line that reads like a local variable assignment: the replacement's ref does not exist
+until the insert has run.
+
+**Resolution.** One `write_atomic` of three ops: the old row's state and `superseded_at` go
+first, the replacement is inserted second, and the old row's `superseded_by` pointer is
+written third via `FromOp`, which reads the ref back from the earlier op in the same batch.
+The order is load-bearing for the naming index as well — a replacement may keep its
+original's name, so the old row has to leave the live-name index before the replacement
+enters it. Covered by `tests/test_naming.py::test_a_superseded_rows_name_is_free_for_its_replacement`
+and the existing supersession tests in `tests/test_rows.py`.

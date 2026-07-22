@@ -16,7 +16,7 @@ from engine.models import RowSubmission
 
 def _row(rows, text="the gate criteria are too weak", key=None):
     receipt = rows.submit_rows(
-        [RowSubmission(table="requirements", content={"text": text})],
+        [RowSubmission(table="requirements", content={"text": text}, name=text)],
         key or f"row:{text}",
     )
     return receipt.verdicts[0].ref

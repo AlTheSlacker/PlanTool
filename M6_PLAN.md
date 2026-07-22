@@ -30,7 +30,7 @@ brings no state machine, so checks 1 and 2 are light; check 3 is the live one, b
 
 ---
 
-## 2. The M6 gate — seven open items, all hard-locking
+## 2. The M6 gate — nine open items, all hard-locking
 
 Per the outstanding-problem rule, **M6 cannot pass while any of these is open.** Full table
 in `M5_PLAN.md` §0; this is the working detail.
@@ -122,7 +122,15 @@ the cry-wolf failure D7 fixed. The lock class binds outstanding *findings*; whet
 binds conflicts and open assumptions is the M6 decision.
 
 ### 2.7 Glossary delivery to the writer — F27
-See §3. This is the newest item and the one with a full design already agreed.
+See §3.
+
+### 2.8 Every row has a name — added 2026-07-22
+See §6. The item that changes the most: it puts a required field on `submit_rows`, a migration
+on every existing row, and a question in the interview scripts.
+
+### 2.9 The digest names calls the surface cannot reach — added 2026-07-22
+See §7.4. Found by the surface's pre-build audit; three decisions are needed before the surface
+can be built at all (§7.5).
 
 ---
 
@@ -233,6 +241,17 @@ and `_age` duplicated verbatim as `_age_seconds`. Built so far:
   `created_at` on every table with independent existence.
 - `tests/test_clock.py` — one owner for timestamp creation *and* interpretation.
 
+**A prose check was proposed and refused, 2026-07-22 — second instance of the same ruling.**
+`component` is retired *in prose* and nothing checks prose: the existing check bans retired
+words as **identifiers**, so the one retirement whose scope is prose-only is the one with no
+mechanism. It shows: `GLOSSARY.md` uses `component` twice in live prose two lines below the row
+retiring it, and I used it again in conversation the next day. A markdown scanner was proposed
+and declined — prose bans wait for `ban_scope` (§3.2) with the rest of F27, rather than adding a
+fourth standing check whose exclusion rule (retirement table, quoted frozen plan) would have
+been designed while writing it. **When `ban_scope` lands, its first run is over our own five
+writable documents** — roughly 26 uses of `component`, only 7 of them `components:N` refs. Do
+not sweep by hand first; a hand sweep is what §3 says cannot be trusted — the rule that is not a mechanism.
+
 **Nothing further is proposed here, by the owner's decision of 2026-07-22.** A duplicate-body
 detector was sketched in this section, as part of a wider idea that good coding practice should
 be enforced by standing mechanical checks. That whole approach is withdrawn: it is a large
@@ -337,7 +356,294 @@ anyway, at the point of least attention — which is the same sentence F27 and F
 
 ---
 
-## 6. How to run things
+## 6. Every row has a name — design agreed 2026-07-22, not yet built
+
+**The owner's requirement, in his words: nothing this tool says to a reader should make them
+look something up.** Raised after a session in which almost every sentence I wrote to him was
+made of bare addresses — `contracts:50`, `F30`, `D17`, `M6b` — and he could not read any of
+them without going and fetching something. This is not a style complaint about me. **Every
+plan built with this tool inherits it**, because the tool's own output is made of the same
+material, and it is served to whatever engine is on the other end as well as to a person.
+
+### 6.1 The rule
+
+1. **Every addressable thing carries a meaningful name, supplied at creation.** Plan rows,
+   packages, tasks, sub-tasks, obligations, terms — and our own defect and deviation entries.
+2. **A name is unique among live rows in its table.** A duplicate is refused.
+3. **A name does not survive a change of meaning.** When a write changes a row's content, the
+   name must be supplied again — re-affirmed deliberately, or replaced.
+4. **The tool never emits an address without the name of what it addresses.** The address
+   becomes optional detail; the name carries the sentence.
+
+### 6.2 Why it is a product requirement and not a preference
+
+A reference is an address, not a name, and an address alone forces a lookup. Both kinds of
+reader fail on it, differently and badly. A person does not do the lookup — they nod along and
+act on a sentence they did not understand. A model does something worse: handed an address with
+no name, it will produce a confident, plausible account of what lives there without ever
+fetching it, because a plausible continuation is always available.
+
+**The owner already made this ruling once, narrowly, and it wants to be general.** D17 settled
+that every count in the status digest must name the call that fetches what it counts, on the
+grounds that a bare number invites a reader to reason about the number instead of reading the
+thing. A bare address is that same failure with the same cause. This section is that decision
+applied to the whole surface rather than to one digest.
+
+### 6.3 What blocks it today, and the honest cost
+
+**`plan_rows` has no name.** The column list is `table_name`, `ordinal`, `content` (free-form
+JSON), provenance, state, lineage and timestamps — and `submit_rows` (`contracts:9`) validates
+content only as "a non-empty object". So the tool cannot render a name for any row, because no
+row has one.
+
+**Deriving one from `content` is refused**, and by an argument this build has already accepted:
+D12 established that an accounting denominator must never be inferred from `plan_rows.content`
+because it is free-form JSON with no per-table schema — which is why `obligations` is a real
+table. A display name is the same case. A truncated first sentence is not a name, and inference
+here is the same disease in a new place.
+
+So: **`plan_rows.name TEXT NOT NULL`**, and the same on the typed tables. The costs, stated
+plainly because they are real:
+
+- `submit_rows` gains a required field, and rejects a submission without one, pedagogically.
+- Every existing row needs a name — a migration, and for the dogfood plan a real content job.
+- The interview scripts must ask for the name **as a question**, not collect it as a field.
+- Our own defect and deviation registers need naming: a few dozen entries, bounded.
+
+Two things it pays for beyond this rule. The glossary work (§3) needs exactly this material —
+its "words appearing in N rows with no term row" meter has nothing to count without names. And
+F17, where frozen prose cites a row that later gets superseded, is softened: a citation that
+carries the name still communicates after the address dies, instead of dangling silently.
+
+### 6.4 Presence is mechanical; meaning is not
+
+A `NOT NULL` column guarantees a name exists. It does not guarantee the name means anything,
+and what it will produce by default is `logging requirement` and `handle the error case`.
+**Naming happens at the point of least attention** — the thinking goes into the content and the
+name is incidental typing, which is the sentence F27, F29 and F31 all end on. So the column is
+necessary and not sufficient, and the interview carries the other half: it asks for the name as
+its own question, at the moment the author still knows what the thing is.
+
+### 6.5 Uniqueness is the part that makes it a mechanism
+
+A unique index on live rows turns a convention into something that fires. **Two rows arriving
+with the same name is a signal every time** — either the same thing has been filed twice, or
+there are two things and nobody has distinguished them. That is the naming collision this
+build has hit three times (`part`/`component`, eight spellings of `created_at`, `_age`
+duplicated as `_age_seconds`), caught at the moment of typing instead of a week later. No
+judgment is exercised, so `decisions:12` is respected.
+
+Block within a table; warn across tables, where the same word legitimately names a requirement
+and the entity it constrains. Superseded rows are not live, so a replacement may reuse its
+original's name — which is the *redefinition* case, and correctly distinguished from
+*replacement* by whether the name changed. That is the same two-relations distinction the
+`terms` design (§3.1) was built around, arriving again in the general layer.
+
+### 6.6 Staleness — a name is only valid against the content it was given for
+
+The owner's point, and it would have eaten this design a month after it landed: **a name that
+was accurate when written quietly stops being true when the content moves.**
+
+The mechanism is already in the codebase to borrow — `engine/references.py` hashes content for
+the verified-quote design. A row stores its name **and the fingerprint of the content it was
+named for**. When a write changes the content, the fingerprint no longer matches and the name
+is not carried forward silently: it must be supplied again. **Passing the same name a second
+time is a deliberate act; silence is not.**
+
+It bites at the two writes where meaning can actually change:
+
+- `resolve_assumption` (`contracts:11`) upgrades a row **in place**, and a `revise` changes
+  what the row says while leaving it live under its existing name. That is the one case that
+  demands a name. **Narrowed during the build, 2026-07-22:** this section first said `revise`
+  *or* `reject`, and `reject` was wrong — it retires the row, which takes it out of live reads
+  altogether, so naming what a departing row now says buys nothing. A `confirm` records that
+  the owner agreed and changes no meaning. Demanding a re-name in either case would be
+  friction that teaches callers to click through, which is how a check stops being read.
+  **The resolution is already a parameter of the call, so nothing is inferred.**
+- `supersede_row` (`contracts:12`) creates a replacement, which is a new row and must be named
+  like any other.
+
+**The honest limit:** a fingerprint proves the content changed, not that the change made the
+name wrong. What it buys is the *moment of attention* — the tool asks at the instant the author
+has both the old name and the new content in front of them. That is the move the whole product
+makes: "you must notice" becomes "the tool asks".
+
+### 6.7 The output rule, and where it is enforced
+
+**The surface is the single door.** `mcp-surface` (`components:15`) is the only externally
+visible task, so every byte reaching any planner passes one choke point. That is why this rule
+belongs in this build package and not later.
+
+Two layers, and the second is the one that holds:
+
+1. **Storage form and display form become different types.** `RowRef` is the storage form —
+   `str(ref)` produces `table:ordinal` and that is correct for the `links`, `supersedes` and
+   `superseded_by` columns, which must not change. But a `RowRef` may never appear in a
+   returned payload. Anything outbound carries a display value that **cannot be constructed
+   without a name**. The code path that emits a bare address stops existing.
+2. **A scan at the door.** Every string in an outgoing payload is checked for address syntax; a
+   bare one fails the call, loudly. This is the backstop for hand-assembled message strings,
+   which the type system cannot see — and hand-assembled strings are exactly where the digest's
+   "1 engineer's mandate — get_mandate() to read them" nonsense came from.
+
+Applying check 3 to this design itself: **the set** is every address-shaped token in an
+outgoing payload; **its source** is the payload being returned; **it is fixed** per call, at
+the moment of dispatch. Nothing is re-derived later against a moved target.
+
+### 6.8 The one exemption: verbatim frozen content
+
+A brief serves stored row prose **verbatim**, and that prose may cite addresses. The tool must
+not rewrite it — frozen content that gets edited in flight is a far worse defect than a
+lookup. So quoted content is exempt from rewriting, and the tool **annotates alongside**: when
+it serves prose containing addresses, it appends the resolution of each one, naming the row.
+Verbatim service is preserved and the lookup is still removed.
+
+This is also where F17 becomes visible rather than silent: an address in frozen prose with no
+live row resolves to "no live row at this address", instead of dangling unnoticed.
+
+### 6.9 Compactness — the one real tension, and why it resolves
+
+`requirements:62` requires resume cost to scale with the working set, and names cost bytes.
+It resolves if we stay strict about what is rendered: **a name is short — a word or a short
+phrase — and it is the row's *content* that is long.** Render the name, never the content. The
+digest keeps both promises at once.
+
+### 6.9a Found by driving it: errors were citing our own build documents
+
+The first end-to-end run printed, to a planner using the tool, *"…the address rides alongside
+it (M6_PLAN.md §6)"*. A planner has no copy of `M6_PLAN.md`. That is this section's own
+failure — pointing the reader at something they cannot reach — committed inside the fix for
+it, and it was visible only because a person read the driver output rather than a test.
+
+Stripped from the three new messages. **Two pre-existing instances remain** and belong with
+clause 4's work, since the outgoing scan needs a policy on them anyway: `rows.py`'s containment
+rejection cites `DEFECTS.md F28`, and `tasks.py`'s draft-brief refusal cites `DEFECTS.md F21`.
+The rule to settle there: internal build documents may be cited in code comments and
+docstrings, which we read, and never in a message the tool hands out.
+
+### 6.10 What this does not catch, stated so it is not oversold
+
+- **A name that is present, unique, fresh and useless.** `misc`, `thing`, `the main one`. No
+  mechanism without judgment catches a bad name; §6.4's interview question is the mitigation.
+- **Addresses the owner writes into content he submits.** That is input, and input is the
+  owner's words. Warn at submission and count at the gate — the same policy as §3.3 — never
+  block, because a retired address inside a quotation is legitimate.
+- **Prose that is hard to read for reasons other than addresses.**
+
+### 6.11 Binding
+
+The frozen plan says nothing about names, so this is a **deviation and a new requirement**, to
+be logged when built. Bound to the **M6 gate** under the outstanding-problem rule — not
+floating, because the surface that enforces it is being built now.
+
+---
+
+## 7. Pre-build audit — mcp-surface, 2026-07-22
+
+Run before a line of the surface was written. Check 1 is empty, check 2 found one dead outcome
+and three dead tools, check 3 produced a denominator worth building a test around — and then a
+fourth thing turned up that none of the three checks was looking for.
+
+### 7.1 Check 1 — every state-machine event has a contract that fires it
+
+Nothing to check. The surface brings no state machine: `dispatch` (`contracts:50`) is a router
+and `append_log` (`contracts:51`) is append-only. Neither is an entity with a lifecycle.
+
+### 7.2 Check 2 — every outcome the signature offers is reachable
+
+`UnknownTool` and `MalformedCall` on dispatch, and `LogWriteError` on the log, are all
+reachable. One is not:
+
+**`NotWriter` cannot occur.** Dispatch declares it as "a write tool was invoked without holding
+the writer lease". There is no writer lease — the lock was removed entirely (D5, superseded
+2026-07-22, on the grounds that the owner plans in one session and the lock guarded a situation
+that cannot arise). The outcome must be **declared moot, not implemented**. This is the same
+class as `requirements:70` and `findings:12`, which the session-service audit found moot the
+same day for the same reason: the M6b deletion swept the mechanism and kept leaving consequences
+unstated in its neighbours. **D5 should name `contracts:50`'s `NotWriter` alongside them.**
+
+**And the surface's own tool list carries three dead entries.** `renew_lease`
+(`contracts:53`), `release_writer_lock` (`contracts:54`) and `acquire_writer_lock`
+(`contracts:63`) each declare `consumed by: components:15` and are deliberately not
+implemented. They must be **declared exclusions with reasons**, not quietly absent — otherwise
+§7.3's denominator reports a permanent false shortfall, and a real omission hides inside a gap
+everyone has learned to ignore.
+
+### 7.3 Check 3 — what does "wrapping every service contract" count?
+
+The surface's stated responsibility is "an engine-agnostic MCP stdio toolset wrapping **every**
+service contract". That is an accounting claim, so it gets the three questions:
+
+- **The set:** every contract declaring `consumed by: components:15` in the frozen plan —
+  **39** of them, spanning eleven owning tasks.
+- **Its source:** the frozen plan, extracted mechanically. **Not** a hand-kept list inside the
+  surface module, which rots the first time someone adds a contract and forgets, and reports
+  success while doing it.
+- **When it is fixed:** permanently. The plan is frozen, so unlike F26's brief there is no
+  moving target.
+- **Less a declared exclusion list, each entry carrying its reason** — today the three
+  writer-lock calls above, leaving **36 tools required**.
+
+So the registry check is a test that parses the frozen plan and compares. That test is the
+mechanism; "we wrapped everything" in a docstring is not.
+
+### 7.4 The finding no check was looking for: the digest names calls the surface cannot reach
+
+`plan_status` tells a resuming planner what to fetch — D17's ruling, and a good one. Of the six
+calls it names, **one is reachable through the surface.**
+
+| The digest says to call | In the frozen plan | Exposed? |
+|---|---|---|
+| `next_gaps()` | `contracts:19` | **yes** |
+| `get_mandate()` | `contracts:17` | no — consumed by `components:14` only |
+| `get_package_script(N)` | `contracts:65` (`get_stage_script`, renamed for the `stage`→`package` retirement) | no — consumed by `components:14` only |
+| `active_warnings()` | `contracts:23` | no — consumed by `components:14`, `11`, `13` |
+| `journal()` | **not a contract** | our own addition, M6 session-service |
+| `gate_runs()` | **not a contract** | our own addition, the gate-history fix (F30) |
+
+So a cold planner is handed a digest that closes by instructing it to make calls it has no way
+to make, and two of those calls exist nowhere in the specification at all.
+
+**Why nothing caught it.** This is **F30's exact shape one level up**: every contract is
+well-formed in isolation, and the gap runs *between* two of them with a direction. F30 added
+the question *which contract writes this field, and does its signature admit that it did?* This
+finding names its mirror: **which contract can the reader actually call, and does the thing
+telling them to call it know?**
+
+**And D17 created it, yesterday.** Ruling that the digest names calls instead of carrying text
+was right, and it moved the entire burden onto a surface that did not exist yet — after which
+nobody re-checked that surface's denominator against the new obligation. Worth stating
+generally, because it will happen again: **a decision that is correct in itself can still put a
+defect into a neighbour, and the neighbour is where to look the moment a decision changes who
+does the work.**
+
+**A seventh instance, independent of the digest.** `compose_brief` (`contracts:68`) is declared
+consumed by `contracts:55` alone, yet the plan's own text says composing a brief is "a separate
+second call" made by the planning session — which reaches the tool only through the surface.
+Either the consumed-by declaration is wrong or the prose is. Owner's call.
+
+### 7.5 What must be decided before the surface is built
+
+1. **Are the mandate, the package script and the active warnings exposed as tools?** My
+   recommendation is yes. The alternative — rewriting the digest so it only names what happens
+   to be exposed — lets the specification's consumed-by declarations decide what a planner is
+   allowed to know, which is backwards. Exposing them widens the surface beyond the frozen
+   plan's declarations and is therefore a deviation, logged as one.
+2. **`journal()` and `gate_runs()` need contract status.** They are ours, they are named in
+   output, and they are specified nowhere. Deviation entries with contracts of their own.
+3. **`compose_brief`** — resolve the contradiction in §7.4.
+
+### 7.6 The mechanism that stops it recurring
+
+The denominator in §7.3 should have a second half: **every call named in any tool output must
+be exposed by the surface.** Output is scanned for call names, each is resolved against the
+registry, and an unresolvable one fails. That is cheap, exercises no judgment, and it is the
+same door-scan §6.7 already installs for addresses — one pass, two invariants, because they are
+the same invariant: **the tool never points a reader at something the reader cannot get to.**
+
+---
+
+## 8. How to run things
 
 Tests: `.venv\Scripts\python.exe -m pytest -q` from repo root (288 passing at M6a; ~2 min,
 so run it in the background).
