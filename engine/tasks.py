@@ -34,6 +34,7 @@ import json
 from dataclasses import dataclass, field
 
 from engine.errors import PlanToolError
+from engine.fingerprint import capture as fingerprint_capture
 from engine.models import RowRef
 from engine.obligations import ObligationService
 from engine.clock import now
@@ -903,14 +904,14 @@ class TaskGraphService:
     ) -> None:
         """The drift baseline. Captured at finalization and at each brief issue, which is
         what makes plan_status's drift flags computable at all — before this contract
-        existed nothing ever wrote one (M5_PLAN.md 1.2)."""
+        existed nothing ever wrote one (M5_PLAN.md 1.2).
+
+        What goes *in* the fingerprint lives in `engine/fingerprint.py`, which also owns the
+        comparison. Keeping the field list here would put capture and comparison in two files
+        with nothing binding them to the same fields."""
         stamp = now()
         handle = self.storage.plan_handle()
-        fingerprint = {
-            "workspace": str(self.storage.workspace),
-            "plan_version": handle.get("version"),
-            "schema_version": handle.get("schema_version"),
-        }
+        fingerprint = fingerprint_capture(self.storage)
         self.storage.write_atomic([
             Op("insert", "workspace_fingerprints", {
                 "occasion": occasion,
