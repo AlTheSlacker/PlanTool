@@ -148,16 +148,27 @@ def label(name: str | None, ref: RowRef | str) -> str:
     return f"{name or NO_LIVE_ROW} ({ref})"
 
 
-def resolver_from(rows: Any) -> Callable[[RowRef], tuple[str | None, str]]:
-    """Build the name lookup `render` needs from a `RowService`.
+def resolver_from(rows: Any, findings: Any = None) -> Callable[[RowRef], tuple[str | None, str]]:
+    """Build the name lookup `render` needs.
 
     Returns `(name, state)`, where a missing row is `(None, 'absent')`. State comes back
     alongside the name because a *superseded* row still has a perfectly good name — the
     reader needs to know the citation moved on, and that is not the same failure as F17's
     address pointing at nothing at all.
+
+    **Two stores, one address space, and that is the point** (D22, DEFECTS.md F38). A
+    finding is addressed `findings:N` and lives in its own table, not in `plan_rows` —
+    because its lifecycle is a state machine and a plan row's is supersession. Addressing
+    never required a common table; it required somebody able to resolve it, which is this
+    function. Without the second lookup every `findings:3` in the owner's own prose came
+    back as *no live row at this address*, and the door would have been reporting the F17
+    damage it exists to detect, where there was none.
     """
 
     def resolve(ref: RowRef) -> tuple[str | None, str]:
+        if findings is not None and ref.table == findings.TABLE:
+            found = findings.find(ref)
+            return (found.name, found.state) if found is not None else (None, "absent")
         try:
             row = rows.get(ref)
         except Exception:

@@ -12,8 +12,10 @@ author session dispositions later.**
 2. Read it end to end before filing anything. Contradictions live *between* sections, so a
    partial read finds the easy half. If you cannot hold it all, work table by table and
    leave a note for the session that continues; findings checkpoint, reading does not.
-3. File each issue as you confirm it: `file_finding(source="redteam", text, links)` —
-   text states what is wrong, where, and why it matters; links cite the implicated rows.
+3. File each issue as you confirm it with `file_finding`: `refs` are the rows it attacks,
+   `description` states what is wrong, where, and why it matters, `severity` says how badly,
+   and `name` is the same claim in a few words — the name is what every later reader sees
+   beside the address, so write the sentence you would want in a list of what you found.
    File one finding per issue, not one omnibus finding.
 
 ## Standing targets — check every one (spec 5.1's prompt-enforced rules)
@@ -45,8 +47,9 @@ The engine could not code-enforce these; you are the enforcement:
 
 ## Rules
 
-- Cite rows. A finding without links to the rows it implicates will bounce back to you at
-  disposition time.
+- Cite rows. `refs` is mandatory and every ref is checked: a finding with no target is an
+  opinion about the plan, and only a finding with a target can be adjudicated. The arrow
+  runs this way and only this way — the finding names the rows; the rows do not link back.
 - Do not fix anything — no submits, no supersedes, no decisions. Your only write tool is
   `file_finding`.
 - Finding nothing is not an option to aim for. If you truly find nothing after honest

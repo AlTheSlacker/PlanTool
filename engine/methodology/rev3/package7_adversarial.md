@@ -2,8 +2,8 @@
 
 The plan now gets attacked before it gets frozen. Two passes, both filed through
 `file_finding`, both drained through `resolve_finding`. **You do not defend the plan
-here** — a finding that turns out wrong is dispositioned, never argued out of existence
-before it is filed.
+here** — a finding that turns out wrong is resolved on the record, never argued out of
+existence before it is filed.
 
 ## Pass 1 — the red team (a fresh session, not you)
 
@@ -31,13 +31,18 @@ engine cannot see, spec 5.1):
 
 ## Dispositioning — with the user, every finding
 
-Each finding gets exactly one of:
-- **fixed** — the plan rows were corrected (supersede_row / retire_row / new submits); link them.
-- **accepted** — the user heard the risk and kept the plan; the rationale quotes their call.
-- **spiked** — an experiment will settle it; `register_spike` first, link `spikes:N`.
+Each finding is closed with `resolve_finding`, which takes exactly one outcome:
+- **addressed** — the plan rows were corrected (supersede_row / retire_row / new submits);
+  the rationale names them.
+- **accepted_risk** — the user heard the risk and kept the plan; the rationale quotes their
+  call. This one stays visible at implementation handoff, which is the point of it.
+- **withdrawn** — the finding was wrong. Only reachable after a recorded dispute.
 
-Dismissing a finding as "not really a problem" is spelled **accepted**, with the user's
-words in the rationale.
+Where an experiment will settle it, `register_spike` first and say so in the rationale.
+
+Dismissing a finding as "not really a problem" is spelled **accepted_risk**, with the user's
+words in the rationale. The gate checks both halves — an outcome and a rationale — because a
+finding closed without one is indistinguishable at handoff from one somebody forgot about.
 
 ## Self-review before gate
 
@@ -49,4 +54,4 @@ words in the rationale.
 
 ## Exit condition (mechanical gate)
 
-At least one finding exists and every finding is dispositioned with a rationale.
+At least one finding exists, and every finding has both an outcome and a rationale.

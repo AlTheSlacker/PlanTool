@@ -36,6 +36,7 @@ from engine.clock import now
 from engine.conflicts import Conflict, ConflictService, GateScope
 from engine.door import label
 from engine.errors import PlanToolError
+from engine.findings import Finding, FindingService
 from engine.idempotency import key
 from engine.storage import Op
 from engine.gaps import GapEngine, name_of
@@ -104,11 +105,13 @@ class GateEngine:
         warnings: WarningService,
         gaps: GapEngine | None = None,
         methodology: Methodology | None = None,
+        findings: FindingService | None = None,
     ):
         self.storage = storage
         self.rows = rows
         self.conflicts = conflicts
         self.warnings = warnings
+        self.findings = findings or FindingService(storage, rows)
         self.methodology = methodology or load()
         self.gaps = gaps or GapEngine(storage, rows, methodology=self.methodology)
 
@@ -321,6 +324,8 @@ class GateEngine:
             "unbacked_assumption": self._c_unbacked_assumption,
             "prior_gates_green": self._c_prior_gates_green,
             "no_open_conflicts": self._c_no_open_conflicts,
+            "findings_exist": self._c_findings_exist,
+            "findings_resolved": self._c_findings_resolved,
         }.get(criterion.type)
         if handler is None:
             raise PlanUnreadable(
@@ -352,6 +357,57 @@ class GateEngine:
         )
         # requirements:46 — a stable order in, a stable order out.
         return sorted(page.rows, key=lambda r: r.ref.ordinal)
+
+    # --- criteria that read the finding service, not plan_rows (D22) ---
+    #
+    # These two have a type each instead of a `table:` naming the store, and that is the
+    # repair for F38 rather than an implementation detail. The package-7 criteria used to
+    # say `type: non_empty, table: findings`, which read plan_rows — where findings have
+    # never been written — so the gate reported "no adversarial findings recorded" no
+    # matter how many the red team filed, and could not be passed by the route the
+    # methodology prescribes. A `table:` that might mean either store would leave the same
+    # ambiguity in place with better manners. The type says where it looks.
+
+    def _c_findings_exist(self, criterion: Criterion) -> list[Hole]:
+        if self.findings.all_findings():
+            return []
+        return [self._finding_hole(criterion)]
+
+    def _c_findings_resolved(self, criterion: Criterion) -> list[Hole]:
+        """Every finding reached a terminal outcome and said why.
+
+        Both halves, because `requirements:33`'s accepted risk is the case that matters: a
+        finding closed with no rationale is indistinguishable at handoff from one somebody
+        forgot about.
+        """
+        holes = []
+        for finding in self.findings.all_findings():
+            missing = []
+            if finding.is_open:
+                missing.append("an outcome")
+            if not (finding.rationale or "").strip():
+                missing.append("a rationale")
+            if missing:
+                holes.append(
+                    self._finding_hole(
+                        criterion, finding, missing=" and ".join(missing)
+                    )
+                )
+        return holes
+
+    def _finding_hole(self, criterion, finding=None, **fmt: Any) -> Hole:
+        return Hole(
+            criterion_id=criterion.id,
+            table=Finding.TABLE,
+            problem=criterion.problem.format(
+                label=label(finding.name, finding.ref) if finding else "",
+                state=finding.state if finding else "",
+                **fmt,
+            ),
+            fix=criterion.fix,
+            ref=finding.ref if finding else None,
+            cross_check=criterion.cross_check,
+        )
 
     def _c_non_empty(self, criterion: Criterion) -> list[Hole]:
         if self._live(criterion.spec["table"]):

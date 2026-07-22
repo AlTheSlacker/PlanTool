@@ -27,7 +27,10 @@ def _row(rows, text="the gate criteria are too weak", key=None):
 
 def test_file_finding_links_the_attacked_rows(rows, findings):
     ref = _row(rows)
-    finding = findings.file_finding([ref], "package 4 gate passes with zero tests", "high")
+    finding = findings.file_finding(
+        [ref], "package 4 gate passes with zero tests", "high",
+        name="gate 4 passes with no tests",
+    )
 
     assert finding.state == FILED
     assert finding.refs == (ref,)
@@ -35,24 +38,63 @@ def test_file_finding_links_the_attacked_rows(rows, findings):
     assert finding.is_open is True
 
 
+# --- D22: a finding is addressable, named, and not a plan row ---
+
+
+def test_a_finding_has_an_address_of_its_own(rows, findings):
+    """`table:ordinal` was never a property of `plan_rows` — it is a naming scheme, and
+    what it needs is somebody able to resolve it. That is what lets a finding keep its own
+    store and still be cited."""
+    finding = findings.file_finding(
+        [_row(rows)], "no rollback path", "high", name="no rollback path",
+    )
+    assert str(finding.ref) == f"findings:{finding.id}"
+    assert findings.find(finding.ref).name == "no rollback path"
+
+
+def test_an_address_reaching_no_finding_resolves_to_nothing(findings):
+    assert findings.find("findings:99") is None
+
+
+def test_a_finding_needs_a_name(rows, findings):
+    """D19: `findings:3` reaches readers, so it may not travel alone. The tool cannot
+    supply the name — deriving one from the description is the guess the rule removes."""
+    with pytest.raises(RefNotFound) as exc:
+        findings.file_finding([_row(rows)], "a real problem", "high", name="  ")
+    assert "name" in str(exc.value)
+
+
+def test_findings_is_not_a_plan_row_table(rows):
+    """Deciding which store owns the word is half a fix. Without this the collision comes
+    back as data the first time somebody submits the obvious-looking row (F38)."""
+    receipt = rows.submit_rows(
+        [RowSubmission(table="findings", content={"text": "a red-team finding"},
+                       name="a red-team finding")],
+        "reserved",
+    )
+    verdict = receipt.verdicts[0]
+    assert not verdict.accepted
+    assert "file_finding" in verdict.problem
+
+
 def test_file_finding_rejects_unknown_ref(findings):
     with pytest.raises(RefNotFound) as exc:
-        findings.file_finding(["requirements:99"], "a problem", "low")
+        findings.file_finding(["requirements:99"], "a problem", "low", name="a problem")
     assert "requirements:99" in str(exc.value)
 
 
 def test_file_finding_requires_refs(findings):
     """requirements:31 — findings attack specific rows."""
     with pytest.raises(RefNotFound):
-        findings.file_finding([], "the plan feels wrong", "low")
+        findings.file_finding([], "the plan feels wrong", "low", name="the plan feels wrong")
 
 
 def test_file_finding_requires_description_and_severity(rows, findings):
     ref = _row(rows)
     with pytest.raises(RefNotFound):
-        findings.file_finding([ref], "  ", "high")
+        findings.file_finding([ref], "  ", "high", name="a real problem")
     with pytest.raises(RefNotFound):
-        findings.file_finding([ref], "a real problem", "")
+        findings.file_finding([ref], "a real problem", "", name="a real problem")
 
 
 def test_integrity_finding_files_without_readable_rows(store, findings):
@@ -72,7 +114,7 @@ def test_integrity_finding_files_without_readable_rows(store, findings):
 
 
 def test_addressed_is_terminal(rows, findings):
-    finding = findings.file_finding([_row(rows)], "a problem", "high")
+    finding = findings.file_finding([_row(rows)], "a problem", "high", name="a problem")
     resolved = findings.resolve_finding(finding.id, "addressed", "fixed in requirements:12")
 
     assert resolved.state == ADDRESSED
@@ -84,7 +126,7 @@ def test_addressed_is_terminal(rows, findings):
 
 def test_accepted_risk_stays_visible_at_handoff(rows, findings):
     """requirements:33 — an accepted risk is a known issue, not a closed one."""
-    finding = findings.file_finding([_row(rows)], "no rollback path", "medium")
+    finding = findings.file_finding([_row(rows)], "no rollback path", "medium", name="no rollback path")
     resolved = findings.resolve_finding(
         finding.id, "accepted_risk", "owner accepts: manual restore is acceptable"
     )
@@ -97,15 +139,15 @@ def test_accepted_risk_stays_visible_at_handoff(rows, findings):
 
 def test_open_findings_fail_the_verification_gate(rows, findings):
     """requirements:32 — neither addressed nor explicitly accepted means still open."""
-    kept = findings.file_finding([_row(rows, "a", key="a")], "unresolved", "high")
-    done = findings.file_finding([_row(rows, "b", key="b")], "resolved", "high")
+    kept = findings.file_finding([_row(rows, "a", key="a")], "unresolved", "high", name="unresolved")
+    done = findings.file_finding([_row(rows, "b", key="b")], "resolved", "high", name="resolved")
     findings.resolve_finding(done.id, "addressed", "fixed")
 
     assert [f.id for f in findings.open_findings()] == [kept.id]
 
 
 def test_resolve_requires_a_rationale(rows, findings):
-    finding = findings.file_finding([_row(rows)], "a problem", "high")
+    finding = findings.file_finding([_row(rows)], "a problem", "high", name="a problem")
     with pytest.raises(InvalidTransition):
         findings.resolve_finding(finding.id, "accepted_risk", "   ")
 
@@ -121,7 +163,7 @@ def test_unknown_finding_is_named(findings):
 
 def test_withdraw_requires_a_dispute_first(rows, findings):
     """sm_cells:92 — a finding nobody disputed cannot be withdrawn."""
-    finding = findings.file_finding([_row(rows)], "a problem", "high")
+    finding = findings.file_finding([_row(rows)], "a problem", "high", name="a problem")
     with pytest.raises(InvalidTransition) as exc:
         findings.resolve_finding(finding.id, "withdrawn", "never mind")
     assert "no dispute open" in str(exc.value)
@@ -129,7 +171,7 @@ def test_withdraw_requires_a_dispute_first(rows, findings):
 
 
 def test_dispute_then_withdraw(rows, findings):
-    finding = findings.file_finding([_row(rows)], "a problem", "high")
+    finding = findings.file_finding([_row(rows)], "a problem", "high", name="a problem")
     disputed = findings.dispute_finding(finding.id, "the row already covers this case")
 
     assert disputed.state == DISPUTED
@@ -144,7 +186,7 @@ def test_dispute_then_withdraw(rows, findings):
 
 
 def test_dispute_then_uphold_returns_to_filed(rows, findings):
-    finding = findings.file_finding([_row(rows)], "a problem", "high")
+    finding = findings.file_finding([_row(rows)], "a problem", "high", name="a problem")
     findings.dispute_finding(finding.id, "this is out of scope")
     upheld = findings.uphold_finding(finding.id, "scope includes it; the finding stands")
 
@@ -156,7 +198,7 @@ def test_dispute_then_uphold_returns_to_filed(rows, findings):
 
 def test_disputed_finding_cannot_be_addressed_directly(rows, findings):
     """sm_cells:98 — settle the dispute first."""
-    finding = findings.file_finding([_row(rows)], "a problem", "high")
+    finding = findings.file_finding([_row(rows)], "a problem", "high", name="a problem")
     findings.dispute_finding(finding.id, "disagree")
     with pytest.raises(InvalidTransition) as exc:
         findings.resolve_finding(finding.id, "addressed", "fixed anyway")
@@ -166,12 +208,12 @@ def test_disputed_finding_cannot_be_addressed_directly(rows, findings):
 
 def test_accepted_risk_can_be_reopened_by_dispute(rows, findings):
     """sm_cells:105 — accepted_risk is visible, not settled."""
-    finding = findings.file_finding([_row(rows)], "a problem", "high")
+    finding = findings.file_finding([_row(rows)], "a problem", "high", name="a problem")
     findings.resolve_finding(finding.id, "accepted_risk", "owner accepts")
     assert findings.dispute_finding(finding.id, "this risk is not acceptable").state == DISPUTED
 
 
 def test_findings_for_a_row(rows, findings):
     ref = _row(rows)
-    finding = findings.file_finding([ref], "a problem", "high")
+    finding = findings.file_finding([ref], "a problem", "high", name="a problem")
     assert [f.id for f in findings.findings_for(ref)] == [finding.id]

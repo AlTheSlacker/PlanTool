@@ -49,6 +49,26 @@ from engine.storage import FromOp, Op, Storage
 #: detector in M3; until then no contradiction is detected and the error is unreachable.
 ContradictionDetector = Callable[[RowSubmission, "RowService"], str | None]
 
+#: Table names a plan row may not use, each with the refusal the submitter reads.
+#:
+#: `plan_rows.table` is open — a methodology declares its own row types and the engine knows
+#: none of them, which is what keeps `findings:4` from coming true. But open means a name
+#: already owned by another store can be claimed by accident, and one already had been:
+#: `findings` addresses both the finding service and, in v1's export, a set of plan rows, so
+#: a red team filing through `file_finding` wrote where the package-7 gate did not look
+#: (DEFECTS.md F38). Deciding which store owns the word is only half a fix; without this the
+#: collision returns as data the first time somebody submits the obvious-looking row.
+#:
+#: The refusal names the tool to use instead. A closed door with no signpost is how a
+#: planner ends up inventing a workaround.
+RESERVED_TABLES = {
+    "findings": (
+        "'findings' is not a plan-row table: a finding moves through states and a plan row "
+        "is write-once, so findings have a store of their own. File it with file_finding, "
+        "which addresses it as findings:N and links it to the rows it attacks"
+    ),
+}
+
 
 def _no_contradictions(submission: RowSubmission, service: RowService) -> str | None:
     return None
@@ -246,6 +266,8 @@ class RowService:
         kind of assumption it is."""
         if not submission.table or not submission.table.isidentifier():
             return f"table name {submission.table!r} is not a valid identifier"
+        if submission.table in RESERVED_TABLES:
+            return RESERVED_TABLES[submission.table]
         if not isinstance(submission.content, dict) or not submission.content:
             return "content must be a non-empty object"
         if not submission.name or not submission.name.strip():

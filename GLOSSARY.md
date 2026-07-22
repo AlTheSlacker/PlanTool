@@ -138,6 +138,28 @@ reference, and the old stays frozen for defect forensics.
 
 ---
 
+## Not a level, and not a row: finding
+
+A **finding** is a claim that something in the plan is wrong, filed against the specific rows
+it attacks. It is addressed `findings:N` and carries a **name**, like everything else with an
+address — but it is **not a plan row**, and the distinction is the one place this vocabulary
+had two stores answering to one word (DEFECTS.md **F38**, DEVIATIONS.md **D22**).
+
+**Why it cannot be a plan row.** A plan row is write-once: `requirements:61` says content is
+never edited, and changing your mind writes a successor. A finding *moves* — filed, then
+addressed or accepted-as-risk or withdrawn, with a rationale recorded at the transition. It
+also speaks *about* the plan rather than being part of it; served through `read_rows` it
+would arrive in every brief and every render as though it were plan content.
+
+**So `findings` is a reserved table name** and submitting one is refused, naming
+`file_finding` instead. Addressing is a naming scheme, not a storage claim: `findings:N`
+resolves because the door knows to ask the finding service, which is what lets two stores
+share one address space without sharing a table.
+
+The arrow runs one way — a finding names the rows it attacks; rows do not link back.
+
+---
+
 ## Not a level: journal entry
 
 `requirements:56` / `requirements:60` — a **journal entry** is a journal-granularity event:

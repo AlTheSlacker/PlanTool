@@ -4,7 +4,13 @@ Owned exclusively by storage-engine (components:1): "no other component touches 
 database". Every other module reaches persistence through storage.py's typed operations.
 """
 
-SCHEMA_VERSION = 2
+#: Bumped to 3 on 2026-07-22 when `findings.name` was added (DEVIATIONS.md D22). There is no
+#: 2 -> 3 migration path and `migrate` therefore refuses it, which is the honest answer:
+#: `name` is NOT NULL and cannot be backfilled, because inventing one from `description` is
+#: precisely what the column exists to prevent. No plan outside this repo's tests has ever
+#: been written at version 2, so there is nothing to migrate; the first plan that matters
+#: starts at 3.
+SCHEMA_VERSION = 3
 
 DDL = """
 PRAGMA journal_mode = WAL;
@@ -272,8 +278,23 @@ CREATE TABLE IF NOT EXISTS claim_tracks (
 );
 
 -- A red-team result filed against specific rows (entities:7, state_machines:7).
+-- A finding lives here and NOT in plan_rows, and the difference is not storage taste
+-- (DEVIATIONS.md D22). A plan row is write-once — content is never edited and changing your
+-- mind writes a successor (requirements:61) — while a finding *moves*: filed, then addressed
+-- or accepted-as-risk or withdrawn, with a rationale attached at the transition. Putting it
+-- in plan_rows would mean either a supersession per disposition, so every finding leaves a
+-- two-row lineage recording nothing but its own paperwork, or mutable columns on plan_rows,
+-- which ends requirements:61 for one table. A finding is also *about* the plan rather than
+-- part of it; served through read_rows it would reach every brief and every render as though
+-- it were plan content.
+--
+-- `name` is here for the same reason plan_rows has one: a finding is addressed as
+-- `findings:N` and that address reaches readers, so it may never travel alone (D19). It is
+-- NOT NULL at creation and never derived from `description` — a name guessed from content is
+-- the failure D12 argued out of the row schema and F32 then found three copies of.
 CREATE TABLE IF NOT EXISTS findings (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT    NOT NULL,       -- what this finding says, in a few words
     description TEXT    NOT NULL,
     severity    TEXT    NOT NULL,
     state       TEXT    NOT NULL,       -- filed | disputed | addressed | accepted_risk
