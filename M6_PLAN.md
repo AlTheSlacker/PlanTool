@@ -74,16 +74,35 @@ frozen and now points at a dead ref. Generalised from the F15 false alarm. Note 
 the *plan* is a live-rows export, so superseded originals vanish while the prose that cites
 them does not.
 
-### 2.4 §4 Q1 — mandate and package script: by value or by reference?
-`requirements:10` says return them on session open. They are the biggest single chunk of the
-digest and are bounded by methodology size, not plan size. By value makes the digest
-permanently fat; by reference contradicts `requirements:10`'s plain reading; first-call-by-
-value makes `plan_status` stateful within a session, which is a debugging hazard.
+### 2.4 §4 Q1 — mandate and package script: by value or by reference? — **DECIDED 2026-07-22**
+**By reference.** `plan_status` names the two documents and the calls that fetch them
+(`get_mandate`, `get_package_script`); it never carries their text. The owner's reasoning
+settles it: the documents need to reach a session *once*, and the only party who knows
+whether they have already arrived is the caller. A session mid-package that calls
+`plan_status` again gets a small answer because it does not ask for what it already holds.
 
-### 2.5 §4 Q2 — does the digest name what to fetch?
-If `plan_status` serves counts and ids, a resuming model may simply not fetch and proceed
-confidently on the digest alone — silent, and the same class as F14. The countermeasure is
-the digest naming its own next action, which is `requirements:58` doing real work.
+Note what was wrong with the framing that produced this question. All three options
+considered — by value, by reference, by value on the first call only — assumed the *tool*
+had to decide when the documents were needed, and the third was an attempt to make the tool
+remember who had called it. That is session state, which this build deliberately abolished.
+The caller already has the knowledge; nothing needs remembering. Recorded as **D17**.
+
+*Original statement of the item:* `requirements:10` says return them on session open. They
+are the biggest single chunk of the digest and are bounded by methodology size, not plan
+size. By value makes the digest permanently fat; by reference contradicts `requirements:10`'s
+plain reading; first-call-by-value makes `plan_status` stateful within a session.
+
+### 2.5 §4 Q2 — does the digest name what to fetch? — **DECIDED 2026-07-22**
+**Yes, on both halves, and they are separate obligations.** Every count in the digest names
+the call that retrieves what it stands for — a bare number invites a session to reason about
+it ("only 3 warnings, that's fine") instead of reading it. And the digest closes by stating
+the single next action in a sentence, because a resuming session handed a tidy summary and no
+instruction invents a plausible next step rather than asking for one.
+
+Both halves guard one failure: a session reads the digest, feels informed, fetches nothing,
+and proceeds on a summary. That is F14's shape — a check that ran, passed, and meant nothing.
+This is also `requirements:58` doing real work rather than being decorative. Recorded as
+**D17** with Q1, since they are one decision about what a digest is for.
 
 ### 2.6 D9 — the hard-lock as a product requirement — **DECIDED 2026-07-21 as D15**
 Settled: a gate locks on every open item **allocated to it**; `resolve_by` is required at
@@ -227,7 +246,98 @@ of the frozen plan — *what fires this, and what fails when it is broken?*
 
 ---
 
-## 5. How to run things
+## 5. Pre-build audit — session-service, 2026-07-22
+
+Run before a line of `engine/sessions.py` was written. Checks 1 and 2 pass; check 3 found two
+problems, and a fourth thing turned up that is not a check result at all.
+
+**Check 1 — every state-machine event has a contract that fires it.** Nothing to check.
+`session-service` brings no state machine: a journal note and a next-action checkpoint are
+records, not entities with a lifecycle.
+
+**Check 2 — every outcome the signature offers is reachable.** Passes. `StorageUnavailable`
+on both writes is the ordinary storage failure. `plan_status`'s `NoPlanFound` is reachable —
+a workspace with no plan row is the state `Storage.init_plan` exists to leave. `PlanCorrupt`
+is reachable through `Storage.integrity_check`.
+
+**Check 3a — "accumulated learnings" has no denominator, and it contradicts a requirement.**
+`requirements:58` says resume presents "accumulated learnings". Journal notes accumulate for
+the life of the plan and nothing ever removes one, so "accumulated" taken literally means the
+digest grows without bound — which `requirements:62` forbids in the same breath, demanding
+resume cost scale with the current working set rather than total plan size. The two rows
+disagree and neither names the set.
+
+Resolution, which the build must state rather than assume: **the digest carries the journal
+notes of the current package by value, and one count of everything older, naming the call
+that fetches it.** The denominator is named (notes belonging to the current package), sourced
+(the package `gaps.current_package()` reports), and — unlike F26's brief — legitimately fixed
+at read time, because a status view is a live reading of where the plan *is*, not a frozen
+accounting of what was owed at a past moment. That distinction is worth keeping: F26's rule
+is that an *accounting* must not float, not that nothing may be computed fresh.
+
+**Check 3b — drift flags have no baseline for the whole of planning, and silence would lie.**
+`requirements:73`'s workspace fingerprint is captured at finalization and at each brief issue,
+and that is already built (`engine/tasks.py`). `plan_status` is called throughout the planning
+interview, long before either occasion, so for that entire phase there is no baseline to
+compare against. Returning an empty drift list there is exactly F14's shape: a check that ran,
+found nothing, and meant nothing — and the reader cannot tell "the workspace has not changed"
+from "nothing ever recorded what it looked like". **The digest must answer "no baseline
+captured yet" as a distinct state**, not as an absence of flags.
+
+**And one thing no check would have caught: `requirements:70` is moot.** It requires
+checkpoint-class writes rejected under writer-lock contention to park in a spill journal and
+reconcile on the next lock acquisition. There is no writer lock (D5), so there is no
+contention, no rejection, and nothing to park; `findings:12`'s collision between zero-loss
+checkpointing and single-writer rejection dissolved with the lock that caused it. D5 currently
+names `requirements:67`/`68` as moot and should name `requirements:70` and `findings:12` too —
+the M6b deletion swept the mechanism and left this consequence unstated.
+
+`requirements:69` also lands here: a planner opening a network-mounted workspace is warned
+that machine-crash durability is untested there. Detection is **lexical only** — a UNC path or
+a mapped drive letter, read from the path string. The tool never probes the network.
+
+**And one the audit did find, which no existing check would have: `contracts:64` consumes a
+thing no contract produces.** Three rows promise **gate history** to a resuming planner
+(`uc_steps:5`, `requirements:10`, `contracts:64`) and `run_gate` computed its verdict,
+returned it and forgot it — no table, no column. Logged as **F30** and fixed here. The three
+checks all inspect a contract against itself; this gap is *between* two well-formed contracts
+and it has a direction, which is the question worth adding to the audit habit: **which
+contract writes this field, and does its signature admit that it did?** It is the mirror of
+M5a's schema-only fix, where a write path had no reader.
+
+### 5.1 What the driver caught that the tests could not
+
+Four things, on the first run, in the module the tests had just passed:
+
+1. **The methodology reported itself as `plantool-rev2-2026-07-15` while the engine was
+   loading `rev3/`.** `rev3/manifest.yaml` had been created by copying rev 2's, stamp and all.
+   **F31.** A test *did* guard the stamp — and asserted the copied literal, so it passed while
+   agreeing with the copy. A test that asserts a copied literal cannot detect that the literal
+   was copied; the replacement asserts that revision N's stamp contains `revN`. It was visible
+   only because the digest prints the stamp and a person read the line.
+
+   While fixing it: **rev 2 is not loadable by this loader at all** — it is frozen v1
+   provenance and still says `stages:` where the loader wants `packages:`. So
+   `requirements:71`'s promised migration path *from one revision to the next* currently has
+   exactly one loadable revision. Bound to the M6 gate alongside rev 3's outstanding half.
+2. **`journal_note` keyed its idempotency on the count of existing notes**, which makes every
+   call a new operation and the key incapable of detecting a repeat. That is **F29 exactly**,
+   written by me the same afternoon as F29's own defect entry, in a module whose docstring
+   cites F29. Knowing the rule is not the mechanism; the driver was.
+3. **Gate history grew without bound in the digest** — two runs of package 1 printed two
+   identical lines. The same missing-denominator question the audit asked about the journal,
+   which I answered for the journal and did not think to ask again about the neighbouring
+   field. Now: newest verdict per package by value, the rest as a count naming `gate_runs()`.
+4. **"1 active warnings", and "1 engineer's mandate — get_mandate() to read them".** Forcing
+   a reference through a type built for counts produced nonsense at the one place the digest
+   is actually read.
+
+Item 2 is the one to remember. The rule was fully in mind, cited in the file, and broken
+anyway, at the point of least attention — which is the same sentence F27 and F29 both end on.
+
+---
+
+## 6. How to run things
 
 Tests: `.venv\Scripts\python.exe -m pytest -q` from repo root (288 passing at M6a; ~2 min,
 so run it in the background).
