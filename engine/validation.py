@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from engine.errors import PlanToolError
 from engine.models import Provenance, RowRef
 from engine.clock import now
+from engine.idempotency import key
 from engine.storage import FromOp, Op, Storage
 
 # --- state_machines:5, the Spike lifecycle ---
@@ -235,7 +236,7 @@ class ValidationService:
     # --- contracts:29 ---
 
     def register_spike(
-        self, assumption: RowRef | str, spec: SpikeSpec, lease=None
+        self, assumption: RowRef | str, spec: SpikeSpec
     ) -> Spike:
         """Register a spike against a world-assumption, with its quarantine directory.
 
@@ -283,8 +284,7 @@ class ValidationService:
                 "state": REGISTERED,
                 "created_at": stamp,
             })],
-            f"register_spike:{ref}:{stamp}",
-            lease=lease,
+            key("register_spike", ref),
         )
         spike = self.get_spike(receipt["results"][0]["id"])
         # requirements:3 — the quarantine directory is created now, so probe code has
@@ -294,15 +294,15 @@ class ValidationService:
 
     # --- DEFECTS.md F12: the contracts that fire state_machines:5's missing events ---
 
-    def start_spike(self, spike_id: int, lease=None) -> Spike:
+    def start_spike(self, spike_id: int) -> Spike:
         """Fire `start` (sm_cells:62): the probe is now running.
 
         Not in the frozen plan. Without it `conclude` is unreachable, because
         sm_cells:65 refuses to conclude a spike that never executed.
         """
-        return self._transition_spike(spike_id, "start", {}, lease)
+        return self._transition_spike(spike_id, "start", {})
 
-    def unblock_spike(self, spike_id: int, note: str = "", lease=None) -> Spike:
+    def unblock_spike(self, spike_id: int, note: str = "") -> Spike:
         """Fire `unblock` (sm_cells:72): the dependency is reachable again.
 
         Not in the frozen plan — see start_spike. The block reason is cleared, since it
@@ -314,12 +314,12 @@ class ValidationService:
         if note.strip():
             prior = spike.evidence or ""
             values["evidence"] = f"{prior}\nunblocked: {note}".strip()
-        return self._transition_spike(spike_id, "unblock", values, lease)
+        return self._transition_spike(spike_id, "unblock", values)
 
     # --- contracts:30 ---
 
     def record_spike_result(
-        self, spike_id: int, outcome: str, evidence: str, lease=None
+        self, spike_id: int, outcome: str, evidence: str
     ) -> SpikeResolution:
         """Record the outcome and resolve the linked assumption accordingly.
 
@@ -353,16 +353,15 @@ class ValidationService:
             values["block_reason"] = evidence
         else:
             values["concluded_at"] = stamp
-        spike = self._transition_spike(spike_id, _OUTCOME_EVENT[outcome], values, lease)
+        spike = self._transition_spike(spike_id, _OUTCOME_EVENT[outcome], values)
 
-        closed, assumption_state = self._resolve_assumption(spike, outcome, evidence, lease)
+        closed, assumption_state = self._resolve_assumption(spike, outcome, evidence)
         raised: tuple[int, ...] = ()
         if outcome == "refuted":
             raised = self._raise_dependent_conflicts(
                 [spike.assumption],
                 f"spike #{spike.id} refuted the assumption {spike.assumption}",
                 evidence,
-                lease,
             )
         return SpikeResolution(
             spike=self.get_spike(spike_id),
@@ -373,7 +372,7 @@ class ValidationService:
         )
 
     def _resolve_assumption(
-        self, spike: Spike, outcome: str, evidence: str, lease
+        self, spike: Spike, outcome: str, evidence: str
     ) -> tuple[bool, str]:
         """requirements:25/26 — the linked assumption auto-resolves per outcome."""
         if outcome not in ("confirmed", "refuted") or self.rows is None:
@@ -391,7 +390,6 @@ class ValidationService:
             quote=f"spike #{spike.id} {outcome}: {evidence}",
             resolution=resolution,
             idempotency_key=f"spike_resolves:{spike.id}",
-            lease=lease,
             retire_reason=f"refuted by spike #{spike.id}",
         )
         return True, str(row.state)
@@ -404,7 +402,6 @@ class ValidationService:
         kind: str,
         refs: list[RowRef | str],
         red_flag: bool = False,
-        lease=None,
     ) -> TechnicalClaim:
         """File a load-bearing technical claim, routed per kind (requirements:41).
 
@@ -461,11 +458,11 @@ class ValidationService:
             ],
         ]
         receipt = self.storage.write_atomic(
-            ops, f"file_claim:{stamp}:{','.join(str(r) for r in parsed)}", lease=lease
+            ops, key("file_claim", ",".join(str(r) for r in parsed))
         )
         return self.get_claim(receipt["results"][0]["id"])
 
-    def fence_claim(self, claim_id: int, rationale: str, lease=None) -> TechnicalClaim:
+    def fence_claim(self, claim_id: int, rationale: str) -> TechnicalClaim:
         """requirements:4 — fence a red flag so dependent planning may proceed.
 
         The requirement offers "resolved or fenced" as the two ways to clear the block
@@ -479,15 +476,14 @@ class ValidationService:
         self.storage.write_atomic(
             [Op("update", "technical_claims",
                 {"fenced": 1, "evidence": rationale}, where={"id": claim.id})],
-            f"fence_claim:{claim_id}",
-            lease=lease,
+            key("fence_claim", claim_id),
         )
         return self.get_claim(claim_id)
 
     # --- contracts:32 ---
 
     def record_claim_outcome(
-        self, claim_id: int, outcome: str, evidence: str, lease=None
+        self, claim_id: int, outcome: str, evidence: str
     ) -> ClaimResolution:
         """Record a claim's validation outcome.
 
@@ -539,8 +535,7 @@ class ValidationService:
                 "evidence": evidence,
                 "resolved_at": stamp,
             }, where={"id": claim_id})],
-            f"record_claim_outcome:{claim_id}:{outcome}",
-            lease=lease,
+            key("record_claim_outcome", claim_id, outcome),
         )
         raised: tuple[int, ...] = ()
         if outcome == "failed":
@@ -548,7 +543,6 @@ class ValidationService:
                 list(claim.refs),
                 f"technical claim #{claim.id} failed validation: {claim.text}",
                 evidence,
-                lease,
                 include_roots=True,
             )
         return ClaimResolution(
@@ -557,7 +551,6 @@ class ValidationService:
 
     def satisfy_track(
         self, claim_id: int, track: str, detail: str, spike_id: int | None = None,
-        lease=None,
     ) -> TechnicalClaim:
         """Mark one of a claim's validation tracks satisfied.
 
@@ -580,15 +573,14 @@ class ValidationService:
                 "spike_id": spike_id,
                 "updated_at": now(),
             }, where={"claim_id": claim_id, "track": track})],
-            f"satisfy_track:{claim_id}:{track}",
-            lease=lease,
+            key("satisfy_track", claim_id, track),
         )
         return self.get_claim(claim_id)
 
     # --- requirements:43, the shared dependent-conflict walk ---
 
     def _raise_dependent_conflicts(
-        self, roots: list[RowRef], description: str, evidence: str, lease,
+        self, roots: list[RowRef], description: str, evidence: str,
         include_roots: bool = False,
     ) -> tuple[int, ...]:
         """Raise a conflict on every row that depends on a refuted/failed root.
@@ -618,7 +610,6 @@ class ValidationService:
                     "was observed, or override with the reasoning for keeping it as it "
                     "stands"
                 ),
-                lease=lease,
             )
             raised.append(conflict.id)
         return tuple(raised)
@@ -626,7 +617,7 @@ class ValidationService:
     # --- transitions ---
 
     def _transition_spike(
-        self, spike_id: int, event: str, values: dict, lease
+        self, spike_id: int, event: str, values: dict
     ) -> Spike:
         spike = self.get_spike(spike_id)
         target = _SPIKE_TRANSITIONS.get((spike.state, event))
@@ -642,8 +633,7 @@ class ValidationService:
         self.storage.write_atomic(
             [Op("update", "spikes", {"state": target, **values},
                 where={"id": spike_id})],
-            f"spike:{spike_id}:{event}:{now()}",
-            lease=lease,
+            key("spike", spike_id, event),
         )
         return self.get_spike(spike_id)
 

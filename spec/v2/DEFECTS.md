@@ -1116,9 +1116,10 @@ complete the sweep that was believed finished.
 - records every exception in `GLOSSARY.md` **with a reason**, so an exception is a visible act
   — the same friction shape as `requirements:79`'s waiver log and D8's promotion reason.
 
-**Exactly one exception survives** (`writer_lease.session_id`, exempted by the rule's own
-text). Two more were proposed on the day and the owner refused both, which is the part worth
-remembering:
+**One exception survived the day** (`writer_lease.session_id`, exempted by the rule's own
+text) and it is gone too: the writer lock was removed on 2026-07-22 and took its only `session`
+identifier with it, so the banned list now has no exceptions at all. Two more were proposed on
+the day and the owner refused both, which is the part worth remembering:
 
 - **`PartsDontCover`** was kept as a "quotation" of `contracts:40`'s declared error name,
   on the strength of `errors.py`'s convention that a contract's error name is the class name.
@@ -1238,3 +1239,65 @@ is a mechanism; the rows that survive it are not. When a migration changes the *
 store, the checklist is not "did every row arrive" — rows are easy to count and that is
 exactly why counting them feels like verification. It is "did every constraint arrive", and
 constraints are invisible once removed.
+
+---
+
+## F29 — Every idempotency key was built by hand, and every one defeated itself
+
+**Found:** 2026-07-21, while fixing something else. The owner's framing is the finding:
+*"DRY is basic compsci, and exactly the type of behaviour you are supposed to be enforcing.
+This is a bigger fundamental problem than 21 tedious updates."*
+
+**The promise.** `decisions:43` — a replayed idempotency key returns the original receipt and
+never duplicates. That only works if the key answers the question it exists to answer: *is
+this the same operation I already performed?*
+
+**What was there instead.** Thirty-two call sites built their key by hand as an f-string, and
+twenty-one of them appended `now()`. The timestamp was there to make the key unique — which
+cancels the only thing the key does. **A key that is never equal to itself can never detect a
+repeat.** `write_atomic`'s replay path was unreachable from most of the engine while appearing
+to be in force.
+
+**Why it survived a whole build: the clock hid it.** On Windows the system clock updates about
+every 16ms. `now()` called 2000 times in a loop returns the *same* value 2000 times. So the
+timestamp did not even deliver the uniqueness it was added for. Two operations inside one tick
+produced an identical key, the second was treated as a replay, wrote nothing, and returned the
+first one's receipt **reporting success** — a silent wrong answer, surfacing only as an
+intermittent test failure that got *more* frequent as the code got faster. It was first seen
+minutes after F28's fix removed a redundant write.
+
+**The diagnosis that matters is not the timestamp.** Nobody copied a mistake: thirty-two
+authors each independently did the obvious thing at the point of least attention. That is the
+signature of a **missing owner**, and it is the same signature as eight spellings of
+`created_at` (F27) and six differently-named foreign keys asserting one relation (F28).
+Duplication first; the wrong idea second. Offering to correct twenty-one call sites was
+offering to treat the symptom.
+
+**Resolution.**
+
+- **`engine/idempotency.py` is the only place a key is built.** `key(operation, *subjects)`
+  names what the operation acts on and **refuses a timestamp outright** — a `datetime`, or a
+  string the clock recognises as storage form.
+- **It asks `engine/clock.py` whether a value is a timestamp** rather than carrying its own
+  date-matching. A second copy of that knowledge would be this defect one level up.
+- **All 32 sites converted, including the 11 that were already correct.** Leaving a correct
+  hand-built key alive leaves the *pattern* alive, which is what produced the other 21.
+- **`tests/test_idempotency.py` walks the AST of every engine module**, finds every
+  `write_atomic` call and fails on a key that is a literal or an f-string. Extraction alone
+  would not have stopped a thirty-third site. Honest limit, recorded in the test: it catches a
+  key literal *at the call site*; a key assembled into a local first would pass, and `key()`'s
+  runtime refusal is the second line.
+- **`within(op, *subjects, seconds=N)`** is the deliberate fallback the owner proposed — "have
+  I done this in the last second?" — with the window *in* the key, so choosing it is visible.
+  The old code chose a window of zero by accident and believed it had chosen none.
+
+**Two latent bugs became reachable the moment keys were stable**, and both are the same shape
+as the defect: `compose_brief` and `attach` read a new record's id off the op they had just
+executed. On a replay no op executes and the read fails. Neither path had ever run, because no
+key had ever repeated. Both now read from the receipt — which `submit_rows` has always done,
+with a comment explaining why, ten feet away.
+
+**And the check caught the author.** The new module's parameters were first named `part` and
+`parts` — a word retired the previous day, by me, in a session about retired words leaking in
+at the point of least attention. `tests/test_vocabulary.py` failed the suite in 0.1s. The rule
+was fully in mind and still broken; the mechanism is what held.

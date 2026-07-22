@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from engine.errors import PlanToolError
 from engine.models import RowRef, RowSubmission
 from engine.clock import now
+from engine.idempotency import key
 from engine.storage import FromOp, Op, Storage
 
 #: The edge type by which a submitted row declares what it contradicts.
@@ -118,7 +119,6 @@ class ConflictService:
         refs: list[RowRef | str],
         description: str,
         recommendation: str,
-        lease=None,
     ) -> Conflict:
         """File a conflict in the open state; dependent gates block while it is open.
 
@@ -158,14 +158,14 @@ class ConflictService:
             ],
         ]
         receipt = self.storage.write_atomic(
-            ops, f"conflict:{stamp}:{','.join(str(r) for r in parsed)}", lease=lease
+            ops, key("conflict", ",".join(str(r) for r in parsed))
         )
         return self.get(receipt["results"][0]["id"])
 
     # --- contracts:27 ---
 
     def resolve_conflict(
-        self, conflict_id: int, outcome: str, adjudication: str, lease=None
+        self, conflict_id: int, outcome: str, adjudication: str
     ) -> ConflictResolution:
         """Record the owner's adjudication permanently.
 
@@ -202,8 +202,7 @@ class ConflictService:
                 "adjudication": adjudication,
                 "resolved_at": stamp,
             }, where={"id": conflict_id})],
-            f"resolve_conflict:{conflict_id}",
-            lease=lease,
+            key("resolve_conflict", conflict_id),
         )
         return ConflictResolution(
             conflict=self.get(conflict_id),

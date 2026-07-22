@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from engine.errors import PlanToolError
 from engine.models import RowRef
 from engine.clock import now
+from engine.idempotency import key
 from engine.storage import FromOp, Op, Storage
 
 # --- state_machines:7, the Finding lifecycle ---
@@ -117,7 +118,6 @@ class FindingService:
         refs: list[RowRef | str],
         description: str,
         severity: str,
-        lease=None,
     ) -> Finding:
         """File a finding against the specific rows it attacks (requirements:31).
 
@@ -138,10 +138,10 @@ class FindingService:
             if not self._row_exists(ref):
                 raise RefNotFound("no such row; nothing filed", ref=str(ref))
 
-        return self._insert(parsed, description, severity, lease)
+        return self._insert(parsed, description, severity)
 
     def file_integrity_finding(
-        self, report, refs: list[RowRef | str] | None = None, lease=None
+        self, report, refs: list[RowRef | str] | None = None
     ) -> Finding:
         """contracts:33 — unreadable plan state is itself filed as a finding.
 
@@ -155,10 +155,10 @@ class FindingService:
             "plan state is unreadable, so certification is refused (requirements:30). "
             f"Unreadable: {', '.join(str(r) for r in unreadable) or 'unnamed rows'}."
         )
-        return self._insert(unreadable, description, "blocking", lease)
+        return self._insert(unreadable, description, "blocking")
 
     def _insert(
-        self, refs: list[RowRef], description: str, severity: str, lease
+        self, refs: list[RowRef], description: str, severity: str
     ) -> Finding:
         stamp = now()
         ops = [
@@ -175,14 +175,14 @@ class FindingService:
             ],
         ]
         receipt = self.storage.write_atomic(
-            ops, f"file_finding:{stamp}:{','.join(str(r) for r in refs)}", lease=lease
+            ops, key("file_finding", ",".join(str(r) for r in refs))
         )
         return self.get(receipt["results"][0]["id"])
 
     # --- contracts:34 ---
 
     def resolve_finding(
-        self, finding_id: int, outcome: str, rationale: str, lease=None
+        self, finding_id: int, outcome: str, rationale: str
     ) -> Finding:
         """Move a finding to a terminal outcome.
 
@@ -208,12 +208,11 @@ class FindingService:
             finding_id,
             _OUTCOME_EVENT[outcome],
             {"outcome": outcome, "rationale": rationale, "resolved_at": now()},
-            lease,
         )
 
     # --- DEFECTS.md F13: the contracts that fire state_machines:7's missing events ---
 
-    def dispute_finding(self, finding_id: int, argument: str, lease=None) -> Finding:
+    def dispute_finding(self, finding_id: int, argument: str) -> Finding:
         """Fire `dispute` (sm_cells:90): the finding's target argues it is wrong.
 
         Not in the frozen plan. Without it `withdraw` is unreachable, because sm_cells:92
@@ -225,9 +224,9 @@ class FindingService:
                 "a dispute records the argument against the finding",
                 finding_id=finding_id,
             )
-        return self._transition(finding_id, "dispute", {"dispute": argument}, lease)
+        return self._transition(finding_id, "dispute", {"dispute": argument})
 
-    def uphold_finding(self, finding_id: int, rationale: str, lease=None) -> Finding:
+    def uphold_finding(self, finding_id: int, rationale: str) -> Finding:
         """Fire `uphold` (sm_cells:96): the dispute failed; the finding stands.
 
         Not in the frozen plan — see dispute_finding. Returns the finding to `filed`,
@@ -239,11 +238,11 @@ class FindingService:
                 finding_id=finding_id,
             )
         return self._transition(
-            finding_id, "uphold", {"dispute": None, "rationale": rationale}, lease
+            finding_id, "uphold", {"dispute": None, "rationale": rationale}
         )
 
     def _transition(
-        self, finding_id: int, event: str, values: dict, lease
+        self, finding_id: int, event: str, values: dict
     ) -> Finding:
         finding = self.get(finding_id)
         target = _TRANSITIONS.get((finding.state, event))
@@ -259,8 +258,7 @@ class FindingService:
         self.storage.write_atomic(
             [Op("update", "findings", {"state": target, **values},
                 where={"id": finding_id})],
-            f"finding:{finding_id}:{event}:{now()}",
-            lease=lease,
+            key("finding", finding_id, event),
         )
         return self.get(finding_id)
 

@@ -37,7 +37,8 @@ from engine.models import (
     RowVerdict,
 )
 from engine.clock import now
-from engine.storage import Op, Storage
+from engine.idempotency import key
+from engine.storage import FromOp, Op, Storage
 
 #: A contradiction detector: given a candidate submission and the store, return a
 #: human-readable description of what stored row it contradicts, or None.
@@ -74,7 +75,7 @@ class RowService:
     # --- contracts:9 ---
 
     def submit_rows(
-        self, batch: list[RowSubmission], idempotency_key: str, lease=None
+        self, batch: list[RowSubmission], idempotency_key: str
     ) -> BatchReceipt:
         """Submit a batch of rows.
 
@@ -165,37 +166,47 @@ class RowService:
             op_index.append(index)
             verdicts.append(RowVerdict(index, True))
 
-        receipt = self.storage.write_atomic(ops, idempotency_key, lease=lease)
+        # Links ride in the SAME batch as the rows they belong to.
+        #
+        # They used to be a second write_atomic, because a link needs its source row's
+        # ref and refs are assigned inside the transaction. That was tolerable while a
+        # link was optional decoration. It stopped being tolerable when a `belongs_to`
+        # edge became mandatory for contained row types (F28): a row write that
+        # succeeded followed by a link write that failed left exactly the orphan that
+        # submission now refuses to accept — created by the code enforcing the rule.
+        #
+        # `FromOp` borrows a value from an earlier op in the same batch, resolved by
+        # storage as it applies them in order, so the row and its edges commit together
+        # or not at all. entities:15 keeps links immutable thereafter.
+        op_position = {index: position for position, index in enumerate(op_index)}
+        for index in op_index:
+            for link in batch[index].links:
+                ops.append(
+                    Op(
+                        "insert",
+                        "links",
+                        {
+                            "source_ref": FromOp(op_position[index], "ref"),
+                            "target_ref": (
+                                FromOp(op_position[link.target], "ref")
+                                if link.is_intra_batch
+                                else str(link.target)
+                            ),
+                            "edge_type": link.edge_type,
+                            "created_at": now(),
+                        },
+                    )
+                )
+
+        receipt = self.storage.write_atomic(ops, idempotency_key)
 
         # Read assignments from the receipt, not from the ops: on an idempotent replay
         # the ops were never executed and carry no results, but the stored receipt has
-        # the original refs (decisions:43).
+        # the original refs (decisions:43). Only the leading row ops are read; the link
+        # ops that follow them carry no ref of their own.
         assigned: dict[int, RowRef] = {}
-        for result, index in zip(receipt["results"], op_index, strict=True):
+        for result, index in zip(receipt["results"], op_index, strict=False):
             assigned[index] = RowRef.parse(result["ref"])
-
-        # Links are declared with their rows but can only be written once the rows have
-        # refs. entities:15 keeps them immutable thereafter.
-        link_ops = [
-            Op(
-                "insert",
-                "links",
-                {
-                    "source_ref": str(assigned[index]),
-                    "target_ref": str(
-                        assigned[link.target] if link.is_intra_batch else link.target
-                    ),
-                    "edge_type": link.edge_type,
-                    "created_at": now(),
-                },
-            )
-            for index in op_index
-            for link in batch[index].links
-        ]
-        if link_ops:
-            self.storage.write_atomic(
-                link_ops, f"{idempotency_key}:links", lease=lease
-            )
 
         final = tuple(
             RowVerdict(v.index, v.accepted, assigned.get(v.index), v.problem)
@@ -473,7 +484,6 @@ class RowService:
         quote: str,
         resolution: str,
         idempotency_key: str,
-        lease=None,
         retire_reason: str | None = None,
     ) -> PlanRow:
         """Upgrade the SAME row in place to decided, with the owner's answer quoted.
@@ -526,7 +536,7 @@ class RowService:
 
         op = Op("update", "plan_rows", values,
                 where={"table_name": ref.table, "ordinal": ref.ordinal})
-        receipt = self.storage.write_atomic([op], idempotency_key, lease=lease)
+        receipt = self.storage.write_atomic([op], idempotency_key)
         result = receipt["results"][0]
         if result is not None and result.get("rows") == 0:
             raise UpgradeFailed("upgrade could not be applied", ref=str(ref))
@@ -539,7 +549,6 @@ class RowService:
         old: RowRef | str,
         replacement: RowSubmission,
         idempotency_key: str,
-        lease=None,
     ) -> dict[str, Any]:
         """requirements:61 — the replacement is created with a supersedes pointer, the
         old row is stamped once with superseded_by and a timestamp, and content is
@@ -570,7 +579,7 @@ class RowService:
                 "created_at": stamp,
             },
         )
-        receipt = self.storage.write_atomic([insert], idempotency_key, lease=lease)
+        receipt = self.storage.write_atomic([insert], idempotency_key)
         new_ref = RowRef.parse(receipt["results"][0]["ref"])
 
         stamp_old = Op(
@@ -581,14 +590,14 @@ class RowService:
             where={"table_name": old.table, "ordinal": old.ordinal},
         )
         self.storage.write_atomic(
-            [stamp_old], f"{idempotency_key}:stamp", lease=lease
+            [stamp_old], key(idempotency_key, "stamp")
         )
         return {"old": old, "new": new_ref, "superseded_at": stamp}
 
     # --- contracts:13 ---
 
     def retire_row(
-        self, ref: RowRef | str, reason: str, idempotency_key: str, lease=None
+        self, ref: RowRef | str, reason: str, idempotency_key: str
     ) -> PlanRow:
         ref = RowRef.coerce(ref)
         row = self._row(ref)
@@ -607,5 +616,5 @@ class RowService:
              "retire_reason": reason},
             where={"table_name": ref.table, "ordinal": ref.ordinal},
         )
-        self.storage.write_atomic([op], idempotency_key, lease=lease)
+        self.storage.write_atomic([op], idempotency_key)
         return self.get(ref)

@@ -4,39 +4,40 @@ Sole owner of persistence. Every other component reaches the database through th
 operations here; none of them holds a connection or emits SQL.
 
 Contracts implemented: contracts:1 init_plan, contracts:2 write_atomic, contracts:5
-integrity_check, contracts:6 recover, contracts:7 snapshot_version, contracts:8 migrate,
-contracts:53 renew_lease, contracts:54 release_writer_lock, contracts:63
-acquire_writer_lock.
+integrity_check, contracts:6 recover, contracts:7 snapshot_version, contracts:8 migrate.
+
+**There is no writer lock, deliberately.** An earlier design claimed a lease row before
+writing and let a second session take it over once the first had been silent ten minutes.
+That protected against two planning sessions interleaving changes — a situation this tool
+does not have. Planning is one person in one session, and the owner ruled the scenario out
+of scope on 2026-07-22. SQLite already locks the file for the duration of a write, so the
+file cannot be corrupted mid-write without it. Removing the lease also removed the last
+place where elapsed time decided who owned the data, which was the real cost of keeping it:
+a ten-minute silence is a guess about whether a process is dead, and a wrong guess is an
+intermittent, unreproducible failure. Do not reintroduce it.
 """
 
 from __future__ import annotations
 
 import json
 import sqlite3
-import time
-import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
 from engine import schema
-from engine.clock import age_seconds, now
+from engine.clock import now
 from engine.errors import (
-    LeaseLost,
-    LockHeld,
     MigrationFailed,
     NoGoodVersion,
     PlanAlreadyExists,
     StorageUnavailable,
-    WriterLockLost,
 )
-from engine.models import Lease
 
-#: dep_failure_modes:2 — a write exceeding this is treated as unavailability.
+#: dep_failure_modes:2 — how long a write may wait for the database before the attempt is
+#: treated as unavailability. Handed to sqlite3.connect(), so it expires *before* anything
+#: commits: the caller is told the write did not happen, and it did not.
 WRITE_BUDGET_SECONDS = 30.0
-
-#: decisions:44 — a lock silent this long is claimable by a new session.
-LEASE_SILENCE_SECONDS = 600.0
 
 PLAN_FILENAME = "plan.db"
 
@@ -202,85 +203,12 @@ class Storage:
             raise StorageUnavailable("no plan in this workspace", path=str(self.path))
         return dict(row)
 
-    # --- writer lock: contracts:63 / 53 / 54 ---
-
-    def acquire_writer_lock(self, session_key: str) -> Lease:
-        """Claim the writer lock.
-
-        The claim is an atomic INSERT inside a transaction rather than an O_EXCL file
-        create as contracts:63 specifies. See DEVIATIONS.md D5: spikes:1 found the
-        file-based protocol fails on SMB, and an in-database lease is what
-        requirements:68 actually needs, since a write must validate its lease inside
-        the same transaction that applies it.
-        """
-        try:
-            with self._immediate():
-                held = self.conn.execute(
-                    "SELECT * FROM writer_lease WHERE guard = 1"
-                ).fetchone()
-                if held is not None:
-                    age = age_seconds(held["updated_at"])
-                    if age < LEASE_SILENCE_SECONDS:
-                        raise LockHeld(
-                            "another live session holds the writer lock",
-                            holder=held["session_key"],
-                            lease_age_seconds=round(age, 1),
-                            claimable_in_seconds=round(LEASE_SILENCE_SECONDS - age, 1),
-                        )
-                    self.conn.execute("DELETE FROM writer_lease WHERE guard = 1")
-                lease = Lease(uuid.uuid4().hex, session_key, now(), now())
-                self.conn.execute(
-                    "INSERT INTO writer_lease (guard, lease_key, session_key, "
-                    "created_at, updated_at) VALUES (1, ?, ?, ?, ?)",
-                    (lease.lease_key, lease.session_key, lease.created_at,
-                     lease.updated_at),
-                )
-        except sqlite3.Error as exc:
-            raise StorageUnavailable("lock acquisition failed", cause=str(exc)) from exc
-        return lease
-
-    def renew_lease(self, lease: Lease) -> Lease:
-        """contracts:53 — renewal piggybacks on the holder's calls; no background
-        heartbeat process exists (dep_failure_modes:12)."""
-        stamp = now()
-        try:
-            with self._immediate():
-                changed = self.conn.execute(
-                    "UPDATE writer_lease SET updated_at = ? WHERE guard = 1 AND "
-                    "lease_key = ?",
-                    (stamp, lease.lease_key),
-                ).rowcount
-            if not changed:
-                raise LeaseLost(
-                    "the writer lease was claimed by another session after prolonged "
-                    "silence; stop writing and re-acquire",
-                    lease_key=lease.lease_key,
-                    session_key=lease.session_key,
-                )
-        except sqlite3.Error as exc:
-            raise StorageUnavailable("lease renewal failed", cause=str(exc)) from exc
-        return Lease(lease.lease_key, lease.session_key, lease.created_at, stamp)
-
-    def release_writer_lock(self, lease: Lease) -> bool:
-        """contracts:54 — idempotent; a lease already lost is safe to treat as
-        released."""
-        try:
-            with self._immediate():
-                self.conn.execute(
-                    "DELETE FROM writer_lease WHERE guard = 1 AND lease_key = ?",
-                    (lease.lease_key,),
-                )
-        except sqlite3.Error as exc:
-            raise StorageUnavailable("lock release failed", cause=str(exc)) from exc
-        return True
-
     # --- contracts:2 ---
 
     def write_atomic(
         self,
         batch: list[Op],
         idempotency_key: str,
-        lease: Lease | None = None,
         meta: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Apply a batch atomically.
@@ -288,8 +216,6 @@ class Storage:
         requirements:6 — a failed write leaves no partial state.
         decisions:43 — a replayed idempotency_key returns the original receipt and
         never duplicates.
-        requirements:68 — the lease is validated inside the same transaction that
-        applies the batch.
 
         `meta` is caller-owned data stored verbatim in the receipt. Callers that derive
         a richer result than op outputs — row-service's per-row verdicts, for instance
@@ -304,10 +230,8 @@ class Storage:
             receipt["replayed"] = True
             return receipt
 
-        started = time.monotonic()
         try:
             with self._immediate():
-                self._validate_lease(lease)
                 for op in batch:
                     self._apply(op, batch)
                 receipt = {
@@ -325,13 +249,13 @@ class Storage:
         except sqlite3.Error as exc:
             raise StorageUnavailable("atomic write failed", cause=str(exc)) from exc
 
-        elapsed = time.monotonic() - started
-        if elapsed > WRITE_BUDGET_SECONDS:
-            raise StorageUnavailable(
-                "write exceeded its budget and is treated as unavailability "
-                "(dep_failure_modes:2)",
-                seconds=round(elapsed, 1),
-            )
+        # A budget check stood here, timing the write and raising StorageUnavailable if it
+        # took longer than WRITE_BUDGET_SECONDS. It ran *after* the transaction committed,
+        # so a slow-but-successful write reported failure for data that was already on
+        # disk. Deleted 2026-07-22. The case it was meant to catch — a write blocked
+        # waiting on the database — is caught by the same budget passed to
+        # sqlite3.connect() above, which gives up *before* committing and so reports a
+        # failure that is true.
         return receipt
 
     def replay(self, idempotency_key: str) -> dict[str, Any] | None:
@@ -363,18 +287,6 @@ class Storage:
             self.conn.execute(
                 "UPDATE idempotency SET receipt = ? WHERE key = ?",
                 (json.dumps(receipt), idempotency_key),
-            )
-
-    def _validate_lease(self, lease: Lease | None) -> None:
-        if lease is None:
-            return
-        held = self.conn.execute(
-            "SELECT lease_key FROM writer_lease WHERE guard = 1"
-        ).fetchone()
-        if held is None or held["lease_key"] != lease.lease_key:
-            raise WriterLockLost(
-                "the session's lease expired or was claimed; nothing was written",
-                lease_key=lease.lease_key,
             )
 
     @staticmethod

@@ -3,12 +3,10 @@
 import pytest
 
 from engine.errors import (
-    LockHeld,
     MigrationFailed,
     NoGoodVersion,
     PlanAlreadyExists,
     StorageUnavailable,
-    WriterLockLost,
 )
 from engine.storage import Op, Storage
 
@@ -65,36 +63,16 @@ def test_failed_batch_leaves_no_partial_state(store):
     assert store.query("SELECT * FROM links") == []
 
 
-def test_lock_is_exclusive_and_names_the_holder(store):
-    lease = store.acquire_writer_lock("session-a")
-    with pytest.raises(LockHeld) as exc:
-        store.acquire_writer_lock("session-b")
-    assert exc.value.detail["holder"] == "session-a"
-    assert "lease_age_seconds" in exc.value.detail
-    store.release_writer_lock(lease)
-    store.acquire_writer_lock("session-b")  # free again
-
-
-def test_release_is_idempotent(store):
-    lease = store.acquire_writer_lock("session-a")
-    assert store.release_writer_lock(lease) is True
-    assert store.release_writer_lock(lease) is True
-
-
-def test_stale_lease_write_is_rejected_atomically(store):
-    """requirements:68 — the stale holder's next write is rejected inside the same
-    transaction that would apply it, so 'stop immediately' means 'no write can land'."""
-    stale = store.acquire_writer_lock("session-a")
-    store.release_writer_lock(stale)
-    store.acquire_writer_lock("session-b")
-
-    op = Op("insert", "links", {
-        "source_ref": "a:1", "target_ref": "b:1", "edge_type": "links",
-        "created_at": "now",
-    })
-    with pytest.raises(WriterLockLost):
-        store.write_atomic([op], "key-3", lease=stale)
-    assert store.query("SELECT * FROM links") == []
+def test_no_writer_lock_surface_exists(store):
+    """The writer lock was removed on 2026-07-22 — planning is one session, so there is
+    nothing to lock against, and the lease's ten-minute takeover rule was the last place
+    elapsed time decided who owned the data. This test fails if it comes back."""
+    for gone in ("acquire_writer_lock", "renew_lease", "release_writer_lock"):
+        assert not hasattr(store, gone), f"{gone} was deliberately removed"
+    tables = {r["name"] for r in store.query(
+        "SELECT name FROM sqlite_master WHERE type = 'table'"
+    )}
+    assert "writer_lease" not in tables
 
 
 def test_integrity_check_names_unreadable_rows(store, rows):

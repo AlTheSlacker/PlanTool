@@ -160,7 +160,7 @@ something that happened.
 | **part** | sub-task | A "part" of a split is a sub-task, distinguished by which obligations it owns, not by being a different kind of thing. Acceptable in prose as "a sub-task produced by a split"; never a field, type or table name. |
 | **component** | task | One entity, two spellings. `components:N` persists as the frozen plan's read-only spelling only. |
 | **stage** | package | The methodology's ordered steps are the standard package set for planning work — the same kind of chunk as a build package, in a different table. Retired 2026-07-21; methodology assets are `package1_context.md` … `package8_freeze.md` at **rev 3**. |
-| **session** | (nothing) | Not an entity. Its only occurrence in the data is `writer_lease.session_key` — a string naming who holds the write lease. No table, no rows, no lifecycle. Where prose meant "the session decides", say **the planner** (the actor). |
+| **session** | (nothing) | Not an entity, and since 2026-07-22 not in the data either: its one occurrence was the writer lock's holder name, removed with the lock (see `engine/storage.py`). No table, no rows, no lifecycle, no exception. Where prose meant "the session decides", say **the planner** (the actor). |
 | **phase** | package | Briefly proposed for this build's own units and rejected: it was a new word for something already defined. |
 | **unit**, **unit of work** | journal entry, or sub-task | `requirements:56`/`60`'s "unit of work" is a *record of something that happened* — say **journal entry**. As a work chunk below sub-task, rejected outright (see above). |
 | **work packet**, **chunk** | sub-task or package, per meaning | Informal synonyms that resolve to a defined level; pick the level. |
@@ -208,7 +208,7 @@ that buys, and it is why the promotion history is kept rather than overwritten.
 - `subtask` is one word in identifiers (`subtask_id`, `SubTask`), hyphenated in prose
   ("sub-task"). This is the existing convention in `engine/`; it stays.
 - No identifier contains `packet`, `milestone`, `part`, `project`, `stage`, `phase` or
-  `session` (outside `writer_lease.session_key`, which is a lock holder, not a level).
+  `session`.
 
 ### This rule is enforced, not merely stated
 
@@ -231,7 +231,6 @@ same friction shape as `requirements:79`'s waiver log and D8's promotion reason.
 ```vocabulary-exceptions
 engine/briefs.py:PartsDontCover — contracts:40's declared error name, quoted; see the
     unresolved tension above. The only live `part` identifier in the codebase.
-engine/storage.py:session_key — writer_lease's lock holder, exempted by the rule itself.
 engine/gaps.py:parts — a local list of string fragments joined into a gap key; the English
     word, no relation to a split. Renamed on next touch of that file.
 ```

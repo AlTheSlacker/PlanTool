@@ -80,15 +80,10 @@ CREATE TABLE IF NOT EXISTS idempotency (
     created_at TEXT NOT NULL
 );
 
--- The writer lease (requirements:67/68). DB-authoritative so that a write can validate
--- its lease inside the same transaction that applies it. See DEVIATIONS.md D5.
-CREATE TABLE IF NOT EXISTS writer_lease (
-    guard       INTEGER PRIMARY KEY CHECK (guard = 1),
-    lease_key    TEXT NOT NULL,
-    session_key  TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    updated_at  TEXT NOT NULL
-);
+-- A `writer_lease` table stood here until 2026-07-22. It backed a writer lock for
+-- concurrent planning sessions, which this tool does not have. Removed with the lock;
+-- see engine/storage.py's module docstring. Plans created before that date still carry
+-- the table, unused and harmless.
 
 -- Full source text: NOT a plan row. Large, and never loaded into context wholesale.
 -- The source's metadata row lives in plan_rows as `sources:n` and carries the hash.

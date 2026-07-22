@@ -32,6 +32,7 @@ from dataclasses import dataclass
 from engine.errors import PlanToolError
 from engine.models import RowRef
 from engine.clock import now
+from engine.idempotency import key
 from engine.storage import Op, Storage
 
 PLAN = "plan"
@@ -88,7 +89,6 @@ class AttachmentService:
         scope_level: str,
         scope_key: str = "",
         reason: str = "",
-        lease=None,
     ) -> Attachment:
         """Attach a row to a scope, keyed on its lineage root.
 
@@ -134,10 +134,12 @@ class AttachmentService:
             "created_at": stamp,
         })
         ops.append(op)
-        self.storage.write_atomic(
-            ops, f"attach:{root}:{scope_level}:{scope_key}:{stamp}", lease=lease
+        receipt = self.storage.write_atomic(
+            ops, key("attach", root, scope_level, scope_key or None)
         )
-        return self.get(op.result["id"])
+        # From the receipt, not from `op.result`: a replayed key executes no ops
+        # (decisions:43). Unreachable while the key carried a timestamp.
+        return self.get(receipt["results"][-1]["id"])
 
     def context_for(
         self, subtask_key: str = "", task_key: str = "", package_key: str = ""

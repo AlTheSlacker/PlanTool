@@ -21,6 +21,7 @@ from enum import StrEnum
 from engine.errors import PlanToolError
 from engine.models import RowRef
 from engine.clock import now
+from engine.idempotency import key
 from engine.storage import Op, Storage
 
 ACTIVE = "active"
@@ -90,7 +91,6 @@ class WarningService:
         kind: str,
         message: str,
         source_ref: RowRef | str | None = None,
-        lease=None,
     ) -> Warning:
         """Ensure a warning exists for this key, and refresh its wording.
 
@@ -113,8 +113,7 @@ class WarningService:
                     "created_at": stamp,
                     "updated_at": stamp,
                 })],
-                f"raise_warning:{warning_key}",
-                lease=lease,
+                key("raise_warning", warning_key),
             )
             return self._require_key(warning_key)
 
@@ -122,8 +121,7 @@ class WarningService:
             self.storage.write_atomic(
                 [Op("update", "warnings", {"message": message, "updated_at": stamp},
                     where={"id": existing.id})],
-                f"reword_warning:{existing.id}:{stamp}",
-                lease=lease,
+                key("reword_warning", existing.id, message),
             )
             return self._require_key(warning_key)
         return existing
@@ -164,7 +162,7 @@ class WarningService:
 
     # --- contracts:24 ---
 
-    def suppress_warning(self, warning_id: int, reason: str, lease=None) -> Warning:
+    def suppress_warning(self, warning_id: int, reason: str) -> Warning:
         """Record the owner's explicit suppression. Still resurfaces at critical
         points (requirements:23)."""
         if not reason.strip():
@@ -182,15 +180,14 @@ class WarningService:
             [Op("update", "warnings",
                 {"state": SUPPRESSED, "reason": reason, "updated_at": now()},
                 where={"id": warning_id})],
-            f"suppress_warning:{warning_id}",
-            lease=lease,
+            key("suppress_warning", warning_id),
         )
         return self.get(warning_id)
 
     # --- contracts:25 ---
 
     def resolve_warning(
-        self, warning_id: int, cause: RowRef | str, lease=None
+        self, warning_id: int, cause: RowRef | str
     ) -> Warning:
         """Resolve the warning, linked to the row whose fix resolved it.
 
@@ -207,12 +204,11 @@ class WarningService:
                 {"state": RESOLVED, "resolved_by": str(cause_ref),
                  "updated_at": now()},
                 where={"id": warning_id})],
-            f"resolve_warning:{warning_id}",
-            lease=lease,
+            key("resolve_warning", warning_id),
         )
         return self.get(warning_id)
 
-    def settle_warning(self, warning_id: int, note: str, lease=None) -> Warning:
+    def settle_warning(self, warning_id: int, note: str) -> Warning:
         """Retire a warning whose *condition* cleared, rather than whose row was fixed.
 
         Distinct from resolve_warning, which contracts:25 types as taking the RowRef
@@ -228,8 +224,7 @@ class WarningService:
             [Op("update", "warnings",
                 {"state": RESOLVED, "reason": note, "updated_at": now()},
                 where={"id": warning_id})],
-            f"settle_warning:{warning_id}:{now()}",
-            lease=lease,
+            key("settle_warning", warning_id),
         )
         return self.get(warning_id)
 

@@ -85,7 +85,16 @@ If `plan_status` serves counts and ids, a resuming model may simply not fetch an
 confidently on the digest alone — silent, and the same class as F14. The countermeasure is
 the digest naming its own next action, which is `requirements:58` doing real work.
 
-### 2.6 D9 — the hard-lock as a product requirement
+### 2.6 D9 — the hard-lock as a product requirement — **DECIDED 2026-07-21 as D15**
+Settled: a gate locks on every open item **allocated to it**; `resolve_by` is required at
+creation and `NOT NULL`; the two exits are resolve, or re-allocate to a later gate with a
+reason. Gaps are outside the scheme — they are closable by the agent now, so deferring one is
+procrastination. No infinite-deferral brake is needed: you cannot defer to a gate that does
+not exist, so the worst case is a pile-up at freeze, which correctly refuses to freeze.
+**D16** follows from the same session: assumptions are attacked on arrival, not audited at
+package 6. Both are unbuilt. The original statement of the item follows.
+
+
 Decided 2026-07-20; built here, in gate-engine. **The load-bearing work is drawing the
 severity line, and it must stay narrow.** v2's gates warn, they don't block
 (`decisions:31`, D7); the only hard block today is `requirements:32`. D9 generalises that to
@@ -205,15 +214,16 @@ and `_age` duplicated verbatim as `_age_seconds`. Built so far:
   `created_at` on every table with independent existence.
 - `tests/test_clock.py` — one owner for timestamp creation *and* interpretation.
 
-**Proposed, not built:** a **duplicate-body detector** — normalised-AST hashing over every
-function, grouping identical bodies. `_age`/`_age_seconds` were byte-identical; this finds
-that class instantly with no false positives, in roughly 30 lines. And below it, a
-near-duplicate identifier *warning* (token-subset or small edit distance), which is noisier
-and should warn rather than fail.
+**Nothing further is proposed here, by the owner's decision of 2026-07-22.** A duplicate-body
+detector was sketched in this section, as part of a wider idea that good coding practice should
+be enforced by standing mechanical checks. That whole approach is withdrawn: it is a large
+implementation topic in its own right, and carrying half-designed checks alongside the build
+work confuses both. The three checks above exist because each one holds a specific, stated
+invariant; that is the bar for adding a fourth, and no fourth is currently wanted.
 
-The general principle, which is also §3's: **a rule stated in a document is not a mechanism.**
-When this build writes a rule for itself, ask of it what we ask of the frozen plan — *what
-fires this, and what fails when it is broken?*
+The general principle, which is also §3's, still stands for *invariants*: **a rule stated in a
+document is not a mechanism.** When this build writes a rule for itself, ask of it what we ask
+of the frozen plan — *what fires this, and what fails when it is broken?*
 
 ---
 

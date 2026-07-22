@@ -23,6 +23,11 @@ own, which is `findings:4`. These tests therefore assert the *mechanism*, and re
 row-type names from the loaded revision rather than restating them.
 """
 
+import sqlite3
+
+import pytest
+
+from engine.errors import StorageUnavailable
 from engine.methodology import load
 from engine.models import EDGE_TYPES, LinkSpec, RowRef, RowSubmission
 from engine.rows import RowService
@@ -136,4 +141,36 @@ def test_the_checks_can_actually_fail(store):
     assert receipt.verdicts[0].accepted, (
         "with the map disabled an orphan must be accepted — otherwise the rejection "
         "above proves something other than the map"
+    )
+
+
+def test_a_row_and_its_links_commit_together(store):
+    """The orphan this file refuses on the way in must not be creatable on the way out.
+
+    Links used to be written in a *second* transaction, because a link needs its source
+    row's ref and refs are assigned inside the first one. Harmless while links were
+    optional; not harmless once `belongs_to` became mandatory — a successful row write
+    followed by a failed link write left precisely the orphan state submission rejects.
+    """
+    rows = RowService(store)
+    original = store._apply
+
+    def fail_on_links(op, batch=None):
+        if op.table == "links":
+            raise sqlite3.OperationalError("simulated failure writing links")
+        return original(op, batch)
+
+    store._apply = fail_on_links
+    try:
+        with pytest.raises(StorageUnavailable):
+            rows.submit_rows(
+                [_row("use_cases"), _row("uc_steps", links=[LinkSpec(0, "belongs_to")])],
+                "atomic",
+            )
+    finally:
+        store._apply = original
+
+    assert store.query("SELECT * FROM plan_rows") == [], (
+        "the use case was committed while its step's link failed — rows and their "
+        "edges must land in one transaction or neither"
     )

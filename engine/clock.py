@@ -1,4 +1,8 @@
-"""The only place the engine creates, formats, parses or ages a timestamp.
+"""The only place the engine creates, formats or parses a timestamp.
+
+**Timestamps here are a record, never a decision.** Nothing in this module measures elapsed
+time, because nothing in the engine is allowed to branch on it — see the note where
+`age_seconds()` used to be.
 
 Owner request, 2026-07-21: wrap the timestamp setter so that moving to a backend with a
 native date/time type is a change to one file rather than a search across thirty tables.
@@ -60,12 +64,19 @@ def parse(value: str | datetime) -> datetime:
     return datetime.fromisoformat(value)
 
 
-def age_seconds(value: str | datetime) -> float:
-    """How long ago `value` was. Empty means "never", which ages as zero rather than
-    raising: an unset timestamp is a fact about the row, not a corrupt one."""
-    if not value:
-        return 0.0
-    return (datetime.now(UTC) - parse(value)).total_seconds()
+# `age_seconds()` stood here, answering "how long ago was this?". Deleted 2026-07-22 along
+# with its three callers — a lock takeover after ten minutes of silence, a sub-task judged
+# abandoned after a day, and a windowed idempotency key. All three let elapsed time decide
+# what the program did next, and elapsed time cannot carry that: a clock is not monotonic,
+# not shared between machines, and not ordered between two things inside one tick, so every
+# bug it causes is intermittent and depends on how fast the machine was that day.
+#
+# **A timestamp records when something happened. It never decides what happens next.**
+# (Owner's rule, 2026-07-21/22.) Control flow needs state the program wrote on purpose and
+# can read back the same way every time — a flag, a counter, a recorded transition.
+#
+# If you find yourself wanting this function back, the thing you actually want is a
+# recorded event. `tests/test_clock.py` fails the build if it returns.
 
 
 def is_storage_form(value: str) -> bool:
