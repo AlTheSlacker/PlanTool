@@ -54,7 +54,7 @@ def test_an_undeclared_surface_is_reported_never_invented(tasks, rows, obligatio
     )
     graph = tasks.finalize_plan()
 
-    assert graph.unenumerated == ("contracts:1",)
+    assert [str(r) for r in graph.unenumerated] == ["contracts:1"]
     assert obligations.for_subtask(graph.subtasks[0].id) == ()
 
 

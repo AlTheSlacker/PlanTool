@@ -37,7 +37,7 @@ session):
 | ~~**v1 foreign-key sweep**~~ | **RESOLVED 2026-07-21** in M6 — swept; six more mandatory relations were missing, all repaired as `belongs_to`. See DEFECTS.md **F28** |
 | **`spikes` row-level provenance** — v1's nullable `spike_id` on ten row tables ("this row is provisional pending spike N") survives only as `claim_tracks.spike_id`. Not F28's class (it was nullable), but the same loss | **M7 gate** |
 | **When does contract ownership bite?** — the other six containment relations are enforced at submission; `contracts`→`components` is enforced at finalization (F24). One relation, two moments. Owner's call, not a side effect | **M7 gate** |
-| **Methodology rev 3, second half** — rev 3 carries v2's vocabulary but still names v1's tool surface (`submit_use_cases`, …) | **M6 gate** |
+| ~~**Methodology rev 3, second half**~~ | **RESOLVED 2026-07-22** — every v1 call name is gone and a text check holds it (F37). Rev 3's two *additions* — the packaging round and obligation enumeration, both at package 6 — landed 2026-07-22 with **F39** |
 | F17 — prose row citations break on supersession | M6 gate |
 | ~~§4 Q1 — mandate/script by value or reference~~ | **DECIDED 2026-07-22** as **D17** — by reference; the digest names the fetching call and carries no text |
 | ~~§4 Q2 — digest names what to fetch~~ | **DECIDED 2026-07-22** as **D17** — every count names its fetching call, and the digest closes by stating the next action |

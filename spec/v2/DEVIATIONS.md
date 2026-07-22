@@ -442,8 +442,10 @@ accounting can be changed, but not silently.**
   closure row cited-or-waived (`requirements:79`), every obligation assigned-or-waived.
 
 **Cost, accepted:** finalization gains an enumeration step that did not exist, and the
-methodology's package-7 script should ask for the obligation surface when a contract is
-written. Sub-tasks derived before this lands have no obligations recorded; the graph treats
+methodology must ask for the obligation surface when a contract is written. **Shipped
+2026-07-22** in rev 3's architecture package — package 6, where contracts are authored, not
+package 7 as this entry originally said. Until then the tool froze a denominator nothing had
+asked anyone to declare, so every sub-task arrived unenumerated and therefore unsplittable. Sub-tasks derived before this lands have no obligations recorded; the graph treats
 an empty obligation set as "not yet enumerated" and refuses to split such a node rather than
 silently permitting an unaccountable split.
 
@@ -524,7 +526,11 @@ heuristic to avoid.
 
 **Cost, accepted:** M5a's scope-attachment code and schema carry the retired names and are
 migrated as part of M5b. The methodology needs a packaging step at the architecture package,
-which is an M6 concern (`requirements:71`'s revision path covers shipping it). No user data
+which is an M6 concern (`requirements:71`'s revision path covers shipping it). **Shipped
+2026-07-22** as rev 3's packaging round, and it took three new tools with it: neither
+`declare_package` nor `assign_task` was exposed on the surface and nothing read the cut back,
+so this entry's mandatory membership was enforceable and not satisfiable, and `finalize_plan`
+refused every plan authored through the surface (DEFECTS.md **F39**). No user data
 exists, so the migration is a rename rather than a back-fill.
 
 **Related:** `GLOSSARY.md`; DEVIATIONS.md D8, D11, D12; DEFECTS.md F20, F23, F24;

@@ -98,14 +98,21 @@ The assets are `engine/methodology/rev3/package1_context.md` … `package8_final
 Never invent methodology (`findings:4`, `decisions:61`) — it is vendored, and a component
 that starts *generating* guidance instead of serving it has re-opened `findings:4`.
 
-Two additions belong in rev 3 and are new scope, both still open — the call-surface work
-above did not touch them:
-- a **packaging step** at the architecture package: D13 makes package membership mandatory
-  and `finalize_plan` refuses an unpackaged task, so the script must lead the owner to a cut.
-  The tool enforces the invariant; the methodology leads; the owner decides.
-- an **obligation-enumeration step** at the contracts package: D12 freezes a contract's
-  obligation surface at finalization, and if the script never asks for it, every sub-task
-  arrives unenumerated and unsplittable.
+Two additions belonged in rev 3 as new scope — the call-surface work above did not touch
+them — and both are **DONE 2026-07-22**, in package 6, which is where contracts are written:
+- a **packaging round**: D13 makes package membership mandatory and `finalize_plan` refuses
+  an unpackaged task, so the script must lead the owner to a cut. The tool enforces the
+  invariant; the methodology leads; the owner decides. Writing it found **F39** — the
+  surface exposed no way to declare a package or assign a task, so the invariant was
+  enforceable and not satisfiable and no plan authored through the surface could finalize.
+  `declare_package`, `assign_task` and a new `packaging` read are now exposed.
+- an **obligation-enumeration step**: D12 freezes a contract's obligation surface at
+  finalization, and if the script never asks for it, every sub-task arrives unenumerated and
+  unsplittable. The contract row carries an `obligations` array and the script now asks for
+  one entry per behaviour and per named error. D12's own text said package 7; that is wrong,
+  and it is corrected there — contracts are authored at package 6.
+
+The stamp moved to `plantool-rev3-2026-07-22c` with the content, which is F31's rule.
 
 ### 2.3 F17 — prose row citations dangle on supersession
 A row's prose cites `contracts:52`; that row is superseded by `contracts:63`; the prose is
@@ -705,7 +712,7 @@ the owner merges; no self-merges.
 
 ### 9.1 The shape
 
-**37 tools**, each one a service contract with validation in front and the door behind. The
+**Every tool is a service contract** with validation in front and the door behind. The
 surface owns no logic: it decodes JSON into the engine's types, calls one method, renders the
 result, and refuses anything that would leave the reader stuck. That is what keeps MCP an
 *adapter* rather than the tool — the GUI at M8 plugs into the same seam.
@@ -715,7 +722,10 @@ carrying `consumed by: components:15` out of the frozen plan, subtracts 3 declar
 (the writer lock, D5) and 5 declared deferrals (revision-service, owed by M7), and fails on
 any shortfall. Each absence carries its reason; a deferral must name the build package that
 owes it. 31 required contracts exposed + 5 deferred = the 36 the audit predicted, plus the 6
-of D18's widening.
+of D18's widening. Tools with no contract behind them run the check the other way: each
+appears in `ADDED` with the reason it exists, because the plan → surface direction cannot see
+a tool nothing asked for. That is where the render, the auxiliary scripts and the three
+packaging tools (F39) sit.
 
 `NotWriter` is recorded in `MOOT_OUTCOMES` rather than implemented, and a test asserts no
 class by that name exists. An outcome that is simply absent looks the same as one forgotten.

@@ -376,6 +376,29 @@ class TestDispatch:
         assert result.error == "RowNotFound"
 
 
+    def test_a_plan_can_be_packaged_through_the_surface(self, surface):
+        """DEFECTS.md F39. D13 makes package membership mandatory and finalization refuses
+        an unpackaged task; until this landed, no tool could declare a package or assign a
+        task, so the invariant was enforceable and not satisfiable and every plan authored
+        through the surface was unfinalizable."""
+        surface.dispatch(ToolCall("submit_rows", {
+            "batch": [{"table": "components", "content": {"title": "gap-engine"},
+                       "name": "gap-engine"}],
+            "idempotency_key": "comp",
+        }))
+        declared = surface.dispatch(ToolCall("declare_package", {"name": "the engine"}))
+        assert declared.ok
+        assigned = surface.dispatch(ToolCall("assign_task", {
+            "source_ref": "components:1", "package_id": declared.payload["id"],
+        }))
+        assert assigned.ok, assigned.problem
+        cut = surface.dispatch(ToolCall("packaging", {}))
+        assert cut.payload["unpackaged"] == []
+        assert cut.payload["packages"][0]["tasks"][0]["source_ref"] == (
+            "gap-engine (components:1)"
+        )
+
+
 class TestTheDoorInPractice:
     def test_an_address_in_a_payload_arrives_with_its_name(self, surface):
         a_row(surface, name="the settling requirement")
