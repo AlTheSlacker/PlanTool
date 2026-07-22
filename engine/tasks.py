@@ -36,7 +36,7 @@ from dataclasses import dataclass, field
 from engine.errors import PlanToolError
 from engine.models import RowRef
 from engine.obligations import ObligationService
-from engine.clock import age_seconds, now
+from engine.clock import now
 from engine.idempotency import key
 from engine.storage import FromOp, Op, Storage
 
@@ -99,9 +99,6 @@ _IMPOSSIBLE = {
 #: responsibility). `deps_satisfied` and `serve_brief` are the system's and are excluded:
 #: readiness the engine can assert is not readiness. See DEFECTS.md F18.
 ENGINE_EVENTS = ("complete", "block", "unblock", "flag_rework")
-
-#: dep_failure_modes:6 — a sub-task untouched this long is stale.
-STALENESS_SECONDS = 24 * 3600
 
 #: D11 — the typed edge task-graph derivation reads. Untyped links are traceability.
 DEPENDS_ON = "depends_on"
@@ -222,8 +219,15 @@ class Task:
 
 @dataclass(frozen=True, slots=True)
 class GraphStatus:
-    """contracts:38 — built, in-flight, blocked and stale sub-tasks, so any fresh session
-    resumes the build exactly."""
+    """contracts:38 — built, in-flight, blocked and ready sub-tasks, so any fresh session
+    resumes the build exactly.
+
+    `dep_failure_modes:6` also asked for a `stale` list — in-flight sub-tasks nobody had
+    touched for a day. Removed 2026-07-22: it judged abandonment from elapsed time, which
+    is a guess, and `in_flight` already names every sub-task it would have drawn from. The
+    planner is better placed than the tool to say which of those they have walked away
+    from.
+    """
 
     built: tuple[int, ...]
     in_flight: tuple[int, ...]
@@ -231,7 +235,6 @@ class GraphStatus:
     ready: tuple[int, ...]
     pending: tuple[int, ...]
     rework: tuple[int, ...]
-    stale: tuple[int, ...]
 
     @property
     def complete(self) -> bool:
@@ -631,11 +634,8 @@ class TaskGraphService:
             DONE: [], IN_PROGRESS: [], BLOCKED: [], READY: [],
             PENDING: [], REWORK_FLAGGED: [],
         }
-        stale = []
         for subtask in self._all():
             buckets[self.readiness_of(subtask)].append(subtask.id)
-            if subtask.state == IN_PROGRESS and age_seconds(subtask.updated_at) > STALENESS_SECONDS:
-                stale.append(subtask.id)
         return GraphStatus(
             built=tuple(buckets[DONE]),
             in_flight=tuple(buckets[IN_PROGRESS]),
@@ -643,7 +643,6 @@ class TaskGraphService:
             ready=tuple(buckets[READY]),
             pending=tuple(buckets[PENDING]),
             rework=tuple(buckets[REWORK_FLAGGED]),
-            stale=tuple(stale),
         )
 
     # --- contracts:55 ---

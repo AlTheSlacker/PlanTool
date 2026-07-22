@@ -63,10 +63,11 @@ def test_parse_accepts_a_datetime_so_the_seam_survives_a_backend_change():
     assert clock.parse(clock.now()).tzinfo is not None
 
 
-def test_an_unset_timestamp_ages_as_zero_rather_than_raising():
-    """An unset stamp is a fact about the row, not a corrupt one."""
-    assert clock.age_seconds("") == 0.0
-    assert clock.age_seconds(clock.now()) < 5
+def test_the_clock_cannot_measure_elapsed_time():
+    """`age_seconds()` was deleted on 2026-07-22 with its three callers. A timestamp
+    records when something happened and never decides what happens next, so the engine has
+    no business asking how long ago anything was. This fails if the function returns."""
+    assert not hasattr(clock, "age_seconds")
 
 
 def test_only_clock_creates_or_interprets_a_timestamp():
@@ -89,6 +90,6 @@ def test_only_clock_creates_or_interprets_a_timestamp():
     assert not offenders, (
         "timestamps must be created and parsed only in engine/clock.py:\n  "
         + "\n  ".join(offenders)
-        + "\n\nUse clock.now(), clock.parse() or clock.age_seconds(). A second way to make "
-          "a timestamp is a second format waiting to happen, and the failure is silent."
+        + "\n\nUse clock.now() or clock.parse(). A second way to make a timestamp is a "
+          "second format waiting to happen, and the failure is silent."
     )
