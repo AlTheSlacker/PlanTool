@@ -675,9 +675,9 @@ class TaskGraphService:
                 raise PlanNotFinalized(
                     "there is no task graph to serve from: sub-tasks are derived at "
                     "finalization (crud_grid:33), so a plan that has never been "
-                    "finalized has no sub-tasks for allow_draft to serve. See "
-                    "DEFECTS.md F21 — allow_draft is only reachable for a plan that "
-                    "left `finalized` afterwards, such as one under revision."
+                    "finalized has no sub-tasks for allow_draft to serve. It is only "
+                    "reachable for a plan that left `finalized` afterwards, such as "
+                    "one under revision."
                 )
 
         candidates = [s for s in self._all() if self.readiness_of(s) == READY]

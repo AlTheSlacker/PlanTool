@@ -741,3 +741,112 @@ being a stored string and becomes the digest's closing sentence.
 **The cost, stated.** By reference is one extra round trip at the start of every cold
 session. That is the whole price, and it buys a status call that stays small for the life of
 the plan.
+
+---
+
+## D18 — The surface exposes six calls the plan sends nowhere near it
+
+**Decided 2026-07-22 by the owner** ("go with your best judgement"), building `mcp-surface`.
+
+**Plan:** every contract that reaches the tool surface says so on itself, with a `consumed
+by: components:15` line. Thirty-nine do. `get_mandate` (`contracts:17`),
+`get_package_script` (`contracts:65`) and `active_warnings` (`contracts:23`) do not — they
+are declared as consumed internally. `compose_brief` (`contracts:68`) names `contracts:55`
+alone. `journal` and `gate_runs` are not contracts at all.
+
+**v2:** all six are exposed as tools, making thirty-seven.
+
+**Why.** `plan_status` closes by telling a resuming planner what to fetch, which is D17's
+ruling and a good one. It names six calls. Before this build package, **one of them could be
+reached** — the other five could not be called by the party being told to call them. A cold
+planner was being handed instructions it had no way to follow.
+
+There were two ways out. Reword the digest so it names only what happens to be exposed, or
+expose what the digest names. The first lets the specification's internal bookkeeping decide
+what a planner is allowed to know, which is backwards: `consumed by` records who the plan's
+authors expected to call something, and that expectation was made before the resume digest
+existed. The prose is the better witness — the plan's own text says composing a brief is "a
+separate second call" made by the planning session, which reaches the tool only through this
+surface, so `contracts:68`'s consumed-by line is simply wrong.
+
+`journal` and `gate_runs` are ours, added while building session-service and while fixing
+F30. They were named in output and specified nowhere, which is how a call gets into a message
+without anyone deciding it should exist. They now have entries here and tools of their own.
+
+**Why this is safe to widen and not a licence to keep widening.** Every one of the six is a
+read. None of them writes, so the surface gains no authority it did not have; a planner can
+learn more and change nothing. Widening the *write* surface beyond the plan's declarations
+would be a different decision and is not made here.
+
+**What stops it drifting.** The registry test parses the thirty-nine contracts out of the
+frozen plan, subtracts the declared exclusions and deferrals, and fails on any shortfall — so
+the widening is visible rather than absorbed. And the door now resolves every call name in
+outgoing text against the registry, so if one of these six is ever dropped, the digest that
+names it fails loudly instead of quietly lying to the next cold planner.
+
+---
+
+## D19 — Never emit an address without the name of what it addresses
+
+**Owner's requirement, 2026-07-22**, designed alongside the row-naming work and built here
+because the surface is where it can be a mechanism.
+
+**Plan:** rows are addressed as `table:ordinal` (`requirements:61`). The plan says nothing
+about how an address is presented, because it never occurred to it that an address might be
+all a reader gets.
+
+**v2:** an address never leaves the tool alone. Every one carries the name of the row it
+addresses, in one form — `name (table:ordinal)` — and the surface refuses to return text
+that breaks it.
+
+**Why.** An address on its own makes the reader go and look it up. A person does not; a model
+answers from what it can reconstruct, which is invention. The owner raised it after a session
+of being handed bare addresses, and then explicitly declined a fix aimed at the way this
+assistant writes prose, asking for one that works for any planner and any model. This is that
+fix.
+
+**The two layers, and which one does the work.** Rendering is the first: a stored address
+cannot reach a payload without passing through a name lookup, so the code path that emits a
+bare one no longer exists. The second is a scan of the finished payload, and it is the one
+that holds — hand-assembled message strings are invisible to the type system, and
+hand-assembled strings are where every instance so far has come from. Building it caught one
+immediately: the gate's own unresolved-assumption warning named a row by address, which broke
+the resume digest that carries it.
+
+**The exemption, and why it is not a hole.** Stored prose is served exactly as written — a
+brief serves the plan's own text, and text edited in flight is a far worse defect than a
+lookup. So stored strings are annotated rather than rewritten: every address they cite is
+resolved beside the payload. That is also where a dead citation becomes visible, resolving to
+"no live row at this address" instead of dangling.
+
+**Annotation never changes a value's shape**, which was learned by breaking it. The first
+version replaced an annotated string with an object carrying the text and its citations. Gap
+keys and warning keys are identifiers that happen to contain an address, so a caller who read
+one could no longer hand it back to `dismiss_gap`. The tool had broken its own round-trip in
+the course of making itself readable.
+
+**What it does not catch,** stated so it is not oversold: a name that is present, unique,
+fresh and useless; an address the owner types into his own content, which is input and is
+annotated rather than refused; and prose that is hard to read for any other reason.
+
+---
+
+## D20 — Never name a call the surface does not expose
+
+**2026-07-22**, the second half of the same door.
+
+**Plan:** nothing. No row says that a message naming a call must be able to name a real one,
+because no row anticipated the tool composing instructions for its reader.
+
+**v2:** every call name in outgoing text is resolved against the tool registry, and one that
+does not resolve fails the call.
+
+**Why it is the same rule as D19 rather than a second one.** Both say: the tool never points
+a reader at something the reader cannot get to. One pass over the payload, two lookups. It
+is cheap, exercises no judgment, and it is what turns D18's widening from a decision that
+must be remembered into one that cannot be undone by accident.
+
+**Its known limit is real.** The vendored methodology is served verbatim and is therefore
+exempt at runtime — the tool must not edit the owner's methodology in flight. So the check
+for that content moved into the test suite, where it immediately found the mandate telling
+every cold planner to resume from a call that does not exist.
