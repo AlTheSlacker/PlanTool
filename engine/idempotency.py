@@ -106,17 +106,9 @@ def key(operation: str, *subjects: object) -> str:
     return SEPARATOR.join(rendered)
 
 
-def within(operation: str, *subjects: object, seconds: int = 1) -> str:
-    """A key that collapses repeats inside a time window — the deliberate fallback.
-
-    For the rare operation with no natural discriminator in the data: "have I done this in
-    the last second?" It is a *choice*, made visibly, with the window in the key — not the
-    accident of appending `now()`, which collapsed nothing and detected nothing.
-
-    Prefer `key()`. Reach for this only after failing to find a flag the data already
-    carries, because a window is a guess about how fast a caller might legitimately retry.
-    """
-    from engine.clock import parse, now
-
-    bucket = int(parse(now()).timestamp() // seconds)
-    return key(operation, *subjects, f"w{seconds}", bucket)
+# A `within()` helper stood here, building a key from a time bucket so that repeats
+# inside a window collapsed to one. It was never called by the engine. Deleted
+# 2026-07-22: a time window is a guess about how fast a caller might legitimately
+# retry, and a key that changes on its own schedule detects a repeat or misses one
+# depending on where the clock happened to fall. If an operation has no natural
+# discriminator, find the flag the data already carries — do not invent a window.

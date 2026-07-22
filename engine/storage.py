@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import json
 import sqlite3
-import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -35,7 +34,9 @@ from engine.errors import (
     StorageUnavailable,
 )
 
-#: dep_failure_modes:2 — a write exceeding this is treated as unavailability.
+#: dep_failure_modes:2 — how long a write may wait for the database before the attempt is
+#: treated as unavailability. Handed to sqlite3.connect(), so it expires *before* anything
+#: commits: the caller is told the write did not happen, and it did not.
 WRITE_BUDGET_SECONDS = 30.0
 
 PLAN_FILENAME = "plan.db"
@@ -229,7 +230,6 @@ class Storage:
             receipt["replayed"] = True
             return receipt
 
-        started = time.monotonic()
         try:
             with self._immediate():
                 for op in batch:
@@ -249,13 +249,13 @@ class Storage:
         except sqlite3.Error as exc:
             raise StorageUnavailable("atomic write failed", cause=str(exc)) from exc
 
-        elapsed = time.monotonic() - started
-        if elapsed > WRITE_BUDGET_SECONDS:
-            raise StorageUnavailable(
-                "write exceeded its budget and is treated as unavailability "
-                "(dep_failure_modes:2)",
-                seconds=round(elapsed, 1),
-            )
+        # A budget check stood here, timing the write and raising StorageUnavailable if it
+        # took longer than WRITE_BUDGET_SECONDS. It ran *after* the transaction committed,
+        # so a slow-but-successful write reported failure for data that was already on
+        # disk. Deleted 2026-07-22. The case it was meant to catch — a write blocked
+        # waiting on the database — is caught by the same budget passed to
+        # sqlite3.connect() above, which gives up *before* committing and so reports a
+        # failure that is true.
         return receipt
 
     def replay(self, idempotency_key: str) -> dict[str, Any] | None:

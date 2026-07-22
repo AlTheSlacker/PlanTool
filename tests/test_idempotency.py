@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 from engine.clock import now
-from engine.idempotency import InvalidIdempotencyKey, key, within
+from engine.idempotency import InvalidIdempotencyKey, key
 
 ENGINE = Path(__file__).resolve().parent.parent / "engine"
 
@@ -95,9 +95,10 @@ def test_the_same_operation_gives_the_same_key():
     assert key("compose", 7, 2) != key("compose", 7, 3)
 
 
-def test_a_windowed_key_collapses_repeats_and_a_plain_one_does_not():
-    """The deliberate fallback, for operations with no natural discriminator. The window
-    is *in* the key, so choosing it is visible — unlike appending now(), which chose a
-    window of zero by accident."""
-    assert within("sweep", seconds=3600) == within("sweep", seconds=3600)
-    assert within("sweep", seconds=3600) != within("sweep", seconds=1800)
+def test_no_time_windowed_key_helper_exists():
+    """`within()` built keys from a time bucket. Deleted 2026-07-22 — a key that changes
+    on its own schedule detects a repeat or misses one depending on where the clock fell.
+    This test fails if it comes back."""
+    import engine.idempotency as idempotency
+
+    assert not hasattr(idempotency, "within")
