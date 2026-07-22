@@ -174,6 +174,11 @@ cost a live retired word in the codebase, which is the carve-out this section al
 once. The frozen plan's name is recorded on the class docstring so a reader grepping the plan
 still lands there. **The quotation rule covers prose, not identifiers.**
 
+**Second instance, 2026-07-22: `components:14` is `session-service` in the frozen plan and
+`engine/resume.py` here**, serving `ResumeService`. Same reasoning, applied to a component
+name rather than an error name — `session` is retired as an identifier without exception, and
+resuming is what the component is *for*. The plan's spelling heads the module docstring.
+
 **No carve-outs.** An earlier draft kept "milestone" for this build's own M0–M8 and "stage" for
 the methodology. Both exceptions were withdrawn by the owner on 2026-07-21, on the grounds that
 a live technical word pollutes reasoning later no matter how narrowly its scope is documented.
