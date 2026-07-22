@@ -214,15 +214,16 @@ and `_age` duplicated verbatim as `_age_seconds`. Built so far:
   `created_at` on every table with independent existence.
 - `tests/test_clock.py` — one owner for timestamp creation *and* interpretation.
 
-**Proposed, not built:** a **duplicate-body detector** — normalised-AST hashing over every
-function, grouping identical bodies. `_age`/`_age_seconds` were byte-identical; this finds
-that class instantly with no false positives, in roughly 30 lines. And below it, a
-near-duplicate identifier *warning* (token-subset or small edit distance), which is noisier
-and should warn rather than fail.
+**Nothing further is proposed here, by the owner's decision of 2026-07-22.** A duplicate-body
+detector was sketched in this section, as part of a wider idea that good coding practice should
+be enforced by standing mechanical checks. That whole approach is withdrawn: it is a large
+implementation topic in its own right, and carrying half-designed checks alongside the build
+work confuses both. The three checks above exist because each one holds a specific, stated
+invariant; that is the bar for adding a fourth, and no fourth is currently wanted.
 
-The general principle, which is also §3's: **a rule stated in a document is not a mechanism.**
-When this build writes a rule for itself, ask of it what we ask of the frozen plan — *what
-fires this, and what fails when it is broken?*
+The general principle, which is also §3's, still stands for *invariants*: **a rule stated in a
+document is not a mechanism.** When this build writes a rule for itself, ask of it what we ask
+of the frozen plan — *what fires this, and what fails when it is broken?*
 
 ---
 
