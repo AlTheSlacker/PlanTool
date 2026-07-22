@@ -347,12 +347,13 @@ class TaskGraphService:
                 package_id=package_id,
             )
         found = self.storage.query(
-            "SELECT content FROM plan_rows WHERE table_name || ':' || ordinal = ?", (ref,)
+            "SELECT name FROM plan_rows WHERE table_name || ':' || ordinal = ?", (ref,)
         )
         if not found:
             raise SubTaskNotFound("no such task source row", ref=ref)
-        content = json.loads(found[0]["content"])
-        name = content.get("title") or content.get("name") or ref
+        # The task takes the name its source row was given. This used to guess it from
+        # content and fall back to the bare ref (M6_PLAN.md §6).
+        name = found[0]["name"]
 
         stamp = now()
         existing = self.storage.query("SELECT id FROM tasks WHERE source_ref = ?", (ref,))
@@ -500,7 +501,7 @@ class TaskGraphService:
         obligation surface the session declared on it (D12).
         """
         rows = self.storage.query(
-            "SELECT table_name, ordinal, content FROM plan_rows "
+            "SELECT table_name, ordinal, name, content FROM plan_rows "
             "WHERE table_name = 'contracts' AND superseded_by IS NULL "
             "AND retired_at IS NULL ORDER BY ordinal"
         )
@@ -508,8 +509,7 @@ class TaskGraphService:
         for r in rows:
             content = json.loads(r["content"])
             ref = RowRef("contracts", r["ordinal"])
-            title = content.get("title") or content.get("name") or str(ref)
-            specs.append((ref, title, content))
+            specs.append((ref, r["name"], content))
         return specs
 
     def _owning_task_id(self, contract: RowRef) -> int | None:

@@ -24,7 +24,7 @@ def test_gate_is_recommended_when_a_package_is_clean(gaps, rows):
     # `goals`, not `decisions`: package 1 fills goals/non_goals/stack in v2 (DEFECTS.md
     # F11 — the vendored rule still tested v1's decisions-with-a-"Goal:"-prefix shape).
     rows.submit_rows(
-        [RowSubmission("goals", {"title": "ship it", "success_criteria": "M7 lands"})],
+        [RowSubmission("goals", {"title": "ship it", "success_criteria": "M7 lands"}, name="ship it")],
         "k",
     )
     cluster = gaps.next_gaps(package=1)
@@ -33,7 +33,7 @@ def test_gate_is_recommended_when_a_package_is_clean(gaps, rows):
 
 
 def test_untraced_use_case_is_a_gap(gaps, rows):
-    rows.submit_rows([RowSubmission("use_cases", {"title": "Place an order"})], "k")
+    rows.submit_rows([RowSubmission("use_cases", {"title": "Place an order"}, name="Place an order")], "k")
     cluster = gaps.next_gaps(package=3)
     untraced = [g for g in cluster.gaps if g.rule_key == "use_case_untraced"]
     assert untraced
@@ -44,9 +44,9 @@ def test_untraced_use_case_is_a_gap(gaps, rows):
 def test_traced_use_case_is_not_a_gap(gaps, rows):
     rows.submit_rows(
         [
-            RowSubmission("use_cases", {"title": "Place an order"}),
+            RowSubmission("use_cases", {"title": "Place an order"}, name="Place an order"),
             RowSubmission("requirements", {"title": "Orders persist"},
-                          links=[LinkSpec(0)]),
+                          links=[LinkSpec(0)], name="Orders persist"),
         ],
         "k",
     )
@@ -60,12 +60,12 @@ def test_unless_field_exempts_a_row(gaps, rows):
         [
             # F28 — a step declares the use case that owns it. This fixture used to
             # write orphans, which v1's NOT NULL `use_case_id` would have refused.
-            RowSubmission("use_cases", {"title": "A scenario"}),
+            RowSubmission("use_cases", {"title": "A scenario"}, name="A scenario"),
             RowSubmission("uc_steps", {"title": "Step one"},
-                          links=[LinkSpec(0, "belongs_to")]),
+                          links=[LinkSpec(0, "belongs_to")], name="Step one"),
             RowSubmission("uc_steps", {"title": "Step two",
                                        "no_extension_reason": "cannot fail"},
-                          links=[LinkSpec(0, "belongs_to")]),
+                          links=[LinkSpec(0, "belongs_to")], name="Step two"),
         ],
         "k",
     )
@@ -79,8 +79,8 @@ def test_when_field_scopes_a_rule(gaps, rows):
     """Only NFRs need the Planguage triad."""
     rows.submit_rows(
         [
-            RowSubmission("requirements", {"title": "functional one"}),
-            RowSubmission("requirements", {"title": "an NFR", "is_nfr": True}),
+            RowSubmission("requirements", {"title": "functional one"}, name="functional one"),
+            RowSubmission("requirements", {"title": "an NFR", "is_nfr": True}, name="an NFR"),
         ],
         "k",
     )
@@ -95,9 +95,9 @@ def test_world_and_intent_assumptions_are_separated(gaps, rows):
     rows.submit_rows(
         [
             RowSubmission("decisions", {"title": "SMB handles O_EXCL"},
-                          provenance=Provenance.ASSUMED, assumption_kind="world"),
+                          provenance=Provenance.ASSUMED, assumption_kind="world", name="SMB handles O_EXCL"),
             RowSubmission("decisions", {"title": "owner wants dark mode"},
-                          provenance=Provenance.ASSUMED, assumption_kind="intent"),
+                          provenance=Provenance.ASSUMED, assumption_kind="intent", name="owner wants dark mode"),
         ],
         "k",
     )
@@ -139,7 +139,7 @@ def test_reference_sections_are_not_gaps(gaps, refs):
 
 def test_cluster_is_coherent_and_bounded(gaps, rows):
     rows.submit_rows(
-        [RowSubmission("use_cases", {"title": f"UC {i}"}) for i in range(10)], "k"
+        [RowSubmission("use_cases", {"title": f"UC {i}"}, name=f"UC {i}") for i in range(10)], "k"
     )
     cluster = gaps.next_gaps(package=3, limit=5)
     assert len(cluster.gaps) == 5
@@ -152,11 +152,11 @@ def test_elicit_guidance_puts_divergence_before_drafts(gaps, rows):
     owner. On elicit packages divergence now comes first."""
     rows.submit_rows(
         [
-            RowSubmission("use_cases", {"title": "UC"}),
+            RowSubmission("use_cases", {"title": "UC"}, name="UC"),
             # F28 — the step declares its owning use case. Without it the step is
             # refused and this fixture silently tested an empty plan.
             RowSubmission("uc_steps", {"title": "Step one"},
-                          links=[LinkSpec(0, "belongs_to")]),
+                          links=[LinkSpec(0, "belongs_to")], name="Step one"),
         ],
         "k",
     )
@@ -168,13 +168,13 @@ def test_elicit_guidance_puts_divergence_before_drafts(gaps, rows):
 
 
 def test_synthesize_guidance_makes_the_agent_the_source(gaps, rows):
-    rows.submit_rows([RowSubmission("entities", {"title": "Order"})], "k")
+    rows.submit_rows([RowSubmission("entities", {"title": "Order"}, name="Order")], "k")
     guidance = gaps.next_gaps(package=4).guidance.lower()
     assert "you are the source" in guidance
 
 
 def test_dismissal_stops_the_gap_surfacing(gaps, rows):
-    rows.submit_rows([RowSubmission("use_cases", {"title": "UC"})], "k")
+    rows.submit_rows([RowSubmission("use_cases", {"title": "UC"}, name="UC")], "k")
     target = next(
         g for g in gaps.next_gaps(package=3).gaps if g.rule_key == "use_case_untraced"
     )
@@ -186,7 +186,7 @@ def test_dismissal_stops_the_gap_surfacing(gaps, rows):
 
 def test_dismissal_is_reversible(gaps, rows):
     """requirements:15 — the dismissal is recorded and reversible."""
-    rows.submit_rows([RowSubmission("use_cases", {"title": "UC"})], "k")
+    rows.submit_rows([RowSubmission("use_cases", {"title": "UC"}, name="UC")], "k")
     target = next(
         g for g in gaps.next_gaps(package=3).gaps if g.rule_key == "use_case_untraced"
     )
@@ -198,14 +198,14 @@ def test_dismissal_is_reversible(gaps, rows):
 def test_dismissal_survives_supersession_of_its_row(gaps, rows):
     """requirements:78 / findings:16 — the overlay is keyed by the lineage root, so a
     dismissal neither re-surfaces nor silently detaches when the row is superseded."""
-    rows.submit_rows([RowSubmission("use_cases", {"title": "UC v1"})], "k1")
+    rows.submit_rows([RowSubmission("use_cases", {"title": "UC v1"}, name="UC v1")], "k1")
     target = next(
         g for g in gaps.next_gaps(package=3).gaps if g.rule_key == "use_case_untraced"
     )
     gaps.dismiss_gap(target.key, "deliberately untraced for now")
 
     rows.supersede_row(
-        "use_cases:1", RowSubmission("use_cases", {"title": "UC v2"}), "k2"
+        "use_cases:1", RowSubmission("use_cases", {"title": "UC v2"}, name="UC v2"), "k2"
     )
     still_dismissed = [
         g for g in gaps.next_gaps(package=3).gaps if g.rule_key == "use_case_untraced"
@@ -214,14 +214,14 @@ def test_dismissal_survives_supersession_of_its_row(gaps, rows):
 
 
 def test_lineage_root_walks_the_whole_chain(gaps, rows):
-    rows.submit_rows([RowSubmission("decisions", {"title": "a"})], "k1")
-    rows.supersede_row("decisions:1", RowSubmission("decisions", {"title": "b"}), "k2")
-    rows.supersede_row("decisions:2", RowSubmission("decisions", {"title": "c"}), "k3")
+    rows.submit_rows([RowSubmission("decisions", {"title": "a"}, name="a")], "k1")
+    rows.supersede_row("decisions:1", RowSubmission("decisions", {"title": "b"}, name="b"), "k2")
+    rows.supersede_row("decisions:2", RowSubmission("decisions", {"title": "c"}, name="c"), "k3")
     assert gaps.lineage_root("decisions:3") == RowRef("decisions", 1)
 
 
 def test_reopen_requires_a_dismissal(gaps, rows):
-    rows.submit_rows([RowSubmission("use_cases", {"title": "UC"})], "k")
+    rows.submit_rows([RowSubmission("use_cases", {"title": "UC"}, name="UC")], "k")
     target = next(
         g for g in gaps.next_gaps(package=3).gaps if g.rule_key == "use_case_untraced"
     )
@@ -230,7 +230,7 @@ def test_reopen_requires_a_dismissal(gaps, rows):
 
 
 def test_reopening_an_open_gap_is_refused(gaps, rows):
-    rows.submit_rows([RowSubmission("use_cases", {"title": "UC"})], "k")
+    rows.submit_rows([RowSubmission("use_cases", {"title": "UC"}, name="UC")], "k")
     target = next(
         g for g in gaps.next_gaps(package=3).gaps if g.rule_key == "use_case_untraced"
     )
@@ -241,7 +241,7 @@ def test_reopening_an_open_gap_is_refused(gaps, rows):
 
 
 def test_dismissal_requires_a_reason(gaps, rows):
-    rows.submit_rows([RowSubmission("use_cases", {"title": "UC"})], "k")
+    rows.submit_rows([RowSubmission("use_cases", {"title": "UC"}, name="UC")], "k")
     target = next(
         g for g in gaps.next_gaps(package=3).gaps if g.rule_key == "use_case_untraced"
     )
@@ -250,7 +250,7 @@ def test_dismissal_requires_a_reason(gaps, rows):
 
 
 def test_unreadable_rows_route_to_recovery(gaps, rows, store):
-    rows.submit_rows([RowSubmission("use_cases", {"title": "UC"})], "k")
+    rows.submit_rows([RowSubmission("use_cases", {"title": "UC"}, name="UC")], "k")
     store.conn.execute("UPDATE plan_rows SET content = 'broken' WHERE ordinal = 1")
     store.conn.commit()
     from engine.gaps import PlanUnreadable

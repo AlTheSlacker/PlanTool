@@ -36,7 +36,7 @@ def test_a_package_outside_the_range_is_refused_with_the_range(gate):
 
 def test_results_are_deterministic(gate, rows):
     """requirements:46 — same plan in, same result out."""
-    submit(rows, RowSubmission("goals", {"title": "ship it"}))
+    submit(rows, RowSubmission("goals", {"title": "ship it"}, name="ship it"))
     first, second = gate.run_gate(1), gate.run_gate(1)
     assert [(h.criterion_id, h.ref) for h in first.holes] == [
         (h.criterion_id, h.ref) for h in second.holes
@@ -46,10 +46,10 @@ def test_results_are_deterministic(gate, rows):
 def test_a_complete_package_passes_and_points_at_the_next(gate, rows):
     submit(
         rows,
-        RowSubmission("goals", {"title": "ship it", "success_criteria": "M7 lands"}),
-        RowSubmission("non_goals", {"title": "no GUI"}),
-        RowSubmission("stack", {"title": "Python 3.12 on Windows"}),
-        RowSubmission("use_cases", {"title": "Author a plan"}, links=[LinkSpec(0)]),
+        RowSubmission("goals", {"title": "ship it", "success_criteria": "M7 lands"}, name="ship it"),
+        RowSubmission("non_goals", {"title": "no GUI"}, name="no GUI"),
+        RowSubmission("stack", {"title": "Python 3.12 on Windows"}, name="Python 3.12 on Windows"),
+        RowSubmission("use_cases", {"title": "Author a plan"}, links=[LinkSpec(0)], name="Author a plan"),
     )
     result = gate.run_gate(1)
     assert result.passed is True
@@ -60,7 +60,7 @@ def test_a_complete_package_passes_and_points_at_the_next(gate, rows):
 
 
 def test_an_actor_in_no_use_case_is_a_cross_check_hole(gate, rows):
-    submit(rows, RowSubmission("actors", {"name": "Product owner"}))
+    submit(rows, RowSubmission("actors", {"name": "Product owner"}, name="Product owner"))
     holes = [h for h in gate.run_gate(1).holes if h.criterion_id == "actor_participates"]
     assert holes and holes[0].cross_check is True
     assert "Product owner" in holes[0].problem
@@ -70,8 +70,8 @@ def test_an_actor_in_no_use_case_is_a_cross_check_hole(gate, rows):
 def test_a_goal_reaching_a_use_case_clears_its_cross_check(gate, rows):
     submit(
         rows,
-        RowSubmission("goals", {"title": "ship it", "success_criteria": "M7"}),
-        RowSubmission("use_cases", {"title": "Author a plan"}, links=[LinkSpec(0)]),
+        RowSubmission("goals", {"title": "ship it", "success_criteria": "M7"}, name="ship it"),
+        RowSubmission("use_cases", {"title": "Author a plan"}, links=[LinkSpec(0)], name="Author a plan"),
     )
     assert not [
         h for h in gate.run_gate(2).holes
@@ -89,7 +89,7 @@ def test_the_gate_reports_which_cross_checks_ran(gate):
 
 
 def test_required_fields_names_what_is_missing(gate, rows):
-    submit(rows, RowSubmission("goals", {"title": "ship it"}))
+    submit(rows, RowSubmission("goals", {"title": "ship it"}, name="ship it"))
     hole = next(
         h for h in gate.run_gate(1).holes
         if h.criterion_id == "goal_has_success_criteria"
@@ -101,9 +101,9 @@ def test_ears_slots_are_checked_per_type(gate, rows):
     submit(
         rows,
         RowSubmission("requirements", {"title": "A", "ears_type": "ubiquitous",
-                                       "system_response": "logs the event"}),
+                                       "system_response": "logs the event"}, name="A"),
         RowSubmission("requirements", {"title": "B", "ears_type": "event",
-                                       "system_response": "logs the event"}),
+                                       "system_response": "logs the event"}, name="B"),
     )
     flagged = {
         h.ref for h in gate.run_gate(3).holes if h.criterion_id == "ears_slots_filled"
@@ -115,9 +115,9 @@ def test_only_nfrs_need_the_planguage_triad(gate, rows):
     submit(
         rows,
         RowSubmission("requirements", {"title": "A", "ears_type": "ubiquitous",
-                                       "system_response": "x"}),
+                                       "system_response": "x"}, name="A"),
         RowSubmission("requirements", {"title": "B", "ears_type": "ubiquitous",
-                                       "system_response": "x", "is_nfr": True}),
+                                       "system_response": "x", "is_nfr": True}, name="B"),
     )
     flagged = {h.ref for h in gate.run_gate(3).holes if h.criterion_id == "nfr_quantified"}
     assert flagged == {RowRef("requirements", 2)}
@@ -126,9 +126,9 @@ def test_only_nfrs_need_the_planguage_triad(gate, rows):
 def test_covers_all_names_the_missing_values(gate, rows):
     submit(
         rows,
-        RowSubmission("entities", {"name": "Plan", "lifecycle_reason": "n/a"}),
-        RowSubmission("crud_grid", {"op": "C", "actor": "owner"}, links=[LinkSpec(0)]),
-        RowSubmission("crud_grid", {"op": "R", "actor": "agent"}, links=[LinkSpec(0)]),
+        RowSubmission("entities", {"name": "Plan", "lifecycle_reason": "n/a"}, name="Plan"),
+        RowSubmission("crud_grid", {"op": "C", "actor": "owner"}, links=[LinkSpec(0)], name="C"),
+        RowSubmission("crud_grid", {"op": "R", "actor": "agent"}, links=[LinkSpec(0)], name="R"),
     )
     hole = next(
         h for h in gate.run_gate(4).holes if h.criterion_id == "crud_grid_complete"
@@ -143,14 +143,15 @@ def test_matrix_complete_flags_undefined_state_event_cells(gate, rows):
         # edge. That is exactly v1's NOT NULL `machine_id` degraded into an optional
         # association nothing asserts. It is `belongs_to` now, and the machine declares
         # the entity that owns it.
-        RowSubmission("entities", {"name": "Plan"}),
+        RowSubmission("entities", {"name": "Plan"}, name="Plan"),
         RowSubmission("state_machines", {"name": "Plan lifecycle",
                                          "states": ["draft", "frozen"],
                                          "events": ["freeze"]},
-                      links=[LinkSpec(0, "belongs_to")]),
+                      links=[LinkSpec(0, "belongs_to")], name="Plan lifecycle"),
         RowSubmission("sm_cells", {"state": "draft", "event": "freeze",
                                    "transition_to": "frozen"},
-                      links=[LinkSpec(1, "belongs_to")]),
+                      links=[LinkSpec(1, "belongs_to")],
+                      name="draft becomes frozen on freeze"),
     )
     hole = next(
         h for h in gate.run_gate(4).holes
@@ -164,7 +165,7 @@ def test_an_escape_row_satisfies_a_non_empty_criterion(gate, rows):
     before = {h.criterion_id for h in gate.run_gate(5).holes}
     assert "dependencies_registered" in before
     submit(rows, RowSubmission("no_dependencies_decision",
-                               {"text": "purely local; no external dependencies"}))
+                               {"text": "purely local; no external dependencies"}, name="purely local; no external dependencies"))
     after = {h.criterion_id for h in gate.run_gate(5).holes}
     assert "dependencies_registered" not in after
 
@@ -173,7 +174,7 @@ def test_an_unbacked_world_assumption_is_a_package_six_hole(gate, rows):
     submit(
         rows,
         RowSubmission("contracts", {"title": "SMB honours O_EXCL"},
-                      provenance=Provenance.ASSUMED, assumption_kind="world"),
+                      provenance=Provenance.ASSUMED, assumption_kind="world", name="SMB honours O_EXCL"),
     )
     holes = [
         h for h in gate.run_gate(6).holes if h.criterion_id == "world_assumption_backed"
@@ -185,8 +186,8 @@ def test_a_spike_backs_a_world_assumption(gate, rows):
     submit(
         rows,
         RowSubmission("contracts", {"title": "SMB honours O_EXCL"},
-                      provenance=Provenance.ASSUMED, assumption_kind="world"),
-        RowSubmission("spikes", {"title": "probe SMB locking"}, links=[LinkSpec(0)]),
+                      provenance=Provenance.ASSUMED, assumption_kind="world", name="SMB honours O_EXCL"),
+        RowSubmission("spikes", {"title": "probe SMB locking"}, links=[LinkSpec(0)], name="probe SMB locking"),
     )
     assert not [
         h for h in gate.run_gate(6).holes if h.criterion_id == "world_assumption_backed"
@@ -205,7 +206,7 @@ def test_package_eight_folds_in_every_earlier_gate(gate):
 def test_an_open_conflict_out_of_scope_still_stops_the_freeze(gate, rows, conflicts):
     """Package 8's own criterion is plan-wide: a frozen plan cannot contradict itself
     anywhere, including in tables no gate's scope covers."""
-    submit(rows, RowSubmission("scratch", {"title": "an off-package row"}))
+    submit(rows, RowSubmission("scratch", {"title": "an off-package row"}, name="an off-package row"))
     conflicts.raise_conflict([RowRef("scratch", 1)], "contested", "pick one")
     holes = [h for h in gate.run_gate(8).holes if h.criterion_id == "no_open_conflicts"]
     assert holes and "contested" in holes[0].problem
@@ -216,7 +217,7 @@ def test_an_open_conflict_out_of_scope_still_stops_the_freeze(gate, rows, confli
 
 def test_a_gate_lists_every_open_gap_in_its_package_as_an_explicit_warning(gate, rows):
     """An actor with no use case is a package-2 gap as well as a package-1 gate hole."""
-    submit(rows, RowSubmission("actors", {"name": "Auditor"}))
+    submit(rows, RowSubmission("actors", {"name": "Auditor"}, name="Auditor"))
     result = gate.run_gate(2)
     assert any(
         w.kind == "open_gap" and "actor_without_use_case" in w.message
@@ -227,11 +228,11 @@ def test_a_gate_lists_every_open_gap_in_its_package_as_an_explicit_warning(gate,
 def test_an_unresolved_assumption_warns_but_does_not_fail_the_gate(gate, rows):
     submit(
         rows,
-        RowSubmission("goals", {"title": "ship it", "success_criteria": "M7"}),
-        RowSubmission("non_goals", {"title": "no GUI"}),
+        RowSubmission("goals", {"title": "ship it", "success_criteria": "M7"}, name="ship it"),
+        RowSubmission("non_goals", {"title": "no GUI"}, name="no GUI"),
         RowSubmission("stack", {"title": "Python"}, provenance=Provenance.ASSUMED,
-                      assumption_kind="intent"),
-        RowSubmission("use_cases", {"title": "Author"}, links=[LinkSpec(0)]),
+                      assumption_kind="intent", name="Python"),
+        RowSubmission("use_cases", {"title": "Author"}, links=[LinkSpec(0)], name="Author"),
     )
     result = gate.run_gate(1)
     assert result.passed is True  # decisions:31 — gates warn, they do not block
@@ -240,7 +241,7 @@ def test_an_unresolved_assumption_warns_but_does_not_fail_the_gate(gate, rows):
 
 
 def test_warnings_do_not_accumulate_across_repeated_gates(gate, rows, warns):
-    submit(rows, RowSubmission("actors", {"name": "Auditor"}))
+    submit(rows, RowSubmission("actors", {"name": "Auditor"}, name="Auditor"))
     gate.run_gate(2)
     first = len(warns.all_warnings())
     gate.run_gate(2)
@@ -260,7 +261,7 @@ def test_a_warning_clears_when_its_condition_clears(gate, rows, warns):
     """A warning that outlives its cause trains the reader to ignore warnings."""
     gate.run_gate(1)
     stale = next(w for w in warns.active_warnings() if "package1_not_started" in w.message)
-    submit(rows, RowSubmission("goals", {"title": "ship it", "success_criteria": "M7"}))
+    submit(rows, RowSubmission("goals", {"title": "ship it", "success_criteria": "M7"}, name="ship it"))
     gate.run_gate(1)
     assert warns.get(stale.id).state == "resolved"
     assert warns.get(stale.id).resolved_by is None  # no row is falsely credited
@@ -272,7 +273,7 @@ def test_an_assumption_warns_exactly_once(gate, rows, warns):
     submit(
         rows,
         RowSubmission("stack", {"title": "Deploy on the NAS"},
-                      provenance=Provenance.ASSUMED, assumption_kind="intent"),
+                      provenance=Provenance.ASSUMED, assumption_kind="intent", name="Deploy on the NAS"),
     )
     result = gate.run_gate(1)
     about_it = [w for w in result.warnings if "Deploy on the NAS" in w.message]
@@ -284,7 +285,7 @@ def test_an_assumption_warns_exactly_once(gate, rows, warns):
 
 
 def test_a_suppressed_warning_stays_suppressed_through_a_gate(gate, rows, warns):
-    submit(rows, RowSubmission("actors", {"name": "Auditor"}))
+    submit(rows, RowSubmission("actors", {"name": "Auditor"}, name="Auditor"))
     gate.run_gate(2)
     target = warns.active_warnings()[0]
     warns.suppress_warning(target.id, "accepted until package 3")
@@ -298,7 +299,7 @@ def test_a_suppressed_warning_stays_suppressed_through_a_gate(gate, rows, warns)
 def test_an_open_conflict_blocks_a_gate_that_depends_on_the_contested_rows(
     gate, rows, conflicts
 ):
-    submit(rows, RowSubmission("goals", {"title": "ship it"}))
+    submit(rows, RowSubmission("goals", {"title": "ship it"}, name="ship it"))
     conflicts.raise_conflict(
         [RowRef("goals", 1)], "the goal contradicts the non-goal", "drop the non-goal"
     )
@@ -308,7 +309,7 @@ def test_an_open_conflict_blocks_a_gate_that_depends_on_the_contested_rows(
 
 
 def test_a_conflict_outside_the_gates_scope_does_not_block_it(gate, rows, conflicts):
-    submit(rows, RowSubmission("findings", {"title": "a red-team finding"}))
+    submit(rows, RowSubmission("findings", {"title": "a red-team finding"}, name="a red-team finding"))
     conflicts.raise_conflict(
         [RowRef("findings", 1)], "two findings disagree", "keep the first"
     )
@@ -316,7 +317,7 @@ def test_a_conflict_outside_the_gates_scope_does_not_block_it(gate, rows, confli
 
 
 def test_resolving_the_conflict_unblocks_the_gate(gate, rows, conflicts):
-    submit(rows, RowSubmission("goals", {"title": "ship it"}))
+    submit(rows, RowSubmission("goals", {"title": "ship it"}, name="ship it"))
     conflict = conflicts.raise_conflict(
         [RowRef("goals", 1)], "contested", "keep it"
     )

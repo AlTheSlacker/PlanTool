@@ -37,7 +37,7 @@ CONTAINMENT = load().containment
 
 
 def _row(table, **kwargs):
-    return RowSubmission(table=table, content={"title": f"a {table}"}, **kwargs)
+    return RowSubmission(table=table, content={"title": f"a {table}"}, **kwargs, name=f"a {table}")
 
 
 def test_the_v1_relations_are_all_declared():

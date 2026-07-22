@@ -45,7 +45,7 @@ rules:
     table: goals
     fields: [success_criteria]
     ask: >-
-      Goal "{title}" has no success criteria. A goal you cannot measure cannot be
+      Goal "{name}" has no success criteria. A goal you cannot measure cannot be
       gated. Propose a criterion with a scale and a target, and ask for objection.
 
   # --- package 2: use cases (elicit) ---
@@ -69,7 +69,7 @@ rules:
     direction: in
     unless_field: no_extension_reason
     ask: >-
-      Step "{title}" has no extensions and no no_extension_reason. What can fail or vary
+      Step "{name}" has no extensions and no no_extension_reason. What can fail or vary
       here? Propose the handling rather than asking a blank question. If genuinely
       nothing can vary, record why.
 
@@ -81,7 +81,7 @@ rules:
     to_table: use_cases
     direction: in
     ask: >-
-      Actor "{title}" appears in no use case. Either they have a scenario nobody has
+      Actor "{name}" appears in no use case. Either they have a scenario nobody has
       elicited, or they should not be recorded as an actor. This is the negative-space
       probe the divergence round exists for.
 
@@ -103,7 +103,7 @@ rules:
     to_table: requirements
     direction: in
     ask: >-
-      Use case "{title}" traces to no requirement. Derive its requirements and link
+      Use case "{name}" traces to no requirement. Derive its requirements and link
       them, or record why it needs none.
 
   - id: nfr_unquantified
@@ -114,7 +114,7 @@ rules:
     fields: [planguage_scale, planguage_meter, planguage_target]
     when_field: is_nfr
     ask: >-
-      NFR "{title}" lacks a full Planguage triad (scale/meter/target). An unquantified
+      NFR "{name}" lacks a full Planguage triad (scale/meter/target). An unquantified
       NFR cannot be verified and will not survive a gate.
 
   # --- package 4: domain model (synthesize) ---
@@ -135,7 +135,7 @@ rules:
     to_table: crud_grid
     direction: in
     ask: >-
-      Entity "{title}" has no CRUD grid. Propose the responsible actor or component per
+      Entity "{name}" has no CRUD grid. Propose the responsible actor or component per
       operation, or an explicit n/a with a reason — and note children-on-delete for D.
 
   - id: lifecycle_without_state_machine
@@ -147,7 +147,7 @@ rules:
     direction: in
     when_field: has_lifecycle
     ask: >-
-      Entity "{title}" is marked as having a lifecycle but has no state machine. Propose
+      Entity "{name}" is marked as having a lifecycle but has no state machine. Propose
       the states and events, including the impossible transitions and why they are
       impossible.
 
@@ -169,7 +169,7 @@ rules:
     to_table: dep_failure_modes
     direction: in
     ask: >-
-      Dependency "{title}" has no recorded failure modes. What does the system do when
+      Dependency "{name}" has no recorded failure modes. What does the system do when
       it is slow, unavailable, malformed, or partial? Propose the handling.
 
   # --- package 6: architecture (synthesize) ---
@@ -190,7 +190,7 @@ rules:
     to_table: contracts
     direction: in
     ask: >-
-      Component "{title}" has no contracts. Define its functions with parameters,
+      Component "{name}" has no contracts. Define its functions with parameters,
       returns and errors — and give every error a stated trigger.
 
   # --- provenance rules: any package ---
@@ -200,7 +200,7 @@ rules:
     type: open_assumption
     assumption_kind: world
     ask: >-
-      Assumed fact about external reality: "{title}". A world-assumption is resolved by
+      Assumed fact about external reality: "{name}". A world-assumption is resolved by
       a spike against the real dependency, never by asking the owner. Register the
       spike, or supersede the row if it is no longer load-bearing.
 
@@ -210,7 +210,7 @@ rules:
     type: open_assumption
     assumption_kind: intent
     ask: >-
-      Assumed intent: "{title}". Only the owner can resolve this. Put it to them and
+      Assumed intent: "{name}". Only the owner can resolve this. Put it to them and
       quote their answer back into the row — do not spike it and do not let it stand.
 
   # --- references ---
@@ -230,6 +230,6 @@ rules:
       - (front matter)
       - (whole document)
     ask: >-
-      Source "{title}" has never been read from its {heading} section. Limitations,
+      Source "{name}" has never been read from its {heading} section. Limitations,
       threats to validity and negative results are where a study's caveats live — a
       paper cited only from its Results is a paper half read.

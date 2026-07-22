@@ -4,7 +4,7 @@ Owned exclusively by storage-engine (components:1): "no other component touches 
 database". Every other module reaches persistence through storage.py's typed operations.
 """
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 DDL = """
 PRAGMA journal_mode = WAL;
@@ -23,10 +23,25 @@ CREATE TABLE IF NOT EXISTS plan (
 
 -- Any content row (entities:2). Sources and extracts live here too, so they inherit
 -- provenance, supersession lineage and link participation for free (DEVIATIONS.md D3).
+-- `name` and `named_for` implement M6_PLAN.md §6: a row is addressed as `table:ordinal`,
+-- and an address alone forces the reader to go and look it up. Every row therefore carries
+-- a short name, supplied at creation, and the tool never emits the address without it.
+--
+-- The name is a real column and is NOT derived from `content`. D12 settled that nothing an
+-- accounting depends on may be inferred from `content`, because it is free-form JSON with
+-- no per-table schema; a display name is the same case, and a truncated first sentence is
+-- not a name.
+--
+-- `named_for` is the fingerprint of the content the name was given for. A name that was
+-- accurate when written stops being true when the content moves, so a write that changes
+-- content cannot carry the old name forward silently — it must be supplied again. Passing
+-- the same name a second time is a deliberate act; silence is not. See rows.py.
 CREATE TABLE IF NOT EXISTS plan_rows (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     table_name      TEXT    NOT NULL,
     ordinal         INTEGER NOT NULL,
+    name            TEXT    NOT NULL,
+    named_for       TEXT    NOT NULL,          -- content fingerprint at naming time
     content         TEXT    NOT NULL,          -- JSON
     provenance      TEXT    NOT NULL,
     assumption_kind TEXT,
@@ -43,6 +58,26 @@ CREATE TABLE IF NOT EXISTS plan_rows (
 
 CREATE INDEX IF NOT EXISTS idx_rows_table  ON plan_rows (table_name);
 CREATE INDEX IF NOT EXISTS idx_rows_live   ON plan_rows (superseded_by, state);
+
+-- Two live rows in one table may not share a name (M6_PLAN.md §6.5). This is the clause
+-- that makes naming a mechanism rather than a convention: a duplicate is a signal every
+-- time — either the same thing has been filed twice, or there are two things and nobody
+-- has distinguished them. That is the collision this build hit three times (`part` vs
+-- `component`, eight spellings of `created_at`, `_age` duplicated as `_age_seconds`),
+-- caught at the moment of typing instead of a week later. No judgment is exercised, so
+-- `decisions:12` is respected.
+--
+-- Scoped to live rows so a superseded row's name is free for its replacement to reuse —
+-- which is exactly the *redefinition* case (same thing, sharpened) and is correctly
+-- distinguished from *replacement* (different thing, different name) by whether the
+-- replacement changed the name. The `terms` design (M6_PLAN.md §3.1) needed that same
+-- distinction and had to build it by hand; here the general layer gets it for free.
+-- `state` carries the exclusion as well as `superseded_by`, because supersession sets the
+-- state first and the pointer afterwards: the replacement has to be inserted before its ref
+-- exists to point at. Keying on the pointer alone would leave the old row in the index for
+-- the one statement in between, and reject a replacement that legitimately keeps its name.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_rows_live_name ON plan_rows (table_name, name)
+    WHERE superseded_by IS NULL AND state NOT IN ('retired', 'superseded');
 -- `package` here is the *planning* package that produced the row — the ordinal of the
 -- methodology's standard package set (1..8), not a row in the `packages` table. Planning
 -- packages and build packages are the same concept in two layers, kept in separate tables:

@@ -32,7 +32,7 @@ def _plan(rows, extra_rows=0, obligations=OBLIGATIONS):
     """One contract citing `extra_rows` decision rows, so the closure has something in
     it beyond the contract itself."""
     subs = [
-        RowSubmission(table="decisions", content={"title": f"decision {i}"})
+        RowSubmission(table="decisions", content={"title": f"decision {i}"}, name=f"decision {i}")
         for i in range(extra_rows)
     ]
     receipt = rows.submit_rows(subs, "decisions") if subs else None
@@ -44,7 +44,7 @@ def _plan(rows, extra_rows=0, obligations=OBLIGATIONS):
             table="contracts",
             content={"title": "the contract", "obligations": obligations},
             links=links,
-        )],
+         name="the contract")],
         "contract",
     )
 
@@ -143,7 +143,7 @@ def test_allocated_rows_are_candidates_not_automatic_inclusions(
     "too high" attachment becomes visible in a log the owner reads."""
     _plan(rows, extra_rows=0)
     rows.submit_rows(
-        [RowSubmission(table="decisions", content={"title": "a plan-wide decision"})],
+        [RowSubmission(table="decisions", content={"title": "a plan-wide decision"}, name="a plan-wide decision")],
         "allocated",
     )
     attachments.attach("decisions:1", "plan", reason="governs the whole build")
@@ -190,7 +190,7 @@ def test_audit_measures_the_frozen_closure_not_the_current_one(briefs, tasks, ro
 
     # The plan moves on after composition.
     rows.submit_rows(
-        [RowSubmission(table="decisions", content={"title": "decided later"})], "later"
+        [RowSubmission(table="decisions", content={"title": "decided later"}, name="decided later")], "later"
     )
 
     audit = briefs.audit_brief(brief.id)
@@ -213,7 +213,7 @@ def test_audit_reports_drift_separately_and_it_never_fails(
     # The plan moves on: a row is allocated to plan scope after the brief was composed,
     # so it is a candidate now and was not one then.
     rows.submit_rows(
-        [RowSubmission(table="decisions", content={"title": "decided later"})], "later"
+        [RowSubmission(table="decisions", content={"title": "decided later"}, name="decided later")], "later"
     )
     attachments.attach("decisions:2", "plan", reason="governs everything from now on")
 
@@ -319,13 +319,13 @@ def test_dependants_are_rewired_to_the_new_subtasks(briefs, tasks, rows):
     behind a node that will never complete."""
     rows.submit_rows(
         [RowSubmission(table="contracts",
-                       content={"title": "provider", "obligations": OBLIGATIONS})],
+                       content={"title": "provider", "obligations": OBLIGATIONS}, name="provider")],
         "provider",
     )
     rows.submit_rows(
         [RowSubmission(table="contracts",
                        content={"title": "consumer", "obligations": OBLIGATIONS},
-                       links=[LinkSpec(target="contracts:1", edge_type="depends_on")])],
+                       links=[LinkSpec(target="contracts:1", edge_type="depends_on")], name="consumer")],
         "consumer",
     )
     tasks.finalize_plan()
@@ -351,13 +351,13 @@ def test_new_subtasks_inherit_the_originals_dependencies(briefs, tasks, rows):
     escape the dependency order requirements:34 exists to preserve."""
     rows.submit_rows(
         [RowSubmission(table="contracts",
-                       content={"title": "provider", "obligations": OBLIGATIONS})],
+                       content={"title": "provider", "obligations": OBLIGATIONS}, name="provider")],
         "provider",
     )
     rows.submit_rows(
         [RowSubmission(table="contracts",
                        content={"title": "consumer", "obligations": OBLIGATIONS},
-                       links=[LinkSpec(target="contracts:1", edge_type="depends_on")])],
+                       links=[LinkSpec(target="contracts:1", edge_type="depends_on")], name="consumer")],
         "consumer",
     )
     tasks.finalize_plan()

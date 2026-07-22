@@ -36,17 +36,20 @@ UNDISMISSABLE: dict[str, str] = {
 }
 
 
-def title_of(row: PlanRow) -> str:
-    """A row's human-readable handle, for gap asks and gate holes alike.
+def name_of(row: PlanRow) -> str:
+    """A row's name — the single owner of "what do we call this row".
 
-    The store is schema-free by design (DEVIATIONS.md D3), so there is no title column
-    to read — this is the agreed order of preference across every table.
+    Until 2026-07-22 this guessed, trying five content keys in order and falling back to
+    printing the bare `table:ordinal` when none matched. Two more copies of the same guess
+    lived in tasks.py with a *different* key list. All three are gone: `name` is a real
+    column, required at submission (M6_PLAN.md §6).
+
+    The fallback was the worse half. A row whose content happened to use none of the five
+    keys — `crud_grid` rows, which carry `op` and `actor` — was announced to the reader as
+    an address and nothing else, which is precisely the lookup this design exists to
+    remove.
     """
-    for key in ("title", "name", "text", "quote", "description"):
-        value = row.content.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()[:120]
-    return str(row.ref)
+    return row.name
 
 
 class GapNotFound(PlanToolError):
@@ -137,7 +140,7 @@ class GapEngine:
         )
         return list(page.rows)
 
-    _title = staticmethod(title_of)
+    _name = staticmethod(name_of)
 
     def _linked(self, table: str, direction: str) -> set[str]:
         """Refs in `table` that participate in at least one link in `direction`."""
@@ -188,7 +191,7 @@ class GapEngine:
             rule_key=rule.id,
             priority=rule.priority,
             package=rule.package,
-            ask=rule.ask.format(title=self._title(row) if row else "", **fmt),
+            ask=rule.ask.format(name=self._name(row) if row else "", **fmt),
             target=row.ref if row else None,
             root=root,
             context={"row": row.content} if row is not None else {},

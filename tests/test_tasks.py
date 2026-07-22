@@ -50,6 +50,7 @@ def _contracts(rows, n, deps=None):
                          "statement": f"contract {i} names a missing id"},
                     ],
                 },
+                name=f"contract {i}",
                 links=links,
             )
         )
@@ -120,10 +121,11 @@ def test_untyped_links_are_not_build_dependencies(tasks, rows):
     """D11 — a contract cites its requirements with the same edge it would cite a
     sibling. Walking those as dependencies would make every citation a dependency."""
     req = rows.submit_rows(
-        [RowSubmission(table="requirements", content={"text": "a requirement"})], "r"
+        [RowSubmission(table="requirements", content={"text": "a requirement"},
+                       name="a requirement")], "r"
     ).verdicts[0].ref
     rows.submit_rows(
-        [RowSubmission(table="contracts", content={"title": "c"},
+        [RowSubmission(table="contracts", content={"title": "c"}, name="c",
                        links=[LinkSpec(target=req)])],
         "c",
     )
@@ -354,7 +356,8 @@ def test_finalization_refuses_an_unpackaged_task(tasks, rows):
     from engine.tasks import UnpackagedTask
 
     rows.submit_rows(
-        [RowSubmission(table="components", content={"title": "brief-composer"})], "comp"
+        [RowSubmission(table="components", content={"title": "brief-composer"},
+                       name="brief-composer")], "comp"
     )
     with pytest.raises(UnpackagedTask) as exc:
         tasks.finalize_plan()
@@ -366,7 +369,8 @@ def test_task_membership_survives_as_a_typed_link(tasks, rows):
     and the package-6 flattening kept the rows and dropped the relation. D13 restores it
     as `edge_type='belongs_to'`, member -> owner."""
     rows.submit_rows(
-        [RowSubmission(table="components", content={"title": "brief-composer"})], "comp"
+        [RowSubmission(table="components", content={"title": "brief-composer"},
+                       name="brief-composer")], "comp"
     )
     package = tasks.declare_package("the engine", "everything behind the surface")
     task = tasks.assign_task("components:1", package.id)
@@ -374,6 +378,7 @@ def test_task_membership_survives_as_a_typed_link(tasks, rows):
         table="contracts",
         content={"title": "compose_brief", "obligations": [
             {"key": "behaviour", "statement": "composes"}]},
+        name="compose_brief",
         links=[LinkSpec(target="components:1", edge_type="belongs_to")],
     )], "contract")
 
@@ -395,7 +400,8 @@ def test_a_package_is_referenced_by_id_never_by_name(tasks, rows):
     from engine.tasks import PackageNotFound
 
     rows.submit_rows(
-        [RowSubmission(table="components", content={"title": "brief-composer"})], "comp"
+        [RowSubmission(table="components", content={"title": "brief-composer"},
+                       name="brief-composer")], "comp"
     )
     with pytest.raises(PackageNotFound):
         tasks.assign_task("components:1", 99)

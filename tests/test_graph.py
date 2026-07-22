@@ -14,15 +14,15 @@ def graph(store):
 
 def _chain(rows):
     """use_cases:1 <- requirements:1 <- contracts:1"""
-    rows.submit_rows([RowSubmission("use_cases", {"text": "uc"})], "k1")
+    rows.submit_rows([RowSubmission("use_cases", {"text": "uc"}, name="uc")], "k1")
     rows.submit_rows(
         [RowSubmission("requirements", {"text": "req"},
-                       links=[LinkSpec(RowRef("use_cases", 1))])],
+                       links=[LinkSpec(RowRef("use_cases", 1))], name="req")],
         "k2",
     )
     rows.submit_rows(
         [RowSubmission("contracts", {"text": "con"},
-                       links=[LinkSpec(RowRef("requirements", 1))])],
+                       links=[LinkSpec(RowRef("requirements", 1))], name="con")],
         "k3",
     )
 
@@ -44,10 +44,10 @@ def test_closure_respects_depth(rows, graph):
 
 
 def test_closure_respects_edge_types(rows, graph):
-    rows.submit_rows([RowSubmission("use_cases", {"text": "uc"})], "k1")
+    rows.submit_rows([RowSubmission("use_cases", {"text": "uc"}, name="uc")], "k1")
     rows.submit_rows(
         [RowSubmission("requirements", {"text": "r"},
-                       links=[LinkSpec(RowRef("use_cases", 1), "cites")])],
+                       links=[LinkSpec(RowRef("use_cases", 1), "cites")], name="r")],
         "k2",
     )
     closure = graph.closure(
@@ -93,8 +93,8 @@ def test_impact_does_not_mutate_edges(store, rows, graph):
 
 
 def test_find_cycles_detects_a_loop(store, rows, graph):
-    rows.submit_rows([RowSubmission("contracts", {"text": "a"})], "k1")
-    rows.submit_rows([RowSubmission("contracts", {"text": "b"})], "k2")
+    rows.submit_rows([RowSubmission("contracts", {"text": "a"}, name="a")], "k1")
+    rows.submit_rows([RowSubmission("contracts", {"text": "b"}, name="b")], "k2")
     for source, target in (("contracts:1", "contracts:2"),
                            ("contracts:2", "contracts:1")):
         store.conn.execute(

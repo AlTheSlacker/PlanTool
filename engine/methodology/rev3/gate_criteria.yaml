@@ -51,7 +51,7 @@ packages:
         type: required_fields
         table: goals
         fields: [success_criteria]
-        problem: "goal \"{title}\" has no success criterion"
+        problem: "goal \"{name}\" has no success criterion"
         fix: >-
           Supersede the row adding `success_criteria` — a scale and a target an
           acceptance test could check. A goal you cannot measure cannot be gated.
@@ -78,7 +78,7 @@ packages:
         to_tables: [use_cases]
         direction: in
         cross_check: true
-        problem: "actor \"{title}\" ({ref}) participates in no use case"
+        problem: "actor \"{name}\" ({ref}) participates in no use case"
         fix: >-
           Elicit that actor's scenario and link the use case to them, or retire the
           actor. An actor with no scenario is either an un-elicited use case or a
@@ -101,7 +101,7 @@ packages:
         to_tables: [uc_extensions]
         direction: in
         unless_field: no_extension_reason
-        problem: "step \"{title}\" ({ref}) has no extensions and no no_extension_reason"
+        problem: "step \"{name}\" ({ref}) has no extensions and no no_extension_reason"
         fix: >-
           Add what can fail or vary at this step as `uc_extensions` rows, or supersede
           the step with a `no_extension_reason` recording why genuinely nothing can.
@@ -112,7 +112,7 @@ packages:
         to_tables: [use_cases]
         direction: in
         cross_check: true
-        problem: "goal \"{title}\" ({ref}) traces to no use case"
+        problem: "goal \"{name}\" ({ref}) traces to no use case"
         fix: >-
           Link the use case that realizes this goal, or record why the goal needs no
           scenario. A goal nothing exercises is a goal the plan does not actually serve.
@@ -165,7 +165,7 @@ packages:
         to_tables: [requirements]
         direction: in
         cross_check: true
-        problem: "use case \"{title}\" ({ref}) traces to no requirement"
+        problem: "use case \"{name}\" ({ref}) traces to no requirement"
         fix: >-
           Derive its requirements and link them to it, or retire the use case if it no
           longer stands.
@@ -187,7 +187,7 @@ packages:
         child_table: crud_grid
         field: op
         values: [C, R, U, D]
-        problem: "entity \"{title}\" ({ref}) has empty CRUD cell(s): {missing}"
+        problem: "entity \"{name}\" ({ref}) has empty CRUD cell(s): {missing}"
         fix: >-
           Every cell names the responsible actor or component, or is an explicit n/a
           with a reason. The D cell also records what happens to children.
@@ -197,7 +197,7 @@ packages:
         table: entities
         unless_field: has_lifecycle
         fields: [lifecycle_reason]
-        problem: "entity \"{title}\" ({ref}) has no lifecycle and no recorded justification"
+        problem: "entity \"{name}\" ({ref}) has no lifecycle and no recorded justification"
         fix: >-
           Record why this entity has no lifecycle worth modelling, or mark
           has_lifecycle and give it a state machine.
@@ -208,7 +208,7 @@ packages:
         to_tables: [state_machines]
         direction: in
         when_field: has_lifecycle
-        problem: "lifecycle entity \"{title}\" ({ref}) has no state machine"
+        problem: "lifecycle entity \"{name}\" ({ref}) has no state machine"
         fix: >-
           Propose its states and events. Every state x event cell is either a transition
           or an explicit impossible with a reason.
@@ -245,7 +245,7 @@ packages:
         child_table: dep_failure_modes
         field: mode
         values: [unavailable, slow, malformed, auth, partial]
-        problem: "dependency \"{title}\" ({ref}) has no handling for failure mode(s): {missing}"
+        problem: "dependency \"{name}\" ({ref}) has no handling for failure mode(s): {missing}"
         fix: >-
           Record what the system does for each of unavailable, slow, malformed, auth and
           partial. All five per dependency — the one you skip is the one that happens.
@@ -266,14 +266,14 @@ packages:
         table: components
         to_tables: [contracts]
         direction: in
-        problem: "component \"{title}\" ({ref}) has no contract"
+        problem: "component \"{name}\" ({ref}) has no contract"
         fix: "Every deliverable component gets at least one contract."
 
       - id: contract_signature_complete
         type: required_fields
         table: contracts
         fields: [params, returns, errors]
-        problem: "contract \"{title}\" ({ref}) is structurally incomplete (missing {missing})"
+        problem: "contract \"{name}\" ({ref}) is structurally incomplete (missing {missing})"
         fix: >-
           Supersede it with the completed signature: params typed (or explicitly empty),
           a return type, and at least one named error with its trigger — or
@@ -285,7 +285,7 @@ packages:
         to_tables: [components, contracts]
         direction: in
         unless_field: is_external
-        problem: "contract \"{title}\" ({ref}) has no consumer and is not marked external"
+        problem: "contract \"{name}\" ({ref}) has no consumer and is not marked external"
         fix: >-
           Record the consumer edge, mark the contract external, or cut it. An
           untraceable contract is invented scope.
@@ -295,7 +295,7 @@ packages:
         table: contracts
         to_tables: [requirements]
         direction: out
-        problem: "contract \"{title}\" ({ref}) traces to no requirement — invented scope"
+        problem: "contract \"{name}\" ({ref}) traces to no requirement — invented scope"
         fix: >-
           Link the requirement(s) it satisfies, or retire it. Code nobody asked for is
           the most expensive kind.
@@ -314,7 +314,7 @@ packages:
         type: unbacked_assumption
         assumption_kind: world
         backing_tables: [spikes, accepted_risks]
-        problem: "{ref} (\"{title}\") rests on an unverified world-assumption"
+        problem: "{ref} (\"{name}\") rests on an unverified world-assumption"
         fix: >-
           Spike it against the real dependency, or record an owner-accepted risk linking
           it. A world-assumption is never resolved by asking the owner.
@@ -335,7 +335,7 @@ packages:
         type: required_fields
         table: findings
         fields: [disposition, disposition_rationale]
-        problem: "finding {ref} (\"{title}\") is undispositioned or unexplained (missing {missing})"
+        problem: "finding {ref} (\"{name}\") is undispositioned or unexplained (missing {missing})"
         fix: >-
           Disposition it — fixed (linking the corrected rows), accepted (the owner's
           knowing risk acceptance), or spiked (linking the spike) — and record why.

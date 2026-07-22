@@ -43,6 +43,8 @@ session):
 | ~~§4 Q2 — digest names what to fetch~~ | **DECIDED 2026-07-22** as **D17** — every count names its fetching call, and the digest closes by stating the next action |
 | ~~D9 — gates hard-lock on outstanding problems (product form)~~ | **DECIDED 2026-07-21** as **D15** — a gate locks on what was allocated to it; `resolve_by` required at creation. Build outstanding in M6 |
 | **D16 — assumptions attacked on arrival** — a world-assumption cannot be filed without a spike registered atomically; accepted risk admissible only after a concluded spike | **M6 gate** |
+| **The digest names calls the surface cannot reach** — of the six calls `plan_status` tells a cold planner to make, one is exposed; two (`journal()`, `gate_runs()`) are not in the frozen plan at all. Created by D17 the day before it was found. Three decisions needed, `M6_PLAN.md` §7.5 | **M6 gate** |
+| **Every row has a name** — design `M6_PLAN.md` §6. **Three of the four clauses are built** (2026-07-22): named at creation, unique among live rows, re-affirmed when content changes. **Clause 4 — the tool never emits an address without its name — is not built**, because its enforcement point is the surface's outgoing-payload scan. Found and fixed F32 and F33 on the way | **M6 gate** |
 | **Glossary delivery to the writer** — F27: a plan's vocabulary is enforced at the moment of writing or not at all. How does a plan's own glossary reach the code engine, and should `compose_brief` carry it as a first-class section rather than as a row that can be omitted? | **M6 gate** |
 
 Nothing is unallocated, so no global lock is in force. **The M5b gate is clear**: F23–F26 were
