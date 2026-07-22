@@ -466,6 +466,7 @@ REGISTRY: dict[str, Tool] = {
            Param("refs", "refs", note="the rows under attack"),
            Param("description", "str", note="the attack, stated so it can be adjudicated"),
            Param("severity", "str", note="how badly it matters"),
+           Param("name", "str", note="what the finding says, in a few words"),
            writes=True),
         _t("resolve_finding", "findings", "resolve_finding", "contracts:34",
            "Take a finding to a terminal outcome; an accepted risk stays visible at handoff.",
@@ -739,13 +740,16 @@ class Surface:
         self.conflicts = ConflictService(storage, self.rows)
         self.warns = WarningService(storage)
         self.gaps = GapEngine(storage, self.rows)
+        # Findings are built before the gate that reads them: the package-7 criteria go
+        # through the finding service now, not through plan_rows (D22).
+        self.findings = FindingService(storage, self.rows)
         self.gates = GateEngine(
-            storage, self.rows, self.conflicts, self.warns, gaps=self.gaps
+            storage, self.rows, self.conflicts, self.warns, gaps=self.gaps,
+            findings=self.findings,
         )
         self.validation = ValidationService(
             storage, self.rows, self.graph, self.conflicts
         )
-        self.findings = FindingService(storage, self.rows)
         self.attachments = AttachmentService(storage, self.rows)
         self.obligations = ObligationService(storage)
         self.tasks = TaskGraphService(
@@ -759,12 +763,12 @@ class Surface:
         # `renderer`, not `render`: the door's `render` is a module-level function used a
         # few lines below in `dispatch`, and two things called the same word in one class
         # is exactly the collision this build keeps writing down.
-        self.renderer = PlanRender(storage, self.rows)
+        self.renderer = PlanRender(storage, self.rows, self.findings)
         self.resume = ResumeService(
             storage, gaps=self.gaps, warnings=self.warns, guidance=self.guidance
         )
         self.log = ObservabilityLog(storage.workspace)
-        self._resolve = resolver_from(self.rows)
+        self._resolve = resolver_from(self.rows, self.findings)
 
     # --- contracts:50 ---
 

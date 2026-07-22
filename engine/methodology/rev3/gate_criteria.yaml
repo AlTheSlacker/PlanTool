@@ -323,22 +323,21 @@ packages:
   - package: 7
     criteria:
       - id: findings_recorded
-        type: non_empty
-        table: findings
+        type: findings_exist
         problem: "no adversarial findings recorded"
         fix: >-
           Run the red-team pass and the pre-mortem in a fresh session, filing each issue
-          as a finding. A red team that finds nothing means the red-team script is
+          with file_finding. A red team that finds nothing means the red-team script is
           broken, not that the plan is perfect.
 
       - id: findings_dispositioned
-        type: required_fields
-        table: findings
-        fields: [disposition, disposition_rationale]
-        problem: "finding {ref} (\"{name}\") is undispositioned or unexplained (missing {missing})"
+        type: findings_resolved
+        problem: "{label} is still missing {missing}"
         fix: >-
-          Disposition it — fixed (linking the corrected rows), accepted (the owner's
-          knowing risk acceptance), or spiked (linking the spike) — and record why.
+          Resolve it — addressed (the plan rows were corrected), accepted_risk (the
+          owner's knowing acceptance), or withdrawn — and record why. An accepted risk
+          with no recorded acceptance is indistinguishable at handoff from an issue
+          somebody forgot about.
 
   # --- package 8: finalization ------------------------------------------------------------
   - package: 8

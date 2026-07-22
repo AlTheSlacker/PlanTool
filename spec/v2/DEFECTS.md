@@ -1660,3 +1660,25 @@ either findings are plan rows (and `file_finding` writes one, gaining names, pro
 supersession, and losing its own lifecycle table), or they are service rows (and the package-7
 gate criteria must read the finding service, which no criterion type currently can). Choosing
 by which is easier to code would be choosing the vocabulary by accident, again.
+
+---
+
+## F38 — resolved
+
+**Resolved 2026-07-22 by the owner's ruling, recorded as DEVIATIONS.md D22.** Findings keep
+their own store; the gate learns to read it. The reasoning is in D22 and is not repeated
+here — the short version is that a plan row is write-once and a finding moves through states,
+so they are different kinds of object and the collision was in the vocabulary, not the
+storage.
+
+**What is worth carrying forward from it.** The fix that mattered least was the one asked
+for. Changing the two gate criteria took an afternoon; what actually stopped F38 recurring
+was reserving `findings` as a plan-row table name, because `plan_rows.table` is open by
+design and a decision about which store owns a word is not a mechanism until something
+refuses the other one. And what nearly got missed entirely was the door: findings are cited
+by address in the owner's own prose, so leaving them out of the resolver would have made the
+tool report the F17 damage it exists to detect, in every plan that ever mentions a finding.
+
+**The general shape, worth the next audit's attention:** when a decision moves an object out
+of a store, the checks that read it are the visible half. The *addresses* that reach it are
+the half nobody lists, because addressing looks like a property of the store and is not.

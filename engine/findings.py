@@ -84,6 +84,9 @@ class InvalidTransition(PlanToolError):
 class Finding:
     id: int
     refs: tuple[RowRef, ...]
+    #: What the finding says, in a few words. Required, because `findings:N` is an address
+    #: and D19 forbids an address travelling without the name of what it addresses.
+    name: str
     description: str
     severity: str
     state: str
@@ -92,6 +95,20 @@ class Finding:
     rationale: str | None = None
     dispute: str | None = None
     resolved_at: str | None = None
+
+    #: The table a finding is addressed under. One constant rather than the string spelled
+    #: in four places, because this is exactly the word F38 found in two stores at once.
+    TABLE = "findings"
+
+    @property
+    def ref(self) -> RowRef:
+        """`findings:N` — a finding is addressable, and its id is the ordinal.
+
+        Addressing was never the property that made something a plan row; `table:ordinal`
+        is a naming scheme, and what it needs is somebody able to resolve it. That is the
+        whole of why findings can stay in their own store and still be cited (D22).
+        """
+        return RowRef(self.TABLE, self.id)
 
     @property
     def is_open(self) -> bool:
@@ -107,6 +124,10 @@ class Finding:
 
 
 class FindingService:
+    #: The table findings are addressed under, read by the door's resolver. Held here, and
+    #: nowhere else, so the address space has one owner (D22).
+    TABLE = Finding.TABLE
+
     def __init__(self, storage: Storage, rows=None):
         self.storage = storage
         self.rows = rows
@@ -118,12 +139,20 @@ class FindingService:
         refs: list[RowRef | str],
         description: str,
         severity: str,
+        name: str,
     ) -> Finding:
         """File a finding against the specific rows it attacks (requirements:31).
 
         The refs are mandatory and validated. A finding with no target is an opinion
         about the plan; a finding with a target is a claim that can be adjudicated,
         which is the only kind the verification gate can act on.
+
+        `name` is not in `contracts:33` and is a deviation (D22). The contract predates the
+        rule that an address never travels without a name, and `findings:N` is an address:
+        it appears in gate holes, in the resume digest, and in the owner's own prose. A
+        session that already wrote the description can write the six-word version of it, and
+        the tool cannot — deriving the name from the description is the guess D19 exists to
+        remove.
         """
         parsed = [RowRef.coerce(r) for r in refs]
         if not parsed:
@@ -134,11 +163,18 @@ class FindingService:
             raise RefNotFound("a finding needs its description; nothing filed")
         if not severity.strip():
             raise RefNotFound("a finding needs a severity; nothing filed")
+        if not name or not name.strip():
+            raise RefNotFound(
+                "every finding needs a name: what it says, in a few words. The finding is "
+                "addressed as findings:N, and an address on its own makes the reader go "
+                "and look it up — so the name is what gets shown and the address rides "
+                "alongside it"
+            )
         for ref in parsed:
             if not self._row_exists(ref):
                 raise RefNotFound("no such row; nothing filed", ref=str(ref))
 
-        return self._insert(parsed, description, severity)
+        return self._insert(parsed, description, severity, name)
 
     def file_integrity_finding(
         self, report, refs: list[RowRef | str] | None = None
@@ -155,14 +191,18 @@ class FindingService:
             "plan state is unreadable, so certification is refused (requirements:30). "
             f"Unreadable: {', '.join(str(r) for r in unreadable) or 'unnamed rows'}."
         )
-        return self._insert(unreadable, description, "blocking")
+        # The one finding the tool names itself, because the tool is the one filing it.
+        return self._insert(
+            unreadable, description, "blocking", "plan state is unreadable"
+        )
 
     def _insert(
-        self, refs: list[RowRef], description: str, severity: str
+        self, refs: list[RowRef], description: str, severity: str, name: str
     ) -> Finding:
         stamp = now()
         ops = [
             Op("insert", "findings", {
+                "name": name,
                 "description": description,
                 "severity": severity,
                 "state": FILED,
@@ -279,6 +319,7 @@ class FindingService:
         return Finding(
             id=r["id"],
             refs=refs,
+            name=r["name"],
             description=r["description"],
             severity=r["severity"],
             state=r["state"],
@@ -288,6 +329,23 @@ class FindingService:
             dispute=r["dispute"],
             resolved_at=r["resolved_at"],
         )
+
+    def all_findings(self) -> list[Finding]:
+        """Every finding, oldest first. What the package-7 gate counts and checks."""
+        return [
+            self.get(r["id"])
+            for r in self.storage.query("SELECT id FROM findings ORDER BY id")
+        ]
+
+    def find(self, ref: RowRef | str) -> Finding | None:
+        """The finding an address names, or None. The door's lookup for `findings:N`."""
+        ref = RowRef.coerce(ref)
+        if ref.table != Finding.TABLE:
+            return None
+        try:
+            return self.get(ref.ordinal)
+        except FindingNotFound:
+            return None
 
     def open_findings(self) -> list[Finding]:
         """requirements:32 — these fail the verification gate."""

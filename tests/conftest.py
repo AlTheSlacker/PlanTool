@@ -40,8 +40,10 @@ def warns(store):
 
 
 @pytest.fixture
-def gate(store, rows, conflicts, warns):
-    return GateEngine(store, rows, conflicts, warns, gaps=GapEngine(store, rows))
+def gate(store, rows, conflicts, warns, findings):
+    return GateEngine(
+        store, rows, conflicts, warns, gaps=GapEngine(store, rows), findings=findings
+    )
 
 
 @pytest.fixture

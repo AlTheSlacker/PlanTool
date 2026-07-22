@@ -85,10 +85,13 @@ What each one came to, because the sizes were nothing like equal:
   bundle stays cut. **DEFECTS.md F36** records F35's resolution.
 - `get_auxiliary` exposed, so the red-team session can fetch its own script.
 
-**Found while doing it and NOT fixed — DEFECTS.md F38:** `findings` names two different
-stores. `file_finding` writes a service table; the package-7 gate criteria read `plan_rows`.
-A planner following the red-team script exactly files findings the gate cannot see. Bound to
-the M6 gate, because choosing which store wins is a design decision about vocabulary.
+**F38 — `findings` named two stores — is FIXED** (owner's ruling, DEVIATIONS D22): findings
+keep their own store because a plan row is write-once and a finding moves through states; the
+package-7 gate gets two criterion types that read the finding service; `findings` becomes a
+reserved plan-row table name so the collision cannot return as data; and the door's resolver
+learns the second lookup, without which every `findings:3` in the owner's prose would have
+read as a dead citation. `file_finding` gains a `name` — a deviation from `contracts:33`,
+because `findings:N` is an address and D19 applies to it.
 
 The assets are `engine/methodology/rev3/package1_context.md` … `package8_finalization.md`.
 `engine/methodology/rev2/` is frozen v1 provenance and **must never be edited**.

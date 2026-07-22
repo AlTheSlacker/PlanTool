@@ -309,11 +309,11 @@ def test_an_open_conflict_blocks_a_gate_that_depends_on_the_contested_rows(
 
 
 def test_a_conflict_outside_the_gates_scope_does_not_block_it(gate, rows, conflicts):
-    submit(rows, RowSubmission("findings", {"title": "a red-team finding"}, name="a red-team finding"))
+    submit(rows, RowSubmission("contracts", {"title": "read_widget"}, name="read_widget"))
     conflicts.raise_conflict(
-        [RowRef("findings", 1)], "two findings disagree", "keep the first"
+        [RowRef("contracts", 1)], "two contracts overlap", "keep the first"
     )
-    gate.run_gate(1)  # package 1 does not depend on findings
+    gate.run_gate(1)  # package 1 does not depend on contracts
 
 
 def test_resolving_the_conflict_unblocks_the_gate(gate, rows, conflicts):
@@ -323,3 +323,59 @@ def test_resolving_the_conflict_unblocks_the_gate(gate, rows, conflicts):
     )
     conflicts.resolve_conflict(conflict.id, "overridden", "owner keeps the goal")
     assert gate.run_gate(1).passed is False  # blocked no more; merely incomplete
+
+
+# --- D22 / F38: the package-7 gate reads the finding service, not plan_rows -------------
+
+
+def _attacked(rows):
+    submit(rows, RowSubmission("requirements", {"text": "the widget settles"},
+                               name="the widget settles"))
+    return RowRef("requirements", 1)
+
+
+def test_the_gate_sees_a_finding_filed_the_way_the_script_says_to_file_it(
+    gate, rows, findings
+):
+    """The whole of F38 in one test. The red-team script says to file with `file_finding`,
+    which writes the finding service; the criteria used to read `plan_rows`, where findings
+    have never been written, so the gate reported "no adversarial findings recorded" no
+    matter how many were filed and could not be passed by the prescribed route."""
+    result = gate.run_gate(7)
+    assert any("no adversarial findings" in hole.problem for hole in result.holes)
+
+    findings.file_finding([_attacked(rows)], "the gate is too weak", "high",
+                          name="gate 4 passes with no tests")
+    result = gate.run_gate(7)
+    assert not any("no adversarial findings" in hole.problem for hole in result.holes)
+
+
+def test_an_unresolved_finding_is_a_hole_that_names_it(gate, rows, findings):
+    findings.file_finding([_attacked(rows)], "the gate is too weak", "high",
+                          name="gate 4 passes with no tests")
+    holes = [h for h in gate.run_gate(7).holes if h.criterion_id == "findings_dispositioned"]
+    assert len(holes) == 1
+    # D19: the hole names the finding before it addresses it.
+    assert "gate 4 passes with no tests (findings:1)" in holes[0].problem
+    assert "an outcome and a rationale" in holes[0].problem
+
+
+def test_a_resolved_finding_leaves_no_hole(gate, rows, findings):
+    finding = findings.file_finding([_attacked(rows)], "the gate is too weak", "high",
+                                    name="gate 4 passes with no tests")
+    findings.resolve_finding(finding.id, "addressed", "criteria tightened in package 4")
+    assert not [
+        h for h in gate.run_gate(7).holes if h.criterion_id == "findings_dispositioned"
+    ]
+
+
+def test_an_accepted_risk_still_needs_its_rationale(gate, rows, findings):
+    """requirements:33 — the case the second half of the criterion exists for. A finding
+    closed with no recorded acceptance is indistinguishable at handoff from one somebody
+    forgot about."""
+    finding = findings.file_finding([_attacked(rows)], "the gate is too weak", "high",
+                                    name="gate 4 passes with no tests")
+    findings.resolve_finding(finding.id, "accepted_risk", "the owner will live with it")
+    assert not [
+        h for h in gate.run_gate(7).holes if h.criterion_id == "findings_dispositioned"
+    ]

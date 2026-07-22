@@ -102,16 +102,20 @@ class RenderReceipt:
 class PlanRender:
     """Renders the live plan into the workspace. Reads only."""
 
-    def __init__(self, storage, rows):
+    def __init__(self, storage, rows, findings=None):
         self.storage = storage
         self.rows = rows
+        #: So that a `findings:3` in the owner's prose resolves to the finding rather than
+        #: reading as a dead citation. Findings live in their own store (D22); the address
+        #: space is shared and the resolver is what shares it.
+        self.findings = findings
 
     # --- the deviation's contract ---
 
     def render_plan(self) -> RenderReceipt:
         """Write `plan.md` from the live rows and report what went into it."""
         handle = self.storage.plan_handle()
-        resolve = resolver_from(self.rows)
+        resolve = resolver_from(self.rows, self.findings)
         live = self._live_rows()
 
         cites: list[Resolution] = []

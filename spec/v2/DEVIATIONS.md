@@ -903,3 +903,62 @@ rather than a plausible-looking `contracts:N`, and a test requires that every to
 appears in `ADDED` with its reason, and that every entry there is a tool that exists. The
 coverage test reads plan → surface and would never have noticed a tool nothing asked for;
 this reads the other way.
+
+---
+
+## D22 — Findings keep their own store, and the gate learns to read it
+
+**Owner's ruling, 2026-07-22**, on DEFECTS.md F38: `findings` addressed two stores at once.
+`file_finding` writes a service table; the package-7 gate criteria read `plan_rows`. A red
+team following its own script filed every finding where the gate could not see it, and the
+gate reported "no adversarial findings recorded" however many were filed.
+
+**Plan:** ambiguous, which is how this happened. `contracts:33`/`34` give findings their own
+service with a lifecycle (`state_machines:7`), while the frozen plan's *own* red-team results
+are rendered `findings:1` … `findings:13` in the same `table:ordinal` form as every plan row.
+Both readings are supported by the text.
+
+**v2:** a finding is not a plan row. It keeps its own store, gains a `name`, and is addressed
+`findings:N` by a resolver rather than by living in `plan_rows`.
+
+**Why that way round.** Not because it is the smaller change, though it is. A plan row is
+write-once — `requirements:61` says content is never edited and changing your mind writes a
+successor with recorded lineage — and a finding *moves*: filed, then addressed or
+accepted-as-risk or withdrawn, with a rationale attached at the transition. Forcing that into
+`plan_rows` gives one of two bad outcomes: a supersession per disposition, so every finding
+leaves a two-row lineage recording nothing but its own paperwork, or mutable columns on
+`plan_rows`, which ends `requirements:61` for one table to spare a second table elsewhere. A
+finding is also *about* the plan rather than part of it, and served through `read_rows` it
+would reach every brief and every render as though it were plan content.
+
+**The insight that made it cheap:** addressing was never a property of `plan_rows`.
+`table:ordinal` is a naming scheme, and what it needs is somebody able to resolve it. So the
+door's resolver takes a second lookup and two stores share one address space. Without it,
+every `findings:3` in the owner's own prose came back as *no live row at this address* — the
+tool reporting the F17 damage it exists to detect, where there was none.
+
+**Three parts, because one would not have held.**
+1. Two gate criterion types — `findings_exist`, `findings_resolved` — instead of a `table:`
+   that might mean either store. A `table:` key accepting both would have left the same
+   ambiguity in place with better manners. The type says where it looks. The old criteria
+   also checked `disposition`/`disposition_rationale`, v1's names for `outcome`/`rationale`,
+   so they would have found nothing to check even in the right store.
+2. The door's resolver, above.
+3. **`findings` is a reserved plan-row table name**, refused at submission with a message
+   naming `file_finding`. `plan_rows.table` is deliberately open — a methodology declares its
+   own row types and the engine knows none of them — but open means a name owned elsewhere
+   can be claimed by accident, and this one already had been. Deciding which store owns the
+   word is half a fix; without the refusal the collision returns as data the first time
+   somebody submits the obvious-looking row. A rule with no mechanism is not a rule.
+
+**`file_finding` gains a `name`, which changes a frozen contract's signature.** `contracts:33`
+predates D19, and `findings:N` is an address that reaches gate holes, the resume digest and
+the owner's prose — so it may not travel alone. The tool cannot supply the name: deriving one
+from the description is exactly the guess D19 removed, and F32 found three copies of. A
+session that has just written the description can write the six-word version. The one finding
+the tool files itself — plan state unreadable — is named by the tool, because there the tool
+is the author.
+
+**Schema version 3, with no migration path and that is the honest answer.** `name` is NOT NULL
+and cannot be backfilled, because inventing one from `description` is what the column exists
+to prevent. No plan outside this repo's tests was ever written at version 2.

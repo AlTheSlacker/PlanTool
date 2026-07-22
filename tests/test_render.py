@@ -184,3 +184,37 @@ class TestPaging:
         body = rendered(surface)
         for i in range(7):
             assert f"decision number {i}" in body
+
+
+class TestFindingsAreAddressableWithoutBeingPlanRows:
+    """D22. A finding lives in its own store because its lifecycle is a state machine and
+    a plan row's is supersession — but `findings:3` is still an address, and the door's
+    resolver is what makes the two stores share one address space. Without the second
+    lookup, every citation of a finding in the owner's own prose came back as a dead one,
+    and the tool would have been reporting F17 damage where there was none."""
+
+    def test_a_cited_finding_resolves_to_its_name(self, surface):
+        submit(surface, [
+            {"table": "requirements", "name": "the widget settles in 40 ms",
+             "content": {"text": "The widget shall settle within 40 ms."}},
+        ], "attacked")
+        filed = surface.dispatch(ToolCall("file_finding", {
+            "refs": ["requirements:1"],
+            "description": "40 ms is not achievable on the target hardware",
+            "severity": "high",
+            "name": "40 ms is unachievable on this hardware",
+        }))
+        assert filed.ok, filed.problem
+        submit(surface, [
+            {"table": "decisions", "name": "relax the settling target",
+             "content": {"text": "Raised by findings:1; the target moves to 80 ms."}},
+        ], "citing")
+        body = rendered(surface)
+        assert "cites: findings:1 — 40 ms is unachievable on this hardware (filed)" in body
+
+    def test_a_finding_address_reaching_nothing_still_reads_as_dead(self, surface):
+        submit(surface, [
+            {"table": "decisions", "name": "relax the settling target",
+             "content": {"text": "Raised by findings:7, which was never filed."}},
+        ], "dead-finding")
+        assert "no live row at this address" in rendered(surface)
