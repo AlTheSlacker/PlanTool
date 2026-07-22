@@ -33,6 +33,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 
+from engine.door import label
 from engine.errors import PlanToolError
 from engine.fingerprint import capture as fingerprint_capture
 from engine.models import RowRef
@@ -213,9 +214,41 @@ class Task:
     misfiled; its *package* is the judgment, and that is what gets recorded."""
 
     id: int
-    source_ref: str
+    #: A `RowRef` and not a string: this value leaves through the surface now, and a bare
+    #: `components:3` in a payload is what the door refuses (clause 4 of the naming
+    #: design). The column stays text; storage form and display form are different types.
+    source_ref: RowRef
     name: str
     package_id: int
+
+
+@dataclass(frozen=True, slots=True)
+class PackageCut:
+    """One declared package and the tasks placed in it."""
+
+    id: int
+    name: str
+    intent: str
+    tasks: tuple[Task, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class Packaging:
+    """The cut as it stands, and what is still outside it.
+
+    The read that makes D13's mandatory membership workable. Declaring a package returns
+    an id once; a planner who resumes cold has no way back to it, and the ids are the only
+    way to assign — a package is referenced by id and never by name, precisely so a typo
+    cannot yield an empty grouping. Without this read the invariant is enforceable and not
+    satisfiable, which is how `finalize_plan` came to refuse every plan authored through
+    the surface (DEFECTS.md F39).
+
+    `unpackaged` is the same set `_guard_packaging` refuses on, read through the same
+    helper — so what the planner is shown and what finalization checks cannot drift apart.
+    """
+
+    packages: tuple[PackageCut, ...]
+    unpackaged: tuple[RowRef, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -258,7 +291,7 @@ class TaskGraph:
     #: Reported rather than invented: the tool will not guess a denominator. These
     #: sub-tasks cannot be split or verified until the enumeration exists, and saying so
     #: at finalization is the loud failure F23's silent one has to become.
-    unenumerated: tuple[str, ...] = ()
+    unenumerated: tuple[RowRef, ...] = ()
 
     @property
     def all_roots(self) -> bool:
@@ -362,13 +395,47 @@ class TaskGraphService:
                     {"package_id": package_id, "updated_at": stamp},
                     where={"id": existing[0]["id"]})
             self.storage.write_atomic([op], key("task", ref, package_id))
-            return Task(existing[0]["id"], ref, name, package_id)
+            return Task(existing[0]["id"], RowRef.parse(ref), name, package_id)
         op = Op("insert", "tasks", {
             "source_ref": ref, "name": name, "package_id": package_id,
             "created_at": stamp, "updated_at": stamp,
         })
         self.storage.write_atomic([op], key("task", ref, package_id))
-        return Task(op.result["id"], ref, name, package_id)
+        return Task(op.result["id"], RowRef.parse(ref), name, package_id)
+
+    def packaging(self) -> Packaging:
+        """The cut so far: every declared package with its tasks, and the tasks with none.
+
+        A read, and only a read. Nothing here proposes a cut — that is the methodology's
+        job at the architecture package and the owner's decision (`decisions:12`).
+        """
+        cuts = []
+        for row in self.storage.query(
+            "SELECT id, name, intent FROM packages ORDER BY id"
+        ):
+            members = tuple(
+                Task(r["id"], RowRef.parse(r["source_ref"]), r["name"], row["id"])
+                for r in self.storage.query(
+                    "SELECT id, source_ref, name FROM tasks WHERE package_id = ? "
+                    "ORDER BY id", (row["id"],)
+                )
+            )
+            cuts.append(PackageCut(row["id"], row["name"], row["intent"] or "", members))
+        return Packaging(tuple(cuts), self.unpackaged_tasks())
+
+    def unpackaged_tasks(self) -> tuple[RowRef, ...]:
+        """Live task source rows that belong to no package — what finalization refuses on
+        and what `packaging` shows. One query with two readers, so the planner's view of
+        the remaining work and the guard's cannot disagree."""
+        return tuple(
+            RowRef(r["table_name"], r["ordinal"])
+            for r in self.storage.query(
+                "SELECT table_name, ordinal FROM plan_rows WHERE table_name = 'components' "
+                "AND superseded_by IS NULL AND retired_at IS NULL "
+                "AND table_name || ':' || ordinal NOT IN (SELECT source_ref FROM tasks) "
+                "ORDER BY ordinal"
+            )
+        )
 
     def _guard_packaging(self) -> None:
         """D13 — finalization refuses a plan with an unpackaged task.
@@ -379,22 +446,16 @@ class TaskGraphService:
         context, and a sub-task quietly missing context is exactly what `decisions:14`
         measures.
         """
-        unplaced = [
-            f"{r['table_name']}:{r['ordinal']}"
-            for r in self.storage.query(
-                "SELECT table_name, ordinal FROM plan_rows WHERE table_name = 'components' "
-                "AND superseded_by IS NULL AND retired_at IS NULL "
-                "AND table_name || ':' || ordinal NOT IN (SELECT source_ref FROM tasks) "
-                "ORDER BY ordinal"
-            )
-        ]
+        unplaced = self.unpackaged_tasks()
         if unplaced:
             raise UnpackagedTask(
                 "every task belongs to exactly one package; these tasks have none: "
-                + ", ".join(unplaced)
-                + ". Declare a package and assign them — there is no catch-all, because a "
-                  "bucket nobody chose is a grouping nobody reviews.",
-                tasks=unplaced,
+                + ", ".join(
+                    label(self.rows.get(ref).name, ref) for ref in unplaced
+                )
+                + ". declare_package() then assign_task() for each — there is no catch-all,"
+                  " because a bucket nobody chose is a grouping nobody reviews.",
+                tasks=[str(ref) for ref in unplaced],
             )
 
     # --- contracts:35 ---
@@ -416,7 +477,7 @@ class TaskGraphService:
         order = self._toposort(specs, edges)
 
         ops: list[Op] = []
-        unenumerated: list[str] = []
+        unenumerated: list[RowRef] = []
         stamp = now()
         for ref, title, content in specs:
             node = len(ops)
@@ -443,7 +504,7 @@ class TaskGraphService:
                     str(ref), obligation_specs, FromOp(node, "id"), base_index=len(ops)
                 ))
             else:
-                unenumerated.append(str(ref))
+                unenumerated.append(ref)
         self.storage.write_atomic(ops, key("finalize", "nodes"))
 
         by_ref = {str(s.contract_ref): s.id for s in self._all()}

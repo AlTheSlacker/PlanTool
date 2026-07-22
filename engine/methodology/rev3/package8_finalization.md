@@ -15,7 +15,9 @@ the gate turns up a content problem, that is a package-1..7 fix first.
    fix. The render is not gated and cannot be: whether the plan says what the user meant is
    a judgment, and the gate only checks what a machine can check.
 3. `finalize_plan()` — allowed only while gate 8 passes. It moves the plan out of draft and
-   derives the task graph from the contracts.
+   derives the task graph from the contracts. It also refuses a plan with a task in no
+   package, and names any contract whose obligations were never enumerated; both are
+   package-6 work coming back, and both are fixed there rather than here.
 4. `render_plan()` again, so the document on disk carries the finalized version rather than
    the draft the user skimmed.
 

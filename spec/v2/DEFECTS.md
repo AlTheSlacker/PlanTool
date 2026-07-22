@@ -1682,3 +1682,51 @@ tool report the F17 damage it exists to detect, in every plan that ever mentions
 **The general shape, worth the next audit's attention:** when a decision moves an object out
 of a store, the checks that read it are the visible half. The *addresses* that reach it are
 the half nobody lists, because addressing looks like a property of the store and is not.
+
+---
+
+## F39 — The mandatory grouping had no tool that could create one
+
+**Found:** 2026-07-22, while adding the packaging step D13 asked the methodology for. The
+step is one sentence in a script; writing it meant naming the calls a planner would make,
+and the surface exposes none of them.
+
+**What was there.** D13 makes package membership mandatory: every task belongs to exactly
+one package, there is deliberately no catch-all bucket, and `finalize_plan` refuses a plan
+with an unpackaged task. `declare_package` and `assign_task` are built, tested, and reachable
+from Python. The surface — the only externally visible part of the tool — exposed neither,
+and nothing read the cut back either, so package ids existed only in the return value of a
+call nobody could make.
+
+**The consequence, which is the whole entry.** Every plan authored through the surface
+derives tasks from its `components` rows, and no plan authored through the surface could put
+one in a package. So `finalize_plan` refused every such plan, permanently, on an invariant
+the caller had no way to satisfy. Planning could be completed and never closed.
+
+**Why no check saw it.** The coverage test reads the frozen plan and asks whether every
+contract sent to `components:15` is exposed. `declare_package` and `assign_task` are *ours* —
+D13 is a deviation, and the plan has no contract for them — so the denominator never
+contained them and the accounting was correct and complete while the surface was unusable.
+The door catches the neighbouring case, a call *named* in outgoing text that no tool exposes;
+this one was never named anywhere, because the script that would have named it was the thing
+still to be written. `UnpackagedTask`'s own message said "Declare a package and assign them"
+in prose, which is a call name written so that nothing can resolve it — F37's lesson from the
+other side.
+
+**The general form, and it is a new one.** The three pre-build checks and the door all ask
+whether something *named* can be reached. This is the reverse: an invariant that is
+**enforceable but not satisfiable**, where the refusal is correct, the guard is correct, and
+no route to compliance exists. A missing trigger fails loudly; a missing denominator reports
+success; **a missing route reports a refusal that reads exactly like the caller's mistake** —
+and it will be believed, because the message is accurate.
+
+The question to add to the audit habit, beside F30's *which contract writes this field?*:
+**for every invariant a guard enforces, which exposed call satisfies it?**
+
+**Fixed here.** `declare_package`, `assign_task` and `packaging` are exposed, each in `ADDED`
+with its reason. `packaging` is new — a read of the cut so far and the tasks still outside
+it, because a declaration hands back an id once and a planner resuming cold otherwise cannot
+get back to it, and a package is referenced by id and never by name. It shares its query with
+the finalization guard, so what the planner is shown and what the guard refuses on cannot
+drift. `Task.source_ref` and `TaskGraph.unenumerated` became `RowRef`s on the way out, which
+is what makes them arrive named rather than as bare addresses.

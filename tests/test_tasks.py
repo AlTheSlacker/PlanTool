@@ -393,6 +393,41 @@ def test_a_contract_with_no_owner_is_reported_never_guessed(tasks, rows):
     assert tasks.get(1).task_id is None
 
 
+def test_packaging_shows_the_cut_and_what_is_outside_it(tasks, rows):
+    """The read that makes mandatory membership satisfiable rather than merely enforced.
+    A declaration hands back an id once; without a way to read the ids back, a planner who
+    resumes cold cannot assign anything — DEFECTS.md F39."""
+    rows.submit_rows(
+        [RowSubmission(table="components", content={"title": "brief-composer"},
+                       name="brief-composer"),
+         RowSubmission(table="components", content={"title": "gap-engine"},
+                       name="gap-engine")], "comps"
+    )
+    package = tasks.declare_package("the engine", "everything behind the surface")
+    tasks.assign_task("components:1", package.id)
+
+    cut = tasks.packaging()
+    assert [(p.id, p.name) for p in cut.packages] == [(package.id, "the engine")]
+    assert [str(t.source_ref) for t in cut.packages[0].tasks] == ["components:1"]
+    assert [str(ref) for ref in cut.unpackaged] == ["components:2"]
+
+
+def test_the_planner_sees_the_same_unplaced_set_finalization_refuses_on(tasks, rows):
+    """Two readers, one query. A view of the remaining work that is computed separately
+    from the guard is a view that drifts from it, and the drift shows up as a refusal
+    nobody was warned about."""
+    from engine.tasks import UnpackagedTask
+
+    rows.submit_rows(
+        [RowSubmission(table="components", content={"title": "gap-engine"},
+                       name="gap-engine")], "comp"
+    )
+    assert [str(r) for r in tasks.packaging().unpackaged] == ["components:1"]
+    with pytest.raises(UnpackagedTask) as exc:
+        tasks.finalize_plan()
+    assert "gap-engine (components:1)" in str(exc.value)
+
+
 def test_a_package_is_referenced_by_id_never_by_name(tasks, rows):
     """A name-keyed grouping yields an empty context set on a typo, and a sub-task quietly
     missing its mid-level context is the failure `decisions:14` measures. This is the

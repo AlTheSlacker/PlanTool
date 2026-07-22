@@ -30,6 +30,12 @@ would let the specification's internal bookkeeping decide what a planner is allo
 know. The door (`engine/door.py`) now makes the two lists agree mechanically: any call
 named in outgoing text must resolve here, or the call fails.
 
+The same shape recurred at the packaging level and cost more: `declare_package`,
+`assign_task` and `packaging` are ours (D13) and none of them was exposed, while
+`finalize_plan` refuses a plan whose tasks are in no package. An invariant that is
+enforceable and not satisfiable stops every plan authored through this surface — DEFECTS.md
+F39. Every tool with no contract behind it appears in `ADDED` with the reason it exists.
+
 **`NotWriter` is moot, not implemented.** `contracts:50` declares it for "a write tool
 invoked without holding the writer lease"; there is no lease, the lock having been removed
 entirely (D5). An outcome whose precondition cannot arise is not an error to raise — it is a
@@ -475,6 +481,19 @@ REGISTRY: dict[str, Tool] = {
            Param("rationale", "str", note="the reasoning, which an accepted risk needs most"),
            writes=True),
         # --- task-graph (components:11) ---
+        _t("declare_package", "tasks", "declare_package", DEVIATION,
+           "Declare a build package — the one grouping a human chooses rather than derives.",
+           Param("name", "str", note="what this package is, in the owner's words"),
+           Param("intent", "str", required=False,
+                 note="what it is for, if the name does not carry it"),
+           writes=True),
+        _t("assign_task", "tasks", "assign_task", DEVIATION,
+           "Place a task in a package. Membership is mandatory and there is no catch-all.",
+           Param("source_ref", "ref", note="the components row whose task this is"),
+           Param("package_id", "int", note="the package it belongs to, by id"),
+           writes=True),
+        _t("packaging", "tasks", "packaging", DEVIATION,
+           "The cut so far: each package with its tasks, and the tasks still in none."),
         _t("finalize_plan", "tasks", "finalize_plan", "contracts:35",
            "Freeze the plan and derive the task graph from it.",
            Param("required_packages", "ints", required=False,
@@ -597,6 +616,16 @@ ADDED: tuple[Absence, ...] = (
     Absence(DEVIATION, "get_auxiliary",
             "the red-team script is a content asset requirements:71 ships and no contract "
             "served it, so the red team could not fetch its own brief (D21)"),
+    Absence(DEVIATION, "declare_package",
+            "packages are the one level a human declares (D13) and finalization refuses a "
+            "plan with an unpackaged task, so with no tool to declare one, no plan "
+            "authored through this surface could ever finalize (D13, F39)"),
+    Absence(DEVIATION, "assign_task",
+            "the other half of D13's membership: the placement is the recorded judgment "
+            "and nothing else can record it (D13, F39)"),
+    Absence(DEVIATION, "packaging",
+            "package ids are the only way to assign and a declaration returns one once, so "
+            "a planner resuming cold could not get back to them (D13, F39)"),
 )
 
 #: `contracts:50`'s `NotWriter`, struck rather than implemented. Recorded here because an
@@ -856,8 +885,8 @@ class Surface:
         With one thing added that the driver made obvious: a call we deliberately did not
         build is answered with the reason we did not, not with the same shrug a typo gets.
         `EXCLUDED` and `DEFERRED` already carry those reasons for the coverage test, and a
-        planner reading "no tool called 'acquire_writer_lock'" alongside a list of
-        thirty-seven names has been told nothing — it looks like an omission, and the
+        planner reading "no tool called 'acquire_writer_lock'" alongside the whole tool
+        list has been told nothing — it looks like an omission, and the
         reasons were written down precisely so it would not.
         """
         for absence in EXCLUDED:
