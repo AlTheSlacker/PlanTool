@@ -6,14 +6,21 @@
 # than inventing one at build time; findings:4 is the red-team finding that made this
 # necessary.
 #
-# Provenance: vendored verbatim from PlanTool v1 (archive/v1/server/prompts/), spec
-# rev 2, 2026-07-15. The scripts still name v1's tool surface (submit_use_cases,
-# record_decision, ...). That is deliberate: the content is faithful to rev 2, and M5
-# introduces rev 3 with v2's tool names through the revision path this asset exists to
-# support.
+# Provenance: rev 2 (vendored verbatim from PlanTool v1, archive/v1/server/prompts/,
+# 2026-07-15), carried forward at M5b with v2's vocabulary applied — `stage` retired for
+# `package` throughout, and the four structural levels of D13/D14 named as the glossary
+# names them. The scripts still address v1's tool surface (submit_use_cases,
+# record_decision, ...); replacing those with v2's calls is rev 3's outstanding half and
+# is bound to the M6 gate.
+#
+# **The stamp is the point of this file.** It identified itself as rev 2 until 2026-07-22
+# — revision and stamp both copied along with the content they exist to distinguish, so
+# every caller asking which methodology was in force got the wrong answer, and
+# requirements:71's migration path had no way to tell one revision from the other
+# (DEFECTS.md F31). Change the stamp whenever the content changes.
 
-revision: 2
-revision_stamp: "plantool-rev2-2026-07-15"
+revision: 3
+revision_stamp: "plantool-rev3-2026-07-21"
 vendored_from: "PlanTool v1 (archive/v1/server/prompts/)"
 mandate: mandate.md
 

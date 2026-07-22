@@ -3,7 +3,7 @@
 import pytest
 
 from engine.guidance import Guidance, GuidanceUnreadable, UnknownPackage
-from engine.methodology import load
+from engine.methodology import DEFAULT_REVISION, load
 
 
 @pytest.fixture
@@ -65,7 +65,26 @@ def test_unknown_package_names_the_valid_range(guidance):
 def test_script_carries_the_revision_stamp(guidance):
     """requirements:71 — content assets carry a content-revision stamp."""
     script = guidance.get_package_script(2)
-    assert script.revision_stamp == "plantool-rev2-2026-07-15"
+    assert script.revision_stamp == load(DEFAULT_REVISION).revision_stamp
+
+
+def test_each_revision_stamp_names_its_own_revision():
+    """A stamp that does not identify its revision is not a stamp (DEFECTS.md F31).
+
+    `rev3/manifest.yaml` was created by copying rev 2's, stamp included, so both revisions
+    answered `plantool-rev2-2026-07-15` and nothing could tell them apart — which defeats the
+    migration path `requirements:71` added the stamp to enable. The old version of the test
+    above asserted that literal against whichever revision was default, so it agreed with the
+    copy and reported success for eighteen days. Assert the *relationship*, never the value.
+
+    Only rev 3 is asserted here, because rev 2 is frozen v1 provenance written in v1's
+    vocabulary (`stages:`, not `packages:`) and this loader cannot read it. That is worth
+    knowing on its own: `requirements:71` promises a path that migrates a plan from one
+    revision to the next, and there is currently exactly one loadable revision to migrate
+    between. Bound to the M6 gate with rev 3's outstanding half.
+    """
+    stamp = load(DEFAULT_REVISION).revision_stamp
+    assert f"rev{DEFAULT_REVISION}" in stamp, stamp
 
 
 def test_missing_revision_is_unreadable():
