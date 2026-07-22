@@ -1515,3 +1515,52 @@ is a debt owed to the test suite.* The verbatim exemption was designed carefully
 correctly, and created a channel through which the tool told its reader to do something
 impossible. When a check is deliberately not applied somewhere, the question that follows is
 not "is the exemption right" — it is "then who checks that region, and when".
+
+---
+
+## F35 — The last package's script promised gate checks the gate does not have
+
+**Found:** 2026-07-22, by reading the final planning package's script and its gate criteria
+side by side while working out what F34's missing calls actually needed. Not by a test, and
+no test could have found it — see below.
+
+**The promise.** The eighth and final package of the planning interview ends the interview.
+Its script tells the planner that running the final gate "folds in gates 1–7, open conflicts,
+the `plan.md` render, and a lossless `plan.yaml` round-trip check." A planner reading that has
+been told the export is mechanically verified before the plan closes, and that a render which
+loses content will be caught.
+
+**What is actually there.** That gate has two criteria: every earlier gate is green, and no
+conflict is open (`engine/methodology/rev3/gate_criteria.yaml`, the package-8 block). There is
+no render check and no round-trip check. Neither could exist, because no contract renders or
+exports anything — which is F34's other half.
+
+**Why it matters more than a stale sentence.** The round-trip check is the only thing in the
+whole methodology that would confirm the exported plan is lossless, and losslessness is the
+entire reason the structured export exists. A planner is told a safety net was tested when
+nothing tested it, and the failure is silent in the direction that matters: the gate passes,
+so the plan freezes with an unverified export behind it.
+
+**Why no check can see this.** All three mechanical pre-build checks operate on contracts and
+state machines. This is a script — vendored prose served verbatim to the planner — describing
+a data file. Both are content assets, both are well-formed, and they disagree. The surface's
+door resolves *call names* in outgoing text, which is why F34 was findable; it has no way to
+resolve a claim about what a gate contains. **The class is new: a content asset describing
+another content asset's contents, with nothing holding the two together.**
+
+**Resolution.** Not fixed here. Bound to the M6 gate with the rest of rev 3's outstanding
+half, because the honest fix depends on a decision that has not been made: if a render
+contract is added, the script is right and the criteria are missing; if it is not, the script
+is wrong and the sentence goes. Writing either one before the owner rules would be inventing
+methodology (`findings:4`).
+
+**Correction to F34, recorded here rather than by editing it.** F34 says `export_plan` and
+`freeze_plan` are "a missing pair of contracts". Checking that claim is what turned this up,
+and it is half wrong: **`freeze_plan` is v1's name for `finalize_plan` (`contracts:35`)**,
+which exists and is the sole contract firing the `finalize` event. What is wrong there is not
+a missing contract but the script's prose, which says the freeze sets the plan read-only and
+that "there is no unfreeze" — v2 says the opposite, since `decisions:3` has the plan never
+frozen and a finalized plan reopens through `request_revision`. Only `export_plan` is
+genuinely absent, and it is absent because plan rendering was scoped out of the charter. The
+lesson is F15's, again: **when a mechanical check reports an absence, look for a live
+successor with the same behaviour under a different name before classifying it as missing.**
