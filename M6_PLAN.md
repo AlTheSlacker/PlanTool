@@ -55,6 +55,18 @@ checklist. Both known instances were repaired as *typed links*, not typed tables
 
 ### 2.2 Methodology rev 3, second half
 Rev 3 carries v2's vocabulary but still names v1's tool surface (`submit_use_cases`, …).
+
+**Sharpened 2026-07-22 by building the surface, DEFECTS.md F34.** This was one bullet saying
+the scripts "still address v1's tool surface", and that wording was true and too vague to act
+on. Four calls now have names, reasons and a home in `tests/test_surface.py`:
+- `next_gap` in the **mandate** — the first line every cold planner reads, telling it to
+  resume from a call that does not exist. **Fixed**, and the revision stamp moved with it.
+- `get_stage_prompt` — v1's name for the package script, and it carries a retired word in a
+  shipped asset.
+- `get_plan_pack` — v1's bulk read; v2 reads through `read_rows`.
+- `export_plan` and `freeze_plan` — **these two are the whole of package 8's procedure and
+  no v2 contract exists for either, so the methodology's last package cannot be executed.**
+  That is missing contracts, not a rename, and it is the largest single item left in rev 3.
 The assets are `engine/methodology/rev3/package1_context.md` … `package8_freeze.md`.
 `engine/methodology/rev2/` is frozen v1 provenance and **must never be edited**.
 Never invent methodology (`findings:4`, `decisions:61`) — it is vendored, and a component
@@ -124,13 +136,16 @@ binds conflicts and open assumptions is the M6 decision.
 ### 2.7 Glossary delivery to the writer — F27
 See §3.
 
-### 2.8 Every row has a name — added 2026-07-22
+### 2.8 Every row has a name — added 2026-07-22, **CLOSED 2026-07-22**
 See §6. The item that changes the most: it puts a required field on `submit_rows`, a migration
-on every existing row, and a question in the interview scripts.
+on every existing row, and a question in the interview scripts. Clauses 1–3 landed with row
+naming; **clause 4 — never emit an address without its name — landed with the surface** and is
+DEVIATIONS D19. The interview question remains part of §2.2's rev-3 work.
 
-### 2.9 The digest names calls the surface cannot reach — added 2026-07-22
-See §7.4. Found by the surface's pre-build audit; three decisions are needed before the surface
-can be built at all (§7.5).
+### 2.9 The digest names calls the surface cannot reach — added 2026-07-22, **CLOSED 2026-07-22**
+See §7.4 for the finding and §9 for what was built. All six calls are exposed (DEVIATIONS
+D18) and the door now resolves every call name in outgoing text against the registry
+(DEVIATIONS D20), so the digest cannot name an unreachable call again without failing.
 
 ---
 
@@ -653,3 +668,76 @@ Driver scripts: scratchpad `.py` files, run with
 
 **Drive the engine end-to-end after each build package and read the output.** Branch + PR;
 the owner merges; no self-merges.
+
+---
+
+## 9. The surface, as built — 2026-07-22
+
+`engine/surface.py` (the toolset), `engine/door.py` (the two output invariants),
+`engine/mcp.py` (the wire), `tests/test_surface.py`.
+
+### 9.1 The shape
+
+**37 tools**, each one a service contract with validation in front and the door behind. The
+surface owns no logic: it decodes JSON into the engine's types, calls one method, renders the
+result, and refuses anything that would leave the reader stuck. That is what keeps MCP an
+*adapter* rather than the tool — the GUI at M8 plugs into the same seam.
+
+**The denominator is a test, not a list.** `tests/test_surface.py` parses the 39 contracts
+carrying `consumed by: components:15` out of the frozen plan, subtracts 3 declared exclusions
+(the writer lock, D5) and 5 declared deferrals (revision-service, owed by M7), and fails on
+any shortfall. Each absence carries its reason; a deferral must name the build package that
+owes it. 31 required contracts exposed + 5 deferred = the 36 the audit predicted, plus the 6
+of D18's widening.
+
+`NotWriter` is recorded in `MOOT_OUTCOMES` rather than implemented, and a test asserts no
+class by that name exists. An outcome that is simply absent looks the same as one forgotten.
+
+### 9.2 The door, and where the line between its halves falls
+
+The rule the audit wrote as two invariants is one pass over the payload, because they are one
+invariant: *the tool never points a reader at something the reader cannot get to.*
+
+The part that took the work was not the checking — it was deciding which text the strict half
+applies to. **Stored strings are annotated; strings the surface composes are rejected.** An
+address in stored prose is the owner's, and blocking a call over the owner's own words is the
+tool editing his input. An address in text the tool wrote is the tool's own failure. So a
+refusal keeps its pedagogical message exactly as the engine wrote it and gains a resolution
+beside it, while the presented digest — the one string on the success path the surface
+assembles rather than reads — is held to the strict rule.
+
+The strict half proved itself on its first run by failing `plan_status`, correctly: the gate's
+unresolved-assumption warning named a row by address, so the digest carrying that warning was
+unreadable. There is now one function, `door.label`, that says what `name (address)` looks
+like, and the scan accepts that shape and no other. A second spelling anywhere fails.
+
+### 9.3 What driving it caught that the tests did not — four things
+
+Consistent with every build package except M5b.
+
+1. **Annotation changed a value's shape.** Gap keys and warning keys are identifiers that
+   happen to contain an address; the first version turned each into an object carrying text
+   and citations, so a caller who read a gap key could no longer hand it back to
+   `dismiss_gap`. **The tool broke its own round-trip while making itself readable.** Fixed by
+   accumulating resolutions into one block beside the payload and leaving every value exactly
+   as it was.
+2. **The digest died once a warning existed** — the naming violation above, invisible to
+   tests written against an empty plan.
+3. **The mandate names a call that does not exist** — DEFECTS.md F34, and the largest of the
+   four.
+4. **A deliberately-absent call answered like a typo.** `acquire_writer_lock` and
+   `open_revision` came back as `UnknownTool` beside a list of 37 names, which tells the
+   reader nothing and reads as an omission. The reasons were already written down for the
+   coverage test; dispatch now serves them.
+
+### 9.4 The lesson worth carrying forward
+
+**Every exemption from a runtime check is a debt owed to the test suite.** The verbatim
+exemption is correct — the tool must not edit the methodology or the owner's prose in flight —
+and it is also the channel through which the tool told every cold planner to call `next_gap()`.
+The question that follows an exemption is never "is it right"; it is "then who checks that
+region, and when". Here the answer is `tests/test_surface.py`, which parses every call name
+out of rev 3 and resolves it against the registry.
+
+It sits beside F30's question (*which contract writes this field?*) and §7.4's (*which
+contract can the reader actually call?*) as a third audit habit that is cheap and mechanical.

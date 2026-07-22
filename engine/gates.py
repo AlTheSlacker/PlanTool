@@ -34,6 +34,7 @@ from typing import Any
 
 from engine.clock import now
 from engine.conflicts import Conflict, ConflictService, GateScope
+from engine.door import label
 from engine.errors import PlanToolError
 from engine.idempotency import key
 from engine.storage import Op
@@ -265,10 +266,11 @@ class GateEngine:
             self.warnings.raise_warning(
                 warning_key=f"assumption:{root}",
                 kind="unresolved_assumption",
-                message=(
-                    f"unresolved {kind}-assumption {row.ref}: "
-                    f"{name_of(row)}"
-                ),
+                # `label` and not an f-string of our own: the surface accepts one shape
+                # for an address in composed text and rejects every other, so a second
+                # spelling here would fail the digest that carries this warning — which
+                # is exactly what it did before this line used it.
+                message=f"unresolved {kind}-assumption: {label(name_of(row), row.ref)}",
                 source_ref=row.ref,
             )
         self._clear_settled_warnings()

@@ -1,41 +1,56 @@
 # plantool
 
-LLM-led project-planning tool: an MCP server whose tools interview the user, record every
-planning fact as a typed row in SQLite, and refuse to advance past mechanical gates.
-Spec: `plantool_stage1_spec.md` (rev 2 — source of truth).
+An LLM-led planning tool. It interviews you about a project, records every planning fact as a
+typed row in SQLite with its provenance, and refuses to advance past mechanical gates. It is
+reached over MCP, so the model on the other end can be any model.
 
-## Layout
-- `engine/` — plain Python, no LLM calls: schema, DB wrapper, validation, `next_gap()` walker.
-- `server/` — FastMCP stdio server + interview scripts (delivered inside tool results).
-- `workspace-template/` — copy this directory to start planning a project.
-- `tests/` — pytest suite (fixture DBs).
+**The design spine, which explains most of the decisions in here: the tool records judgment,
+it never exercises it.** It has no LLM inside it and no API key. Selections are made by the
+planning session; the tool does the accounting, and the accounting is what a session's memory
+cannot be trusted with. Retrieval is lexical or structural for the same reason — no embedding
+model, so no semantic search.
 
-## Setup
+## What is here
+
+This is **v2**, a rewrite of v1's plan-authoring loop. It was planned using v1, and that plan
+is frozen at `spec/v2/plan.md` — read-only, and the specification this code is built from.
+
+- `engine/` — the whole engine, plain Python. Storage, rows and links, the interview
+  (guidance, gaps), enforcement (gates, warnings, conflicts), validation and findings, tasks
+  and briefs, resume, and the surface.
+- `spec/v2/` — the frozen plan, plus two ledgers kept as the build runs: `DEFECTS.md` (the
+  plan was insufficient and something had to be invented) and `DEVIATIONS.md` (built
+  deliberately differently, with the reasoning).
+- `archive/v1/` — v1, preserved and still runnable.
+- `tests/` — pytest.
+- `GLOSSARY.md` — the structural vocabulary, and it is binding. `tests/test_vocabulary.py`
+  parses the retired-word list out of it and fails the suite on a violating identifier.
+
+## Running the tool
+
 ```
-py -3.12 -m venv .venv
-.venv\Scripts\python -m pip install mcp pyyaml pytest
+.venv\Scripts\python -m engine.mcp <workspace>
 ```
 
-## Use
-Copy `workspace-template/` to a new folder, open your MCP-capable CLI (Claude Code first)
-there, and talk. The `.mcp.json` launches the server over stdio; `plan_status()` bootstraps
-the model.
+stdio JSON-RPC. Point an MCP-capable client at it, in a directory you want a plan to live in.
+The tool never creates the workspace and never writes outside it. Start with `plan_status` —
+in a fresh workspace it tells you to call `init_plan`, and in one that has a plan it tells a
+planner with no memory where the work got to and what to do next.
 
 ## Tests
+
 ```
-.venv\Scripts\python -m pytest
+.venv\Scripts\python -m pytest -q
 ```
 
 ## Build status
-Sessions A–D of 5 (spec §9) are in:
-- **A** — schema v1, `plan_start` / `plan_status` / `next_gap`, first submit tools.
-- **B** — the full submit surface (use cases, CRUD, state machines, components, contracts,
-  dependencies, failure modes, decisions, questions, conflicts).
-- **C** — enforcement: gates 1–6, spikes, engine conflict sweeps, plan.yaml export/reimport.
-- **D** — the dogfood harvest: supersede/retire/confirm correction path with lineage
-  (claim rows are never mutated or duplicated), dangling-ref checking on every batch
-  submit, `plan_status` digest + `get_rows` targeted reads, `dismiss_gap`, and the
-  interview-conduct rewrites (divergence rounds, recorded challenges, file-question-first).
 
-Session E (red-team script, `get_plan_pack`, packages 7–8 gates, `export_plan`,
-`freeze_plan`) closes package 1.
+Build packages M0–M6 are in: foundation, the interview core, enforcement, validation and
+findings, tasks and briefs, timestamps, session resume, row naming, and the MCP surface.
+
+**M6 is not closed.** Its open items are listed in `M6_PLAN.md` §2 — the largest is that the
+vendored methodology's last package still names tools that do not exist. **M7** is
+revision-service; **M8** dogfoods the whole thing by planning the GUI with it.
+
+The execution module — deriving a task graph and composing briefs from it — is deliberately
+deferred and wants a design discussion before any of it is built.

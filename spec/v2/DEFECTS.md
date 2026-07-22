@@ -1470,3 +1470,48 @@ The order is load-bearing for the naming index as well — a replacement may kee
 original's name, so the old row has to leave the live-name index before the replacement
 enters it. Covered by `tests/test_naming.py::test_a_superseded_rows_name_is_free_for_its_replacement`
 and the existing supersession tests in `tests/test_rows.py`.
+
+---
+
+## F34 — The mandate told every cold planner to resume from a call that does not exist
+
+**Found:** 2026-07-22, by reading the surface's first end-to-end run — the same way F31 was
+found, and again not by a test.
+
+**The promise.** The engineer's mandate is the first thing a planner reads and the second
+line of it says the database is the source of truth and "a new session resumes losslessly
+from `plan_status()` + `next_gap()`". `requirements:71` ships the methodology as versioned
+content assets so that a plan can be told which methodology it was built under.
+
+**What was there instead.** There is no `next_gap`. The call is `next_gaps`, and has been for
+the whole of v2. A resuming planner following the mandate literally gets `UnknownTool` on the
+one instruction the mandate gives it for recovering, at the exact moment its context is
+empty and it has nothing else to go on.
+
+**Why nothing caught it.** The methodology is served verbatim, so the surface's own
+call-name check exempts it — deliberately, because the alternative is the tool editing the
+owner's methodology in flight. That exemption is correct and it is also a blind spot, and the
+two facts are not in tension: an exemption at runtime is an obligation at build time.
+
+**Three more of the same shape, larger.** `get_stage_prompt`, `get_plan_pack`, `export_plan`
+and `freeze_plan` are named in rev 3's scripts and none has a v2 tool. The first two are
+renames waiting to happen — one of them still carries a retired word in a shipped asset. The
+last two are the *whole of package 8's procedure*, and no v2 contract exists for either, so
+**the methodology's final package cannot currently be executed**. That is not a rename; it is
+a missing pair of contracts, and it had been sitting behind a manifest comment saying the
+scripts "still address v1's tool surface" — true, and not specific enough for anyone to
+notice that one package had stopped working.
+
+**Resolution.** `next_gaps` corrected in the mandate and the revision stamp moved with it, per
+F31's rule that the stamp changes whenever the content does. The other four are bound to the
+M6 gate with the rest of rev 3's outstanding half, and are now named individually in
+`tests/test_surface.py` — each with its reason and where it is owed — by a test that parses
+every call name out of rev 3 and resolves it against the tool registry. An undeclared one
+fails the suite, and a declared one that quietly gets built also fails, so the list cannot rot
+in either direction.
+
+**The lesson, which generalises past this instance.** *Every exemption from a runtime check
+is a debt owed to the test suite.* The verbatim exemption was designed carefully, argued for
+correctly, and created a channel through which the tool told its reader to do something
+impossible. When a check is deliberately not applied somewhere, the question that follows is
+not "is the exemption right" — it is "then who checks that region, and when".

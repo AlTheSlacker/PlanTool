@@ -360,8 +360,8 @@ class RowService:
         if not owners:
             return (
                 f"a {submission.table} row must declare its owning {parent} with a "
-                f"belongs_to link (this was a NOT NULL foreign key before the row "
-                f"tables were flattened; see DEFECTS.md F28)"
+                f"belongs_to link; without one the row makes no claim, because there "
+                f"is nothing for it to be true of"
             )
         if len(owners) > 1:
             return (
