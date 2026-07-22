@@ -167,8 +167,14 @@ every gate. Advisory warnings (open gaps, coverage) **stay non-blocking** or D9 
 the cry-wolf failure D7 fixed. The lock class binds outstanding *findings*; whether it also
 binds conflicts and open assumptions is the M6 decision.
 
-### 2.7 Glossary delivery to the writer — F27
-See §3.
+### 2.7 Glossary delivery to the writer — F27 — **DONE 2026-07-22**
+Built as designed in §3: the `terms` table, the manifest export, the brief section outside
+the accounting, and warn-at-submission/count-at-the-gate. DEVIATIONS.md D23; the hole in the
+planning method is DEFECTS.md F40. **One piece of §3.4 is deliberately not built** — the
+counting gap rule for words appearing in N rows with no term of their own — and it is bound
+to the **M6 gate** rather than left floating. It needs a rule type in the gap engine and a
+threshold, and a threshold chosen badly is the cry-wolf failure the whole warning design is
+written around.
 
 ### 2.8 Every row has a name — added 2026-07-22, **CLOSED 2026-07-22**
 See §6. The item that changes the most: it puts a required field on `submit_rows`, a migration
@@ -183,7 +189,23 @@ D18) and the door now resolves every call name in outgoing text against the regi
 
 ---
 
-## 3. Project glossaries — design agreed 2026-07-21, not yet built
+## 3. The plan's glossary — designed 2026-07-21, **BUILT 2026-07-22** (D23)
+
+> **As built**, and where it differs from the design below, which is left standing because
+> its reasoning is still the reasoning:
+> - `engine/terms.py`, the `terms` table, schema version 4 — and the first migration path
+>   this engine has ever had, because a plan predating the glossary honestly has an empty
+>   one.
+> - Two schema departures, both so that the *word* is the identity: the replacement is
+>   `use_instead`, the word itself, not a `terms.id`; and `superseded_by` is `superseded_at`,
+>   since ordering one word's entries by id already *is* the lineage.
+> - All three delivery points below are built. §3.4's counting gap rule is **not**, and is
+>   bound to the M6 gate (§2.7).
+> - Un-banning needed no call of its own: a word comes back by being redefined, which is
+>   what returning to use actually is, and the banned entry keeps its reason behind it.
+> - Found while building it: **F41** — every ref the surface prints is in display form and
+>   every tool taking a ref accepted only the storage form, so the tool's own output was not
+>   valid input to it.
 
 **The problem.** F27: `GLOSSARY.md` was declared binding and the next build package broke
 it. The cause is not carelessness and is worth restating because the design follows from it:

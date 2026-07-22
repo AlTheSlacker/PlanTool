@@ -1730,3 +1730,69 @@ get back to it, and a package is referenced by id and never by name. It shares i
 the finalization guard, so what the planner is shown and what the guard refuses on cannot
 drift. `Task.source_ref` and `TaskGraph.unenumerated` became `RowRef`s on the way out, which
 is what makes them arrive named rather than as bare addresses.
+
+---
+
+## F40 — The planning method never asks what the words mean
+
+**Found:** 2026-07-22, building the glossary. Verified in the frozen plan: **zero**
+occurrences of glossary, terminology, vocabulary or "term", and none of its 16 row types is
+a term type.
+
+**What is there.** Eight packages that interview for context, use cases, entities,
+requirements, dependencies, architecture, contracts, red-team findings and decisions. Every
+one of them produces prose, every row is named, and nothing anywhere asks the owner *what do
+you call this, and what does that word mean here?*
+
+**Why it matters more than it looks.** This build is the evidence, twice over. F27 is a
+vocabulary declared binding and broken the next build package. F23 is a coverage check whose
+denominator existed under two spellings, one of which was never defined. F24 is a relation
+that existed under one name and not another. Three defects in one build, all of them the same
+disease, in a plan whose method has no step where the disease could have been caught.
+
+**The general form.** A planning method that elicits *claims* but never elicits the
+*language the claims are written in* leaves every later reader to infer the vocabulary from
+usage — which is exactly how one word ends up meaning two things. It is not a missing
+contract or a missing trigger; those are the shapes the three pre-build checks look for. It
+is a missing **interview question**, and nothing mechanical was ever going to find it. It was
+found by having to build the fix for F27 and noticing there was nowhere in the plan to put
+it.
+
+**Fixed here** as DEVIATIONS.md D23: `terms`, a real table, with the vocabulary published as
+a manifest, carried into briefs as a constraint, and scanned for at submission and at the
+gate. The missing interview question itself is **not** written into a package script — that
+is methodology, and methodology is vendored, never invented (`findings:4`). The tool now has
+somewhere to put an answer; whether the standard package set learns to ask the question is
+the owner's call.
+
+---
+
+## F41 — The tool's own output was not valid input to the tool
+
+**Found:** 2026-07-22, by writing a test that read a ref out of one call's payload and passed
+it to the next.
+
+**What was there.** D19 forbids an address from leaving without the name of what it
+addresses, so every ref this surface prints comes out as `the widget settles (requirements:1)`
+— the display form, and the *only* form a caller ever sees. Every tool taking a ref parsed
+the storage form, `requirements:1`, and nothing else. So a planner doing the obvious thing —
+copying the ref it was just handed — got `MalformedCall: names_ref must be malformed ref`.
+
+**Why it is the same defect as the gap key.** The door already learned this once: annotation
+that replaced a string with an object broke `dismiss_gap`, because a value read out of a
+payload has to be handable back. This is that rule broken from the other end — not by
+changing a value's shape on the way out, but by refusing the shape we chose on the way back
+in. The naming design made display form the only visible form and then left the front door
+accepting only the invisible one.
+
+**Why nothing saw it.** The door's scan is one-directional by construction: it reads outgoing
+payloads and knows nothing about arguments. The tests that pass refs pass them as literals,
+because a test author knows the storage form — the tests inherit the implementation's
+knowledge, which is F22's lesson wearing a different hat. Only a test that *reads a ref out
+of a payload* can fail on this, and none did.
+
+**Fixed here.** `as_ref` accepts either form, taking the address out of the trailing
+brackets. The rule to hold on to: **whatever the tool emits, the tool accepts.** Any
+transformation applied on the way out is owed the inverse on the way in — and the way to find
+the next one is to write the test that feeds output back in, rather than the test that knows
+what the storage form looks like.

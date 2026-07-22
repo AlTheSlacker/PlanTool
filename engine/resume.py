@@ -47,6 +47,7 @@ from engine.fingerprint import DriftFlag, capture, compare
 from engine.idempotency import key
 from engine.models import RowRef
 from engine.storage import Op, Storage
+from engine.terms import TermService
 
 #: `requirements:69` — the workspace path shapes that mean a network mount. Purely lexical:
 #: a UNC path, or a drive letter Windows maps to a share. The tool never probes the network
@@ -180,6 +181,10 @@ class PlanStatus:
     earlier_gate_runs: Fetch
     warnings: tuple[str, ...]
     gaps: Fetch
+    #: The plan's agreed vocabulary. In the digest because a cold planner is about to write
+    #: rows, and the words are a constraint on what they write — one nothing else would tell
+    #: them exists. A count and the call that fetches it, like every other count here (D17).
+    glossary: Fetch
     journal: tuple[JournalNote, ...]
     earlier_journal: Fetch
     next_action: str
@@ -217,6 +222,17 @@ class PlanStatus:
         else:
             lines.append("No active warnings")
         lines.append(self.gaps.present())
+        if self.glossary.count:
+            lines.append(self.glossary.present())
+        else:
+            # Said even at zero, and that is the point of saying it. Every other count here
+            # reports something the plan already has; this one has to reach a planner who
+            # does not know the glossary exists, and a line that appears only once there
+            # are terms can never be the line that produces the first one.
+            lines.append(
+                "No agreed terms yet — define_term() records what a word means in this "
+                "plan, and every row after it is written in those words"
+            )
         if self.journal:
             lines.append(f"Journal, this package ({len(self.journal)}):")
             lines.extend(f"  - {n.present()}" for n in self.journal)
@@ -231,11 +247,12 @@ class PlanStatus:
 class ResumeService:
     """session-service (`components:14`)."""
 
-    def __init__(self, storage: Storage, gaps, warnings, guidance):
+    def __init__(self, storage: Storage, gaps, warnings, guidance, terms=None):
         self.storage = storage
         self.gaps = gaps
         self.warnings = warnings
         self.guidance = guidance
+        self.terms = terms or TermService(storage)
 
     # --- contracts:48 ---
 
@@ -342,6 +359,9 @@ class ResumeService:
             earlier_gate_runs=earlier_gates,
             warnings=tuple(w.present() for w in self.warnings.active_warnings()),
             gaps=Fetch("open gap", "next_gaps()", len(open_gaps)),
+            glossary=Fetch(
+                "agreed term", "glossary()", len(self.terms.glossary())
+            ),
             journal=notes,
             earlier_journal=earlier,
             next_action=next_action,

@@ -23,8 +23,10 @@ is frozen at `spec/v2/plan.md` — read-only, and the specification this code is
   deliberately differently, with the reasoning).
 - `archive/v1/` — v1, preserved and still runnable.
 - `tests/` — pytest.
-- `GLOSSARY.md` — the structural vocabulary, and it is binding. `tests/test_vocabulary.py`
-  parses the retired-word list out of it and fails the suite on a violating identifier.
+- `GLOSSARY.md` — this build's own structural vocabulary, and it is binding.
+  `tests/test_vocabulary.py` parses the retired-word list out of it and fails the suite on a
+  violating identifier. A *plan* built with the tool gets the same thing as data: agreed
+  terms, retired words with what to say instead, exported as a manifest your own CI can read.
 
 ## Running the tool
 
@@ -48,8 +50,7 @@ planner with no memory where the work got to and what to do next.
 Build packages M0–M6 are in: foundation, the interview core, enforcement, validation and
 findings, tasks and briefs, timestamps, session resume, row naming, and the MCP surface.
 
-**M6 is not closed.** Its open items are listed in `M6_PLAN.md` §2 — the largest is that the
-vendored methodology's last package still names tools that do not exist. **M7** is
+**M6 is not closed.** Its open items are listed in `M6_PLAN.md` §2. **M7** is
 revision-service; **M8** dogfoods the whole thing by planning the GUI with it.
 
 The execution module — deriving a task graph and composing briefs from it — is deliberately

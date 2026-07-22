@@ -518,3 +518,107 @@ class TestTheLog:
                 tool="x", started_at="a", finished_at="b", outcome="refused",
                 summary="s", failure_mode="confused",
             ))
+
+
+class TestTheGlossary:
+    """The glossary through the door (D23). Every one of these tools returns something the
+    surface composes — a term, a usage note, a receipt line — which is the half of the
+    output the strict invariants apply to."""
+
+    def define(self, surface, term="component", definition="the old word for a task"):
+        return surface.dispatch(ToolCall(
+            "define_term", {"term": term, "definition": definition}
+        ))
+
+    def test_a_term_can_be_recorded_and_read_back(self, surface):
+        assert self.define(surface).ok
+        result = surface.dispatch(ToolCall("glossary", {}))
+        assert result.ok
+        assert [t["term"] for t in result.payload] == ["component"]
+
+    def test_retiring_a_word_needs_a_scope_the_tool_names(self, surface):
+        self.define(surface)
+        result = surface.dispatch(ToolCall("retire_term", {
+            "term": "component", "ban_scope": "everywhere", "ban_reason": "two spellings",
+        }))
+        assert not result.ok
+        assert "prose" in str(result.problem)
+
+    def test_a_row_using_a_retired_word_is_filed_with_the_word_said_back(self, surface):
+        self.define(surface, "task", "the work of realising one component")
+        self.define(surface)
+        assert surface.dispatch(ToolCall("retire_term", {
+            "term": "component", "ban_scope": "prose",
+            "ban_reason": "one entity, two spellings", "use_instead": "task",
+        })).ok
+
+        result = surface.dispatch(ToolCall("submit_rows", {
+            "batch": [{
+                "table": "requirements",
+                "name": "each component owns one responsibility",
+                "content": {"text": "Each component shall own one responsibility."},
+            }],
+            "idempotency_key": "vocabulary",
+        }))
+        assert result.ok
+        verdict = result.payload["verdicts"][0]
+        assert verdict["accepted"] is True
+        assert "say 'task'" in verdict["note"]
+
+    def test_the_names_of_a_term_arrive_named(self, surface):
+        """`names_ref` is an address, so it may never travel alone (D19)."""
+        row = a_row(surface)
+        ref = row.payload["verdicts"][0]["ref"]
+        assert surface.dispatch(ToolCall("define_term", {
+            "term": "widget", "definition": "the thing that settles", "names_ref": ref,
+        })).ok
+        result = surface.dispatch(ToolCall("glossary", {}))
+        assert result.payload[0]["names_ref"] == ref
+        assert ref == "the widget settles in 40 ms (requirements:1)"
+
+    def test_the_export_reports_where_it_went(self, surface):
+        self.define(surface)
+        result = surface.dispatch(ToolCall("export_glossary", {}))
+        assert result.ok
+        assert "glossary.json" in result.payload["summary"]
+        assert (surface.storage.workspace / "glossary.json").exists()
+
+    def test_terms_cannot_be_submitted_as_plan_rows(self, surface):
+        result = surface.dispatch(ToolCall("submit_rows", {
+            "batch": [{"table": "terms", "name": "package", "content": {"term": "x"}}],
+            "idempotency_key": "reserved-terms",
+        }))
+        assert result.ok  # the batch stands; the row alone is refused
+        verdict = result.payload["verdicts"][0]
+        assert verdict["accepted"] is False
+        assert "define_term" in verdict["problem"]
+
+
+class TestWhatGoesOutComesBack:
+    """DEFECTS.md F41. Every address this surface prints is in display form — D19 forbids
+    a bare one — so the display form is what a caller has to hand back, and every tool
+    taking a ref refused it. The tool's own output was not valid input to the tool."""
+
+    def test_a_ref_read_out_of_a_payload_is_accepted_back(self, surface):
+        printed = a_row(surface).payload["verdicts"][0]["ref"]
+        assert printed == "the widget settles in 40 ms (requirements:1)"
+
+        result = surface.dispatch(ToolCall("retire_row", {
+            "ref": printed, "reason": "superseded by the real one",
+            "idempotency_key": "retire-printed",
+        }))
+        assert result.ok, result.problem
+
+    def test_the_storage_form_still_works(self, surface):
+        a_row(surface)
+        result = surface.dispatch(ToolCall("read_rows", {
+            "selector": {"ids": ["requirements:1"]},
+        }))
+        assert result.ok, result.problem
+
+    def test_something_that_is_not_an_address_either_way_still_fails(self, surface):
+        result = surface.dispatch(ToolCall("retire_row", {
+            "ref": "the widget settles", "reason": "x", "idempotency_key": "k",
+        }))
+        assert not result.ok
+        assert result.error == "MalformedCall"

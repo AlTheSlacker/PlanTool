@@ -968,3 +968,93 @@ is the author.
 **Schema version 3, with no migration path and that is the honest answer.** `name` is NOT NULL
 and cannot be backfilled, because inventing one from `description` is what the column exists
 to prevent. No plan outside this repo's tests was ever written at version 2.
+
+---
+
+## D23 — The plan's glossary is a real table, and the tool publishes it
+
+**Not in the frozen plan at all.** Verified: zero occurrences of glossary, terminology,
+vocabulary or "term" in `spec/v2/plan.md`, and none of its 16 row types is a term type. The
+eight planning packages interview for use cases, entities, contracts, decisions and failure
+modes and never ask *what do you call things, and what do those words mean?* — logged as
+DEFECTS.md **F40**, because that is a hole in the planning method and not only in this build.
+
+**Why it exists.** F27: a binding vocabulary was written down and broken by the next build
+package, in the same branch. The cause is not carelessness and it is what the design follows
+from — the one document where retired words legitimately survive is also the document read
+immediately before writing each function, so ranked by proximity to the moment of typing the
+exception beats the rule; and naming happens at the point of *least* attention, because the
+thinking goes into the algorithm and the name is incidental typing. A word in a document
+cannot fix that.
+
+**A real table, not a `plan_rows` row type** — the owner's call, against my argument for the
+row type, and he was right on two counts I had missed.
+
+1. **A term needs two relations the generic layer collapses into one.** *Redefinition* (same
+   word, sharpened) and *replacement* (this word is out, say that one) are both
+   `superseded_by` in `plan_rows`. One mechanism serving two relations is this document's
+   own subject matter, inverted.
+2. **D12's reasoning already forbids it.** An accounting denominator may never be inferred
+   from `plan_rows.content`, which is free-form JSON with no per-table schema. The
+   banned-word list *is* a denominator, so `ban_scope` has to be a column something can
+   query. That is the same argument that made `obligations` a table.
+
+It also corrects `GLOSSARY.md`'s two-layer rule, which said planning = generic and execution
+= typed. `obligations` is enumerated by the planning session and is typed, so the line was in
+the wrong place. The real one is **content vs structure**: a row that makes a claim about the
+domain is generic and interchangeable; a thing that constrains or organises other rows gets a
+real table.
+
+**The trap, and it is the whole reason this entry is long.** A retired word must stay in
+**live reads**. Everywhere else in v2 retirement drops a row out of live reads (settled
+2026-07-20 for spike-refuted assumptions); apply that here and the banned list goes *empty*,
+so every check downstream runs, finds nothing to ban, and reports success. That is F23's
+missing denominator, reappearing inside the mechanism built to prevent F27. So retirement is
+`ban_scope IS NOT NULL` and liveness is `superseded_at IS NULL`, and a test asserts that the
+list is empty only when nothing has been retired.
+
+**Two departures from the sketched schema**, both for the same reason. `replaced_by` was to
+be a `terms.id`; it is the replacement **word** (`use_instead`), because a retirement outlives
+the entry it points at — the replacement will be redefined one day too — and the word is the
+identity that survives that. And `superseded_by` is `superseded_at`: with the word as the
+lineage key, ordering by id over one word *is* the lineage, and a pointer would have needed a
+three-statement dance to write past the live-word index for no fact it does not already have.
+
+**Delivery, in descending order of what each actually achieves** (M6_PLAN.md §3.3):
+
+1. **`export_glossary` writes a manifest the codebase's own CI consumes.** The tool publishes
+   the vocabulary; the codebase polices itself. This respects `decisions:12` completely — no
+   judgment is exercised about anyone's code — works in any language, and is the mechanism
+   already proven on ourselves, where a ten-line check found twenty violations a careful
+   reading had declared clean.
+2. **The glossary is a section of the brief, outside the 100% accounting.** Candidate rows
+   are *context* and may be waived with a reason; a glossary is a *constraint on the output*
+   and cannot be, or it is not a constraint. `compose_brief` treats every candidate as
+   omittable, which is right for context and wrong for a constraint — a distinction the
+   frozen plan never draws. It is attached live rather than frozen with the brief, which
+   looks like F26's mistake and is its mirror: F26 froze a *denominator* because an
+   accounting against a moving set is meaningless, and a constraint is the opposite case —
+   it binds as it stands, and nothing counts it.
+3. **Warn at submission, count at the gate.** The submission scan is the one that attacks
+   F27's actual cause, because the moment of typing is the only moment at which saying so
+   changes what gets written. The gate scan catches what submission cannot: the common case
+   is that a word is retired *because* the plan has been using it two ways, so the rows
+   carrying it are already filed. Both warn and neither blocks — a retired word inside a
+   quotation of the owner is legitimate, and refusing one would have the tool editing his
+   words.
+
+**`terms` is a reserved plan-row table name**, refused with a message naming `define_term`.
+F38's lesson applied before it cost anything: deciding which store owns a word is half a fix,
+and `plan_rows.table` is open by design.
+
+**Schema version 4, and this one migrates.** A plan written before the glossary existed has
+an empty glossary, and empty is the truthful answer rather than an invented one — which is
+exactly what distinguishes it from the 2 -> 3 bump, where a backfill would have had to invent
+the names that column exists to prevent. It is also the first migration step this engine has
+ever had, so `contracts:8`'s success path is reachable for the first time.
+
+**What none of it catches, stated so it is not oversold.** Inventing a *new* name for a
+concept that already exists, where the two names share no lexical structure. No mechanism
+without judgment can. The counting move that would help — words appearing in N rows with no
+term of their own, which is pure counting and the same shape as the section-coverage meter —
+is **not built**, and is bound to the M6 gate rather than left floating.

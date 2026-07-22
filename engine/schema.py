@@ -10,7 +10,13 @@ database". Every other module reaches persistence through storage.py's typed ope
 #: precisely what the column exists to prevent. No plan outside this repo's tests has ever
 #: been written at version 2, so there is nothing to migrate; the first plan that matters
 #: starts at 3.
-SCHEMA_VERSION = 3
+#:
+#: Bumped to 4 the same day for the `terms` table (D23). This one *does* migrate, and the
+#: difference is worth stating: a plan written before the glossary existed has an empty
+#: glossary, and empty is the truthful answer rather than an invented one. The DDL below
+#: only ever runs at init, so without a step a version-3 store would open fine and fail on
+#: the first read of a table it does not have.
+SCHEMA_VERSION = 4
 
 DDL = """
 PRAGMA journal_mode = WAL;
@@ -633,6 +639,62 @@ CREATE TABLE IF NOT EXISTS checkpoints (
     created_at TEXT    NOT NULL
 );
 """
+
+# The plan's glossary (DEVIATIONS.md D23, fixing DEFECTS.md F27 and F40).
+#
+# Held apart from DDL above so that `migrate`'s 3 -> 4 step and a fresh `init_plan` create
+# it from the same text. Two copies of a CREATE TABLE is a schema that drifts between the
+# stores that were migrated and the stores that were born — the same duplication this table
+# exists to catch, one layer down.
+#
+# **A real table, not a plan-row type**, on the owner's decision and for two reasons that
+# outrank the convenience of the generic layer. First, a term needs two distinct relations
+# that `plan_rows` collapses into one: *redefinition* (same word, sharpened) and
+# *replacement* (this word is out, say that one) are both `superseded_by` there. Second,
+# D12 settled that an accounting denominator may never be inferred from `content`, which is
+# free-form JSON with no per-table schema — and the banned-word list is exactly a
+# denominator, so `ban_scope` has to be a column something can query.
+#
+# **A retired word stays in live reads.** Everywhere else in v2 retirement drops a row out
+# of live reads; do that here and the banned list empties, so every check downstream runs,
+# finds nothing to ban and reports success — F23's missing denominator, reappearing inside
+# the mechanism built to prevent F27. Retirement is `ban_scope IS NOT NULL`, and liveness is
+# `superseded_at IS NULL` and nothing else.
+#
+# `use_instead` holds the replacement *word*, not a row id: a retirement outlives the entry
+# it points at, since the replacement will be redefined one day too, and the word is the
+# identity that survives that. It is also how this table is looked up everywhere else — by
+# the word you were about to type, never by an ordinal.
+TERMS_DDL = """
+CREATE TABLE IF NOT EXISTS terms (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    term          TEXT    NOT NULL,
+    definition    TEXT    NOT NULL,
+    names_ref     TEXT,                    -- the row this word names, if any
+    ban_scope     TEXT,                    -- null == in use; prose | identifier | both
+    ban_reason    TEXT,
+    use_instead   TEXT,                    -- retired: the word to say instead
+    superseded_at TEXT,                    -- null == the live entry for this word
+    created_at    TEXT    NOT NULL,
+    updated_at    TEXT    NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_terms_live ON terms (term)
+    WHERE superseded_at IS NULL;
+"""
+
+DDL += TERMS_DDL
+
+
+def statements(ddl: str) -> list[str]:
+    """One executable statement per entry, comments removed.
+
+    `migrate` applies steps one at a time so it can name each in its report, while `DDL`
+    is run as a script. Splitting on `;` alone would cut inside a comment — this schema's
+    comments carry the reasoning, and reasoning has semicolons in it.
+    """
+    stripped = "\n".join(line.split("--")[0] for line in ddl.splitlines())
+    return [s.strip() for s in stripped.split(";") if s.strip()]
 
 # Lexical retrieval (V2_BUILD_PLAN.md 5.4). Separate because FTS5 is a compile-time
 # option; absence degrades search rather than breaking the store.

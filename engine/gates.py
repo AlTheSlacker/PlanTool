@@ -43,7 +43,15 @@ from engine.gaps import GapEngine, name_of
 from engine.methodology import Criterion, Methodology, load
 from engine.models import PlanRow, RowRef, RowSelector, RowState
 from engine.rows import RowService
+from engine.terms import TermService, Usage
 from engine.warnings import Warning, WarningService
+
+
+#: The warning kind for a live row using a retired word. A kind of its own, not folded into
+#: `open_gap`: this one is settled by the glossary changing or the row being superseded, so
+#: it has a different lifecycle, and a shared kind would have one settling rule guessing at
+#: two conditions.
+RETIRED_TERM = "retired_term"
 
 
 class UnknownPackage(PlanToolError):
@@ -106,6 +114,7 @@ class GateEngine:
         gaps: GapEngine | None = None,
         methodology: Methodology | None = None,
         findings: FindingService | None = None,
+        terms: TermService | None = None,
     ):
         self.storage = storage
         self.rows = rows
@@ -114,6 +123,10 @@ class GateEngine:
         self.findings = findings or FindingService(storage, rows)
         self.methodology = methodology or load()
         self.gaps = gaps or GapEngine(storage, rows, methodology=self.methodology)
+        #: The glossary, so the gate counts what submission only mentioned in passing.
+        #: Rows submitted *before* a word was retired are the case only this side catches:
+        #: the submission scan cannot warn about a rule that did not exist yet.
+        self.terms = terms or TermService(storage)
 
     # --- contracts:22 ---
 
@@ -276,6 +289,13 @@ class GateEngine:
                 message=f"unresolved {kind}-assumption: {label(name_of(row), row.ref)}",
                 source_ref=row.ref,
             )
+        for warning_key, row, usage in self._retired_words():
+            self.warnings.raise_warning(
+                warning_key=warning_key,
+                kind=RETIRED_TERM,
+                message=usage.about(label(name_of(row), row.ref)),
+                source_ref=row.ref,
+            )
         self._clear_settled_warnings()
         return self.warnings.active_warnings()
 
@@ -297,10 +317,11 @@ class GateEngine:
             f"assumption:{self.gaps.lineage_root(row.ref)}"
             for row in self._open_assumptions()
         }
+        live_keys |= {warning_key for warning_key, _, _ in self._retired_words()}
         for warning in self.warnings.all_warnings():
             if warning.state == "resolved" or warning.warning_key in live_keys:
                 continue
-            if warning.kind not in ("open_gap", "unresolved_assumption"):
+            if warning.kind not in ("open_gap", "unresolved_assumption", RETIRED_TERM):
                 continue  # not ours to settle; another component owns its lifecycle
             self.warnings.settle_warning(
                 warning.id,
@@ -310,6 +331,25 @@ class GateEngine:
     def _open_assumptions(self) -> list[PlanRow]:
         page = self.rows.read_rows(RowSelector(live_only=True, limit=1000))
         return [r for r in page.rows if r.state == RowState.ASSUMED]
+
+    def _retired_words(self) -> list[tuple[str, PlanRow, Usage]]:
+        """Every live row using a word the glossary has retired, with the warning key it
+        is raised under.
+
+        This is "count at the gate", and it is not a duplicate of the submission scan.
+        Submission can only warn about the rules that existed when the row was written; the
+        common case is the other order — a word is retired *because* the plan has been
+        using it two ways, and the rows carrying it are already filed. Only a re-scan finds
+        those, and only re-scanning (rather than remembering) lets the warning settle when
+        the row is superseded or the word comes back.
+        """
+        page = self.rows.read_rows(RowSelector(live_only=True, limit=1000))
+        out = []
+        for row in sorted(page.rows, key=lambda r: (r.ref.table, r.ref.ordinal)):
+            root = self.gaps.lineage_root(row.ref)
+            for usage in self.terms.violations(row.content):
+                out.append((f"term:{root}:{usage.term}", row, usage))
+        return out
 
     # --- criterion evaluation ---
 
