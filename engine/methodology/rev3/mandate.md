@@ -37,10 +37,13 @@ session can die at any moment and a new one resumes losslessly from `plan_status
    plan with zero recorded challenges means the interview under-challenged — agreeable
    form-filling is this tool's defining failure mode.
 
-6. **Questions hit the DB first.** `file_question` BEFORE asking the user anything you
-   cannot resolve this turn — the DB must already hold the question when a session dies
-   mid-answer. `resolve_question` when answered. A question that lived only in conversation
-   is a question the plan lost.
+6. **Questions hit the DB first.** BEFORE asking the user anything you cannot resolve this
+   turn, file the row you would have written with `provenance: assumed` and
+   `assumption_kind: intent`, carrying your best answer. The DB must already hold the
+   question when a session dies mid-answer, and an open assumption *is* the question — it
+   surfaces in `next_gaps()` until it is settled. `resolve_assumption` settles it, quoting
+   the user's answer. A question that lived only in conversation is a question the plan
+   lost.
 
 7. **Self-review before gate.** Before calling run_gate(n), run the package's judgment
    checklist from its script and fix what you find. Gates verify completeness; self-review is
@@ -55,14 +58,21 @@ silently.
 
 **Corrections, never duplicates.** A wrong or outdated row is never edited around and never
 resubmitted as a near-duplicate. `supersede_row` creates the corrected successor with
-recorded lineage; `retire_row` cuts a row that should not exist; `confirm_assumption`
-upgrades an assumed(intent) row the user has just answered (quote their answer). Links and
-child rows follow the successor automatically.
+recorded lineage; `retire_row` cuts a row that should not exist; `resolve_assumption`
+upgrades an assumed(intent) row the user has just answered, in place, quoting their answer.
+Links and child rows follow the successor automatically.
 
 **Link decisions to what they touch.** Significance is computed from links (a decision
 touching a component or contract is significant and requires alternatives) — an unlinked
-decision hides from that heuristic and from every trace query. Every `record_decision`
-carries the refs it bears on.
+decision hides from that heuristic and from every trace query. Every decision row carries
+the refs it bears on, in its `links`.
 
-**Batching.** Converse naturally, then submit related facts as one batched call — never one
-row per exchange. Each row gets its own verdict; fix and resubmit only rejections.
+**Batching.** Every row is filed through one call, `submit_rows`, which takes a batch: each
+row names the `table` it belongs to, its `content`, a `name` of its own, its provenance and
+its links. So converse naturally, then submit related facts as one batched call — never one
+row per exchange. Each row gets its own verdict; fix and resubmit only rejections, and reuse
+the same `idempotency_key` if you are unsure whether a call landed.
+
+**Every row is named.** The `name` is not decoration and there is no default: it is what the
+tool says about the row wherever the row is mentioned, with the address beside it. Name the
+row for what it asserts, not for where it sits.

@@ -5,15 +5,18 @@ you design it from the recorded use cases and requirements, present it with rati
 the user adjudicates. Propose, don't interrogate.
 
 ## Coverage checklist — synthesize all of these
-- **Entities** (`submit_entities`): the domain nouns, each with a one-line description and
-  a **lifecycle judgment** — `has_lifecycle=true` (a state machine follows) or `false` +
+Everything here is filed with `submit_rows`; the row's `table` says what it is, and each
+child carries a `belongs_to` link to its owner.
+- **`entities`**: the domain nouns, each with a one-line description and a **lifecycle
+  judgment** — `has_lifecycle=true` (a state machine follows) or `false` +
   `lifecycle_reason`.
-- **CRUD grid** (`submit_crud`): every entity × C/R/U/D names the responsible
+- **`crud_grid`** (belongs to its entity): every entity × C/R/U/D names the responsible
   actor/component, or is an explicit `na=true` + `na_reason`. D cells record
   `children_on_delete`.
-- **State machines** (`submit_states` / `submit_state_cells`): for every lifecycle entity —
-  states, events, and every state × event cell as a `transition_to` or an explicit
-  `impossible` + reason. Undefined cells are where production surprises live.
+- **`state_machines`** (belongs to its entity) and **`sm_cells`** (belongs to its machine):
+  for every lifecycle entity — states, events, and every state × event cell as a
+  `transition_to` or an explicit `impossible` + reason. Undefined cells are where
+  production surprises live.
 - **Input domains:** for the values the system accepts, record range/format/units
   judgments as decisions or unwanted-type requirements linked to the entity.
 
@@ -30,7 +33,7 @@ the user adjudicates. Propose, don't interrogate.
 - An `n/a` CRUD cell contradicted by a use-case step is engine-detected and filed as a
   conflict — resolve them with the user, not by silently editing.
 - Lifecycle judgments you make without user input are `assumed`/`intent` until adjudicated;
-  when the user answers, `confirm_assumption` (or `supersede_row` if they correct you).
+  when the user answers, `resolve_assumption` (or `supersede_row` if they correct you).
 
 ## Self-review before gate
 - Would two entities always change together for the same reason? Merge them.

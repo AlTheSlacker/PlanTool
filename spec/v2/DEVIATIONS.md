@@ -850,3 +850,56 @@ must be remembered into one that cannot be undone by accident.
 exempt at runtime — the tool must not edit the owner's methodology in flight. So the check
 for that content moved into the test suite, where it immediately found the mandate telling
 every cold planner to resume from a call that does not exist.
+
+---
+
+## D21 — The plan is rendered to a document the owner reads, and only in that direction
+
+**Owner's ruling, 2026-07-22.** Put to him as a question the last planning package could not
+be executed without, and answered before any of it was built.
+
+**Plan:** nothing. `V2_BUILD_PLAN.md` scoped plan extraction and rendering out of the build
+entirely, so no contract renders anything and the frozen plan declares none.
+
+**v2:** `render_plan` writes `plan.md` into the workspace from the live rows. There is no
+import, no round-trippable bundle, and no way for anything on disk to become plan content.
+
+**Why the charter is not reversed by this.** What the charter cut was a `plan.yaml` you could
+edit outside the tool and read back in — a second write path into the plan, next to the one
+that holds provenance, supersession, containment and naming. That is still cut and is the
+part worth having cut. What is built is one direction: rows out, formatted, into a file. The
+database remains the only source of truth and the file is a photograph of it.
+
+**Why it had to exist at all.** The last package's procedure is: render, skim it with the
+owner, gate, finalize, render again. The skim is the last cheap moment for "that is not what
+I meant" — everything after it costs a revision — and it is not replaceable by reading rows
+back through the tool. Nobody catches a contradiction between package 2 and package 6 by
+paging through `read_rows`; that contradiction is only visible when the whole plan is in
+front of one pair of eyes at once. Without the render the package could not be run, which is
+where F34 and F35 both ended up.
+
+**Two properties that fall out of the direction, and both are load-bearing.**
+
+*The document goes to disk; the receipt comes back.* `requirements:62` says a full-plan dump
+is never the rehydration path, and a tool that returned the whole rendered plan as a string
+would be exactly that under a friendlier name. So the call returns where the file went and
+what went into it. The owner opens the file; the planner keeps reading through `read_rows`.
+
+*Addresses are annotated, never rewritten* — D19's rule, applied in the one artefact read end
+to end. A row's prose citing `contracts:52` is the owner's text and is served as written; the
+resolution goes in a line beneath the row. That is also where F17 becomes visible to the only
+person who can act on it: a citation whose row was superseded resolves to a name and a state,
+and one that reaches nothing says so.
+
+**`get_auxiliary` is exposed in the same act, for the same reason.** The red-team script is a
+content asset `requirements:71` ships, the guidance service could already serve it, and no
+tool exposed it — so the red-team session, which is by design a fresh session that has been
+told to fetch its own brief, could not fetch it. Same shape as D18's widening and the same
+justification: it is a read, and the alternative was a methodology that names a document the
+tool will not hand over.
+
+**What stops this drifting.** Both tools carry `DEVIATION` in place of a contract address
+rather than a plausible-looking `contracts:N`, and a test requires that every tool carrying it
+appears in `ADDED` with its reason, and that every entry there is a tool that exists. The
+coverage test reads plan → surface and would never have noticed a tool nothing asked for;
+this reads the other way.

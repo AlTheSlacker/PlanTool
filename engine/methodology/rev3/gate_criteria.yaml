@@ -340,15 +340,15 @@ packages:
           Disposition it — fixed (linking the corrected rows), accepted (the owner's
           knowing risk acceptance), or spiked (linking the spike) — and record why.
 
-  # --- package 8: freeze ----------------------------------------------------------------
+  # --- package 8: finalization ------------------------------------------------------------
   - package: 8
     criteria:
       - id: all_prior_gates_green
         type: prior_gates_green
         problem: "the package-{package} gate has {count} open hole(s)"
         fix: >-
-          Run that gate for its row-level holes and work them with the owner. Freeze
-          requires every earlier gate green.
+          Run that gate for its row-level holes and work them with the owner.
+          Finalization requires every earlier gate green.
 
       - id: no_open_conflicts
         type: no_open_conflicts

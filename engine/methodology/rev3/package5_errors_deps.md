@@ -4,17 +4,19 @@
 failure handling; the user adjudicates trade-offs (cost of resilience vs. blast radius).
 
 ## Coverage checklist — synthesize all of these
-- **External dependencies** (`submit_dependencies`): every service, API, library, filesystem,
+Everything here is filed with `submit_rows`; the row's `table` says what it is.
+- **`dependencies`**: every service, API, library, filesystem,
   or queue outside the planned system's control. If there are genuinely none, record a
   decision whose text contains "no external dependencies" with the rationale — the gate
   accepts nothing less explicit.
-- **The five failure modes per dependency** (`submit_dep_failure_modes`) — handling for each:
+- **The five failure modes per dependency** (`dep_failure_modes`, each belonging to its
+  dependency) — handling for each:
   1. **unavailable** — it's down or unreachable.
   2. **slow** — it answers, eventually. Often worse than down; name the timeout.
   3. **malformed** — it answers with garbage or a shape you don't expect.
   4. **auth** — credentials expired, revoked, or insufficient.
   5. **partial** — it half-worked (page 3 of 5, batch item 7 failed). The mode everyone forgets.
-- **Cross-cutting judgments as linked decisions** (`record_decision` + links):
+- **Cross-cutting judgments as linked `decisions` rows** (each with its `links`):
   concurrency (what races), idempotency (what may be retried and how dedup works),
   migration (how existing data moves), observability (what is logged/metered so the failure
   handling can be seen working).

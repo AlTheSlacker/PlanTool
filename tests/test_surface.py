@@ -27,7 +27,9 @@ from engine.door import (
 )
 from engine.storage import Storage
 from engine.surface import (
+    ADDED,
     DEFERRED,
+    DEVIATION,
     EXCLUDED,
     MOOT_OUTCOMES,
     REGISTRY,
@@ -101,6 +103,20 @@ class TestTheDenominator:
         """The outstanding-problem rule: bound to a named gate, never floating."""
         for absence in DEFERRED:
             assert re.search(r"\bM\d\b", absence.reason), absence.call
+
+    def test_every_tool_without_a_contract_says_so_and_says_why(self):
+        """The coverage test reads plan → surface and would never notice a tool that no
+        contract asked for. This reads the other way: a tool carrying no contract address
+        must appear in `ADDED` with the deviation that decided it, and an entry there must
+        be a tool that exists. Both halves, because a list that drifts either way is a list
+        the next reader learns to skip."""
+        undeclared = {
+            tool.name for tool in REGISTRY.values() if tool.contract == DEVIATION
+        }
+        named = {absence.call for absence in ADDED}
+        assert undeclared == named, undeclared ^ named
+        for absence in ADDED:
+            assert absence.reason.strip(), absence.call
 
     def test_the_writer_lock_calls_are_excluded_and_not_exposed(self):
         for absence in EXCLUDED:
@@ -219,13 +235,7 @@ class TestTheMethodologyNamesReachableCalls:
     #: Named in rev 3 and not exposed, each with the reason and where it is owed. Same
     #: shape as the registry's own absences, for the same reason: an exception with no
     #: entry fails the suite, and an entry is a visible act with a sentence attached.
-    NOT_YET = {
-        "get_stage_prompt": "v1's name for the package script, and `stage` is retired; "
-                            "rev 3's outstanding half, owed by M6",
-        "get_plan_pack": "v1's bulk read; v2 reads through read_rows; owed by M6",
-        "export_plan": "no v2 contract exists for it; owed by M6",
-        "freeze_plan": "no v2 contract exists for it; owed by M6",
-    }
+    NOT_YET: dict[str, str] = {}
 
     def calls_named_in_rev3(self) -> dict[str, str]:
         found: dict[str, str] = {}
@@ -249,13 +259,42 @@ class TestTheMethodologyNamesReachableCalls:
         }
         assert not unreachable, unreachable
 
-    def test_package_eight_is_the_one_that_cannot_be_run(self):
-        """Stated as a test so it is a fact rather than a note. `export_plan` and
-        `freeze_plan` are the whole of package 8's procedure and neither has a contract, so
-        the methodology's last package is currently unexecutable. When M6 closes this, the
-        test fails and gets deleted — which is the point of writing it down."""
-        assert "export_plan" in self.NOT_YET
-        assert "freeze_plan" in self.NOT_YET
+    def test_every_v1_call_name_is_gone(self):
+        """The scripts addressed v1's tool surface until 2026-07-22.
+
+        The regex above only sees a name written as a call — `name()`, `name(3)` — and most
+        of these were written as bare backticked identifiers, which is how eighteen of them
+        sat behind a check that found four. So this reads the assets as text. The list is
+        v1's surface, taken from `archive/v1/`; nothing on it may reappear.
+
+        YAML comments are skipped, and only they: the manifest's provenance note records
+        what was replaced and by what, which is the one place naming a dead call is the
+        point. Everything else in these files is either served to a planner or read by the
+        engine.
+        """
+        gone = (
+            "submit_use_cases", "submit_uc_extensions", "submit_requirements",
+            "submit_entities", "submit_crud", "submit_states", "submit_state_cells",
+            "submit_dependencies", "submit_dep_failure_modes", "submit_components",
+            "submit_contracts", "submit_contract_deps", "record_decision",
+            "confirm_assumption", "file_question", "resolve_question", "get_rows",
+            "get_plan_pack", "get_stage_prompt", "disposition_finding", "export_plan",
+            "freeze_plan",
+        )
+        offences = []
+        rev3 = ENGINE / "methodology" / "rev3"
+        for path in sorted(rev3.rglob("*")):
+            if path.suffix not in (".md", ".yaml", ".yml"):
+                continue
+            for lineno, line in enumerate(
+                path.read_text(encoding="utf-8").splitlines(), 1
+            ):
+                if path.suffix != ".md" and line.lstrip().startswith("#"):
+                    continue
+                for name in gone:
+                    if name in line:
+                        offences.append(f"{path.name}:{lineno} names {name}")
+        assert not offences, offences
 
     def test_no_declared_absence_has_quietly_been_built(self):
         """An exception that is no longer true is worse than none: it teaches the reader to
