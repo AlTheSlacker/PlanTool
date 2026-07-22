@@ -7,8 +7,11 @@ author session dispositions later.**
 
 ## Setup
 
-1. `get_plan_pack("full")` — the whole plan, every row with its `table:id` ref.
-2. Read it end to end before filing anything. Contradictions live *between* sections.
+1. `read_rows` with a live-only selector, paged until you have every row — you are the one
+   caller entitled to the whole plan, and reads are paginated for everyone.
+2. Read it end to end before filing anything. Contradictions live *between* sections, so a
+   partial read finds the easy half. If you cannot hold it all, work table by table and
+   leave a note for the session that continues; findings checkpoint, reading does not.
 3. File each issue as you confirm it: `file_finding(source="redteam", text, links)` —
    text states what is wrong, where, and why it matters; links cite the implicated rows.
    File one finding per issue, not one omnibus finding.
@@ -18,9 +21,9 @@ author session dispositions later.**
 The engine could not code-enforce these; you are the enforcement:
 
 1. **Laundered decisions.** Rows upgraded `assumed→decided` whose `provenance_note` quote
-   does not read like something a human actually said (`get_rows` with
-   `include_inactive=true` shows lineage). A paraphrase of the model's own proposal is not
-   user evidence.
+   does not read like something a human actually said (`read_rows` without the live-only
+   filter shows the superseded originals, so you can see the lineage). A paraphrase of the
+   model's own proposal is not user evidence.
 2. **Mock-shaped spikes.** Spike `method`s that never touched the real dependency but
    recorded `confirmed`. Read the evidence_summary against the method — does the
    observation prove the hypothesis, or just that the probe ran?

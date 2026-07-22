@@ -29,13 +29,15 @@ proposal-first wherever you can form a defensible default.
   asked; intent-assumptions get asked, not guessed.
 
 ## How package-1 facts are recorded (the gate queries these shapes)
-- Each goal: `record_decision` with text starting `Goal:` and the measurable success
+
+Everything is filed with `submit_rows`; the row's `table` says what it is.
+- Each goal: a `decisions` row whose text starts `Goal:`, with the measurable success
   criterion in `rationale`.
-- Each exclusion: text starting `Non-goal:`.
-- The target stack: text starting `Stack:` (language / platform / runtime), with the
-  alternatives that were considered.
-- Constraints often make good ubiquitous/state requirements (`submit_requirements`);
-  core domain nouns can be filed early as entities (`submit_entities`).
+- Each exclusion: a `decisions` row whose text starts `Non-goal:`.
+- The target stack: a `decisions` row whose text starts `Stack:` (language / platform /
+  runtime), with the alternatives that were considered.
+- Constraints often make good ubiquitous/state `requirements` rows; core domain nouns can
+  be filed early into `entities`.
 
 ## Self-review before gate
 - Does every goal have a success criterion an acceptance test could check?

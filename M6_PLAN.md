@@ -53,26 +53,50 @@ characteristic risk of that architectural move. **Sweep every remaining v1 FK ag
 rather than finding a third by accident.** v1 lives at `archive/v1/` — its schema is the
 checklist. Both known instances were repaired as *typed links*, not typed tables.
 
-### 2.2 Methodology rev 3, second half
-Rev 3 carries v2's vocabulary but still names v1's tool surface (`submit_use_cases`, …).
+### 2.2 Methodology rev 3, second half — **DONE 2026-07-22**
+Rev 3 carried v2's vocabulary but still named v1's tool surface. That is now closed: every
+call the assets name is one the surface exposes, and a test reads the assets as text against
+v1's surface (taken from `archive/v1/`) so none of them can come back.
 
-**Sharpened 2026-07-22 by building the surface, DEFECTS.md F34.** This was one bullet saying
-the scripts "still address v1's tool surface", and that wording was true and too vague to act
-on. Four calls now have names, reasons and a home in `tests/test_surface.py`:
-- `next_gap` in the **mandate** — the first line every cold planner reads, telling it to
-  resume from a call that does not exist. **Fixed**, and the revision stamp moved with it.
-- `get_stage_prompt` — v1's name for the package script, and it carries a retired word in a
-  shipped asset.
-- `get_plan_pack` — v1's bulk read; v2 reads through `read_rows`.
-- `export_plan` and `freeze_plan` — **these two are the whole of package 8's procedure and
-  no v2 contract exists for either, so the methodology's last package cannot be executed.**
-  That is missing contracts, not a rename, and it is the largest single item left in rev 3.
-The assets are `engine/methodology/rev3/package1_context.md` … `package8_freeze.md`.
+**Twenty-two calls, not four.** The item said four, because the check written to hold them
+used the door's `CALL` pattern, which only matches a name written *as a call* — and eighteen
+of them were written as bare backticked identifiers. Six of the eight package scripts told
+the planner to file rows through calls that do not exist. **DEFECTS.md F37**, and its lesson
+is about reuse: a check borrowed from another context keeps that context's tradeoffs, and
+they are invisible at the new call site.
+
+What each one came to, because the sizes were nothing like equal:
+- `next_gap` → `next_gaps` in the **mandate**, and `get_stage_prompt` → `get_package_script`:
+  renames.
+- every `submit_*` (twelve of them) and `record_decision` → one `submit_rows` batch whose
+  rows name their own table; `confirm_assumption` → `resolve_assumption`; `get_rows` →
+  `read_rows`; `disposition_finding` → `resolve_finding`.
+- `file_question` / `resolve_question` → the mandate's clause 6 rewritten around the
+  assumed-row-then-`resolve_assumption` loop, which is how v2 already holds an open question.
+- `get_plan_pack("full")` → a paged `read_rows` walk in the red-team script. A change in how
+  the red team reads, not a rename.
+- `freeze_plan` → `finalize_plan`, but the *meaning* moved with the name, so package 8's
+  prose was rewritten rather than renamed (v1 froze permanently; v2 reopens through a
+  recorded revision), and the package was renamed **Freeze → Finalization** to match the
+  glossary.
+- `export_plan` → **`render_plan`, newly built** (`engine/render.py`, DEVIATIONS D21). The
+  only one with nothing behind it, because rendering was scoped out of the charter. The
+  owner ruled that the last package keeps a read-only render and that the round-trippable
+  bundle stays cut. **DEFECTS.md F36** records F35's resolution.
+- `get_auxiliary` exposed, so the red-team session can fetch its own script.
+
+**Found while doing it and NOT fixed — DEFECTS.md F38:** `findings` names two different
+stores. `file_finding` writes a service table; the package-7 gate criteria read `plan_rows`.
+A planner following the red-team script exactly files findings the gate cannot see. Bound to
+the M6 gate, because choosing which store wins is a design decision about vocabulary.
+
+The assets are `engine/methodology/rev3/package1_context.md` … `package8_finalization.md`.
 `engine/methodology/rev2/` is frozen v1 provenance and **must never be edited**.
 Never invent methodology (`findings:4`, `decisions:61`) — it is vendored, and a component
 that starts *generating* guidance instead of serving it has re-opened `findings:4`.
 
-Two additions belong in rev 3 and are new scope, both from this session:
+Two additions belong in rev 3 and are new scope, both still open — the call-surface work
+above did not touch them:
 - a **packaging step** at the architecture package: D13 makes package membership mandatory
   and `finalize_plan` refuses an unpackaged task, so the script must lead the owner to a cut.
   The tool enforces the invariant; the methodology leads; the owner decides.

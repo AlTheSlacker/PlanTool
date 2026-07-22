@@ -56,6 +56,7 @@ from engine.graph import LinkGraph
 from engine.guidance import Guidance
 from engine.models import LinkSpec, Provenance, RowRef, RowSelector, RowSubmission
 from engine.obligations import ObligationService
+from engine.render import PlanRender
 from engine.resume import ResumeService
 from engine.rows import RowService
 from engine.storage import Storage
@@ -329,6 +330,13 @@ def _t(name, service, method, contract, summary, *params, writes=False) -> Tool:
     return Tool(name, service, method, contract, summary, tuple(params), writes)
 
 
+#: The contract address of a tool the frozen plan never declared. It is a word rather than
+#: an address on purpose: a plausible-looking `contracts:N` here would be a citation to a
+#: row that says something else, which is the one failure this whole build is about. Every
+#: tool carrying it must appear in `ADDED` below, and a test enforces that.
+DEVIATION = "deviation"
+
+
 #: The tools, grouped by the task that owns them. Order is the frozen plan's own order, so
 #: a reader comparing the two reads them the same way round.
 REGISTRY: dict[str, Tool] = {
@@ -529,6 +537,14 @@ REGISTRY: dict[str, Tool] = {
         _t("get_package_script", "guidance", "get_package_script", "contracts:65",
            "The script for one planning package.",
            Param("package", "int", note="which package's script")),
+        _t("get_auxiliary", "guidance", "get_auxiliary", DEVIATION,
+           "A script that belongs to no single package — the red team's, for one.",
+           Param("name", "str", note="which auxiliary script")),
+        # --- the render (components:15, by deviation) ---
+        _t("render_plan", "renderer", "render_plan", DEVIATION,
+           "Write the plan to a document in the workspace for the owner to read; the "
+           "rows stay the only source of truth.",
+           writes=False),
     )
 }
 
@@ -567,6 +583,19 @@ DEFERRED: tuple[Absence, ...] = (
     Absence("contracts:45", "apply_revision", "revision-service; owed by M7"),
     Absence("contracts:46", "abandon_revision", "revision-service; owed by M7"),
     Absence("contracts:57", "adjudicate_repercussion", "revision-service; owed by M7"),
+)
+
+#: The other direction from `DEFERRED`: tools that exist with no contract behind them. The
+#: coverage test only reads plan → surface, so without this list a tool could be added with
+#: no contract, no reason and nobody noticing — the mirror of the shortfall that list
+#: catches. Each entry names the deviation that decided it.
+ADDED: tuple[Absence, ...] = (
+    Absence(DEVIATION, "render_plan",
+            "the plan scoped plan rendering out, and the last planning package ends by "
+            "skimming a rendered plan with the owner (D21)"),
+    Absence(DEVIATION, "get_auxiliary",
+            "the red-team script is a content asset requirements:71 ships and no contract "
+            "served it, so the red team could not fetch its own brief (D21)"),
 )
 
 #: `contracts:50`'s `NotWriter`, struck rather than implemented. Recorded here because an
@@ -727,6 +756,10 @@ class Surface:
             obligations=self.obligations,
         )
         self.guidance = guidance or Guidance()
+        # `renderer`, not `render`: the door's `render` is a module-level function used a
+        # few lines below in `dispatch`, and two things called the same word in one class
+        # is exactly the collision this build keeps writing down.
+        self.renderer = PlanRender(storage, self.rows)
         self.resume = ResumeService(
             storage, gaps=self.gaps, warnings=self.warns, guidance=self.guidance
         )

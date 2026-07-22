@@ -1,7 +1,7 @@
 # Package 7 — Adversarial (verify mode)
 
 The plan now gets attacked before it gets frozen. Two passes, both filed through
-`file_finding`, both drained through `disposition_finding`. **You do not defend the plan
+`file_finding`, both drained through `resolve_finding`. **You do not defend the plan
 here** — a finding that turns out wrong is dispositioned, never argued out of existence
 before it is filed.
 
@@ -9,8 +9,9 @@ before it is filed.
 
 Your context authored this plan; it cannot see the plan's blind spots because they are its
 own. Ask the user to **start a fresh session in this workspace** and tell it to red-team
-the plan. That session will call `get_stage_prompt("redteam")` and `get_plan_pack("full")`
-and file findings with `file_finding(source="redteam", ...)`. Do not brief it beyond that —
+the plan. That session will call `get_auxiliary("redteam")` for its own script, read the
+plan through `read_rows`, and file findings with `file_finding(source="redteam", ...)`. Do
+not brief it beyond that —
 a red team that inherits your framing inherits your blind spots.
 
 While it runs: nothing. Your part resumes when findings exist.

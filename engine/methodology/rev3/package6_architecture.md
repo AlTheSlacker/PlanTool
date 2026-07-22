@@ -5,14 +5,16 @@ user adjudicates. Contracts are recorded to structured-signature level in the ta
 stack's notation (recorded, never compiled).
 
 ## Coverage checklist — synthesize all of these
-- **Components** (`submit_components`): each with a single responsibility you can state in
-  one sentence — if you can't, re-cut it.
-- **Contracts** (`submit_contracts`): every deliverable component gets ≥1. Structurally
-  complete means: `params` typed (or explicitly `[]`), a `returns` type, and ≥1 named
-  error with semantics or `cannot_fail=true` + reason. "What does the caller see when it
-  fails?" is part of the signature, not an implementation detail.
-- **Dependency edges** (`submit_contract_deps`): who consumes each contract. A contract
-  with no consumer and no `is_external` mark is invented scope — cut it.
+Everything here is filed with `submit_rows`; the row's `table` says what it is.
+- **`components`**: each with a single responsibility you can state in one sentence — if you
+  can't, re-cut it.
+- **`contracts`**, each belonging to its component: every deliverable component gets ≥1.
+  Structurally complete means: `params` typed (or explicitly `[]`), a `returns` type, and ≥1
+  named error with semantics or `cannot_fail=true` + reason. "What does the caller see when
+  it fails?" is part of the signature, not an implementation detail.
+- **Dependency edges:** who consumes each contract, recorded as a `depends_on` link from the
+  consuming contract to the one it needs. A contract with no consumer and no `is_external`
+  mark is invented scope — cut it.
 - **Traceability** (`links`): every contract links to the requirement(s) it satisfies;
   every requirement is satisfied by ≥1 contract or explicitly deferred by a linked
   decision with rationale.
@@ -28,7 +30,7 @@ stack's notation (recorded, never compiled).
   on the adjudicating decision.
 
 ## Conduct here
-- Design decisions here are significant by the code heuristic: `record_decision` linked to
+- Design decisions here are significant by the code heuristic: a `decisions` row linked to
   a component/contract is rejected without `alternatives`. That is the point — name what
   you rejected and why, one line each. **Link the decision to the components/contracts it
   touches, or the heuristic cannot see it.**

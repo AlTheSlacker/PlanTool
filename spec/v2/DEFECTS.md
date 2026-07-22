@@ -1564,3 +1564,99 @@ frozen and a finalized plan reopens through `request_revision`. Only `export_pla
 genuinely absent, and it is absent because plan rendering was scoped out of the charter. The
 lesson is F15's, again: **when a mechanical check reports an absence, look for a live
 successor with the same behaviour under a different name before classifying it as missing.**
+
+---
+
+## F36 — The final gate's own criteria are resolved; the render check never was
+
+**Found:** 2026-07-22, closing F35 out.
+
+**Resolution of F35, recorded here rather than by editing it.** The owner ruled that the last
+package keeps a human-readable render, so the script's sentence was the wrong half to keep.
+The render exists now (`render_plan`, DEVIATIONS D21) and the script says what the gate
+actually checks: prior gates green, no open conflicts, and *the render is not gated* — with
+the reason stated to the planner, which is that whether the plan says what the owner meant is
+a judgment and the gate only checks what a machine can check. The `plan.yaml` round-trip
+check is gone entirely, because the round-trippable bundle it would have checked was never
+built and is not going to be.
+
+**What F35 got right and is worth keeping:** the class it named. A content asset describing
+another content asset's contents, both well-formed, disagreeing, with nothing holding them
+together. Nothing added here closes that class — this instance was fixed by hand, and the
+next one will be found the same way.
+
+---
+
+## F37 — Eighteen v1 call names sat behind a check that could only see four
+
+**Found:** 2026-07-22, by listing every backticked identifier in the rev-3 assets before
+starting the renames, rather than by trusting the list of what needed renaming.
+
+**What was believed.** F34 named four calls the scripts still addressed from v1's tool
+surface — `next_gap`, `get_stage_prompt`, `get_plan_pack`, and the package-8 pair — and the
+surface's registry test was written to hold them so they could not be lost. That test reads
+the assets with the door's `CALL` pattern, which matches a name *written as a call*:
+`next_gaps()`, `run_gate(8)`.
+
+**What was actually there.** Eighteen more, every one written as a bare backticked identifier
+and therefore invisible to that pattern: `submit_use_cases`, `submit_requirements`,
+`submit_entities`, `submit_crud`, `submit_states`, `submit_state_cells`,
+`submit_dependencies`, `submit_dep_failure_modes`, `submit_components`, `submit_contracts`,
+`submit_contract_deps`, `submit_uc_extensions`, `record_decision`, `confirm_assumption`,
+`file_question`, `resolve_question`, `get_rows`, `disposition_finding`. Six of the eight
+package scripts told the planner to file rows through calls that do not exist. Package 1
+could not be executed either, and nobody had noticed, because the check that was supposed to
+be the mechanism for exactly this reported four.
+
+**Why the check could not see them.** It was borrowed. `CALL` was written for the door, where
+it scans *outgoing prose the tool composed* and where a narrow pattern is right — a false
+rejection there fails a call that was working, so it deliberately does not match a name in
+running text. Reused against the methodology it inherited that narrowness, and the methodology
+is running text. The pattern was correct in both places and the reuse was still wrong.
+
+**The general form, which is the point.** A check reused in a second context keeps the
+tradeoffs of the first, and those tradeoffs are invisible at the new call site — the reader
+sees a check named for what it finds, not for what it was tuned to ignore. The mechanism
+existed, ran green, and was measuring something narrower than its name — which is the same
+shape as F23 and F26's missing denominators, arriving through reuse instead of omission.
+
+**Fixed.** All eighteen replaced with v2's calls: every `submit_*` is one `submit_rows` batch
+whose rows name their table, `record_decision` is a `decisions` row, `confirm_assumption` is
+`resolve_assumption`, `get_rows` is `read_rows`, `disposition_finding` is `resolve_finding`,
+and `file_question`/`resolve_question` became the mandate's assumed-row-then-resolve loop,
+which is how v2 already holds an open question. The new check reads the assets as text
+against v1's surface taken from `archive/v1/`, and does not use `CALL`.
+
+---
+
+## F38 — Findings are two different things with one name, and the package-7 gate reads the empty one
+
+**Found:** 2026-07-22, while replacing `disposition_finding` in the package-7 script.
+
+**Not fixed.** Bound to the M6 gate.
+
+**The two things.** `file_finding` (`contracts:33`) writes a row into the `findings` SQL
+table, with `finding_refs` beside it — a service table with its own lifecycle. The frozen plan
+also carries `findings:1` … `findings:13` as *plan rows*, addressed the way every plan row is
+addressed, and the methodology's package-7 gate criteria read `table: findings` through
+`read_rows`, which reads `plan_rows`.
+
+**The consequence.** A planner that follows the red-team script exactly — file every issue
+with `file_finding` — files them all into the service table, and then the package-7 gate looks
+in `plan_rows`, finds nothing, and reports "no adversarial findings recorded". The gate is
+unpassable by the route the methodology prescribes, and the second criterion is worse than
+unpassable: it checks `disposition` and `disposition_rationale`, which are v1's field names
+for what the service now calls `outcome` and `rationale`, so it would find nothing to check
+even if the rows were in the right place.
+
+**Why this is not F30 again, quite.** F30 was three readers and no writer. This is a writer
+and a reader that both work, addressing two different stores that share a word. The gate is
+well-formed, the contract is well-formed, and the disagreement is in the vocabulary — which is
+what `GLOSSARY.md` exists to prevent and did not, because both uses predate it and neither
+looks wrong on its own.
+
+**What the fix needs, and why it is not made here.** It is a design decision, not a repair:
+either findings are plan rows (and `file_finding` writes one, gaining names, provenance and
+supersession, and losing its own lifecycle table), or they are service rows (and the package-7
+gate criteria must read the finding service, which no criterion type currently can). Choosing
+by which is easier to code would be choosing the vocabulary by accident, again.

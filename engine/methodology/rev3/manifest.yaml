@@ -9,17 +9,20 @@
 # Provenance: rev 2 (vendored verbatim from PlanTool v1, archive/v1/server/prompts/,
 # 2026-07-15), carried forward at M5b with v2's vocabulary applied — `stage` retired for
 # `package` throughout, and the four structural levels of D13/D14 named as the glossary
-# names them. The scripts still address v1's tool surface (submit_use_cases,
-# record_decision, ...); replacing those with v2's calls is rev 3's outstanding half and
-# is bound to the M6 gate. The mandate's own `next_gap` was corrected to `next_gaps` on
-# 2026-07-22 — it is the first line every planner reads and the call had simply been
-# renamed — and the stamp moved with it.
+# names them.
 #
-# Four calls the scripts still name have no v2 tool behind them at all, which is a larger
-# hole than a rename: `get_stage_prompt`, `get_plan_pack`, `export_plan` and `freeze_plan`.
-# The last two are the whole of package 8's procedure, so package 8 cannot currently be
-# executed. Bound to the M6 gate with the rest of rev 3's outstanding half; the surface's
-# registry test names them so they cannot be lost.
+# The tool surface the scripts address was v1's until 2026-07-22, when the last of it was
+# replaced. What that came to, recorded because the sizes were nothing like equal:
+# `next_gap` -> `next_gaps` and `get_stage_prompt` -> `get_package_script` were renames;
+# `get_plan_pack("full")` became a paged `read_rows` walk, which is a change in how the red
+# team reads rather than a rename; `freeze_plan` was v1's name for `finalize_plan`, but the
+# *meaning* moved with it — v1 froze the plan permanently and v2 reopens a finalized plan
+# through a recorded revision, so package 8's prose was rewritten rather than renamed, and
+# the package with it, since the glossary calls the moment finalization. `export_plan` was
+# the only one with nothing behind it: rendering had been scoped out of the build, and a
+# read-only render was added for it (DEVIATIONS D21). The red-team script had a second,
+# quieter version of the same hole — it is shipped here and nothing served it, so
+# `get_auxiliary` was exposed.
 #
 # **The stamp is the point of this file.** It identified itself as rev 2 until 2026-07-22
 # — revision and stamp both copied along with the content they exist to distinguish, so
@@ -28,7 +31,7 @@
 # (DEFECTS.md F31). Change the stamp whenever the content changes.
 
 revision: 3
-revision_stamp: "plantool-rev3-2026-07-22"
+revision_stamp: "plantool-rev3-2026-07-22b"
 vendored_from: "PlanTool v1 (archive/v1/server/prompts/)"
 mandate: mandate.md
 
@@ -77,9 +80,9 @@ packages:
     script: package7_adversarial.md
     tables: [findings]
   - number: 8
-    name: "Freeze"
+    name: "Finalization"
     mode: verify
-    script: package8_freeze.md
+    script: package8_finalization.md
     tables: []
 
 # Containment: child row type -> its mandatory owning parent row type.

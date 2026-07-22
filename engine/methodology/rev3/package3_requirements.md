@@ -1,8 +1,8 @@
 # Package 3 — Requirements (elicit mode)
 
-The user is the source of truth; you formalise behaviour into EARS-typed slots with
-`submit_requirements`, linking each requirement to the use case(s) it serves
-(`links: ["use_cases:N"]`). Free prose is never accepted — the slots are the requirement.
+The user is the source of truth; you formalise behaviour into EARS-typed slots and file them
+with `submit_rows` into `requirements`, linking each requirement to the use case(s) it serves
+(a `links` entry per target). Free prose is never accepted — the slots are the requirement.
 
 ## Coverage checklist — the five EARS templates (one example each)
 - **ubiquitous** — always true. *The system shall log every state transition.*
