@@ -42,6 +42,7 @@ TIMESTAMP_ROLES = {
     "retired_at": "withdrawn from live reads with a recorded reason",
     "resolved_at": "state_machines — an open thing reached its terminal state",
     "concluded_at": "spikes:  the experiment produced its outcome",
+    "approved_at": "terms: the owner settled a definition the planner proposed",
 }
 
 #: Suffixes whose vocabulary is closed, mapped to their declared members. Only `_at` is

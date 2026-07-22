@@ -21,6 +21,7 @@ from engine.methodology import Methodology, Rule, load
 from engine.models import PlanRow, RowRef, RowSelector
 from engine.references import EXTRACTS_TABLE, SOURCES_TABLE, ReferenceService
 from engine.rows import RowService
+from engine.terms import TermService
 from engine.clock import now
 from engine.idempotency import key
 from engine.storage import Op, Storage
@@ -105,11 +106,16 @@ class GapEngine:
         rows: RowService,
         references: ReferenceService | None = None,
         methodology: Methodology | None = None,
+        terms: TermService | None = None,
     ):
         self.storage = storage
         self.rows = rows
         self.references = references
         self.methodology = methodology or load()
+        #: The glossary, because "which words does this plan agree the meaning of" is an
+        #: interview question like any other — and an unsettled definition is an open
+        #: question only the owner can close, which is exactly what a gap is (D23).
+        self.terms = terms or TermService(storage)
 
     # --- identity (requirements:78) ---
 
@@ -173,6 +179,8 @@ class GapEngine:
             "untraced": self._rule_untraced,
             "open_assumption": self._rule_open_assumption,
             "uncited_section": self._rule_uncited_section,
+            "no_glossary": self._rule_no_glossary,
+            "unsettled_term": self._rule_unsettled_term,
         }.get(rule.type)
         if handler is None:
             raise PlanUnreadable(f"unknown gap rule type {rule.type!r}", rule=rule.id)
@@ -264,6 +272,35 @@ class GapEngine:
                     )
                 )
         return gaps
+
+    def _rule_no_glossary(self, rule: Rule) -> list[Gap]:
+        """The plan has content and has never agreed what a single word means.
+
+        Conditioned on there being rows, so it does not fire into an empty workspace where
+        the package-1 rule is already saying the same thing in more useful words. It asks
+        once and is dismissible: a plan whose vocabulary is genuinely uncontentious is a
+        legitimate answer, and one recorded on the owner's say-so rather than by silence.
+        """
+        if self.terms.glossary():
+            return []
+        if not self.rows.read_rows(RowSelector(live_only=True, limit=1)).total:
+            return []
+        return [self._make(rule)]
+
+    def _rule_unsettled_term(self, rule: Rule) -> list[Gap]:
+        """A definition the planner proposed and the owner has not answered.
+
+        The same shape as an assumed-intent row, and for the same reason: it carries the
+        planner's best answer, it is visible as unsettled, and only the owner can close it.
+        Keyed on the word, which is this table's identity everywhere else, so a dismissal
+        survives the entry being superseded by a redefinition.
+        """
+        return [
+            self._make(
+                rule, extra_key=term.term, word=term.term, definition=term.definition
+            )
+            for term in self.terms.awaiting_approval()
+        ]
 
     # --- overlay ---
 

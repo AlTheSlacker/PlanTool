@@ -48,18 +48,26 @@ no name from us.
 | Sub-task | derived | 1..n per task | `subtasks` |
 | Obligation | enumerated once, frozen | 1..n per sub-task | `obligations` |
 
-### Two layers, and why only one of them is generic
+### Content and structure, and why only one of them is generic
 
-- **Planning layer** — `plan_rows`, generic, JSON content. Every row type shares one table so
-  supersession lineage, typed links and provenance work identically across twenty-odd types
-  (DEVIATIONS.md **D3**).
-- **Execution layer** — `packages`, `tasks`, `subtasks`: real tables, real foreign keys.
+**Corrected 2026-07-22, when the glossary landed.** This section used to say planning layer =
+generic, execution layer = typed, and that line was in the wrong place: `obligations` is
+enumerated by the planning session and is typed, and so now is `terms`. The real distinction
+is **what a row is for**, not when it is written:
 
-The split is deliberate, and F20 and F24 are the evidence for it: both are **relations that
-vanished when v1's typed tables were flattened into generic rows**. A generic row table makes
-rows the unit of migration and edges invisible. The planning layer earns its genericity and
-its two known losses are repaired as typed links; the execution structures, which carry the
-build's own relations, stay typed.
+- **Content** — `plan_rows`, generic, JSON content. A row that makes a **claim about the
+  domain**: a requirement, a decision, a contract, a failure mode. These are interchangeable
+  by design, so one table gives all twenty-odd types supersession lineage, typed links and
+  provenance at once (DEVIATIONS.md **D3**).
+- **Structure** — real tables, real foreign keys. A thing that **constrains or organises
+  other rows**: `packages`, `tasks`, `subtasks`, `obligations`, `terms`. These carry
+  relations of their own, and a relation is exactly what a generic row table loses.
+
+F20 and F24 are the evidence: both are **relations that vanished when v1's typed tables were
+flattened into generic rows**, because a generic row table makes rows the unit of migration
+and edges invisible. `terms` is the third case and it names the reason precisely — a word
+being *redefined* and a word being *replaced* are two different relations, and `plan_rows`
+has one column for both.
 
 ---
 
@@ -157,6 +165,37 @@ resolves because the door knows to ask the finding service, which is what lets t
 share one address space without sharing a table.
 
 The arrow runs one way — a finding names the rows it attacks; rows do not link back.
+
+---
+
+## Not a level, and not a row: term
+
+A **term** is one word this plan has agreed the meaning of, with what it means, optionally
+the row it names, and — when it has been retired — where it may no longer appear, why, and
+what to say instead. It lives in `terms` (DEVIATIONS.md **D23**).
+
+**A definition is proposed and then settled.** The planning session drafts what a word
+means; the owner accepts that wording or writes his own, and a rewrite supersedes the
+proposal so the record shows both. A definition nobody has agreed to is not yet what the word
+means, and the digest says how many are waiting on him.
+
+**A retired word stays in live reads.** Everywhere else in v2 retirement drops a row out of
+live reads. Do that here and the banned list empties, so every check downstream runs, finds
+nothing to ban and reports success — F23's missing denominator, inside the mechanism built
+to prevent F27. Retirement is `ban_scope IS NOT NULL`; liveness is `superseded_at IS NULL`
+and nothing else.
+
+**Redefinition and replacement are different acts**, which is why this is a table and not a
+row type: `plan_rows` spells both `superseded_by`. Redefining sharpens what a word means and
+keeps the old wording behind it; retiring says stop using this word, say that one. A word
+comes *back* by being redefined — it returns with a meaning, and the banned entry keeps its
+reason forever.
+
+**So `terms` is a reserved plan-row table name**, refused at submission with a message
+naming `define_term` — the same mechanism `findings` needed (F38), for the same reason.
+
+*This file is **this build's** vocabulary and stays hand-written; `terms` is what a plan
+built with the tool gets. When v2 plans itself, the two become one thing.*
 
 ---
 

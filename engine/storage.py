@@ -519,8 +519,19 @@ class Storage:
         )
 
     def _migration_steps(self, current: int, target: int) -> list[str]:
-        """No migrations exist yet at schema version 1. A target we have no path to is
-        an error, never a silent no-op (decisions:45)."""
+        """The SQL that moves the store from one schema version to the next.
+
+        One path exists: **3 -> 4**, which adds the glossary. It is here and the earlier
+        bumps are not, and the difference is the test of whether a migration is honest. A
+        `2 -> 3` step would have to invent a name for every finding, which is precisely what
+        that column exists to prevent; a plan that predates the glossary genuinely has an
+        empty one, so the migration states a truth rather than manufacturing one.
+
+        Anything else is an error and never a silent no-op (decisions:45) — including a
+        downgrade, which would have to drop rows to succeed.
+        """
+        if (current, target) == (3, 4):
+            return schema.statements(schema.TERMS_DDL)
         raise ValueError(
             f"no migration path from schema version {current} to {target}"
         )

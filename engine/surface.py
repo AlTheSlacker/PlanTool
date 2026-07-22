@@ -36,6 +36,11 @@ The same shape recurred at the packaging level and cost more: `declare_package`,
 enforceable and not satisfiable stops every plan authored through this surface — DEFECTS.md
 F39. Every tool with no contract behind it appears in `ADDED` with the reason it exists.
 
+The glossary is the third such group (D23) and the plan has nothing to say about it at all —
+it never asks what the words mean (DEFECTS.md F40). `plan_status` names `glossary()` even
+when the plan has no terms yet, because a line that appears only once there are terms can
+never be the line that produces the first one.
+
 **`NotWriter` is moot, not implemented.** `contracts:50` declares it for "a write tool
 invoked without holding the writer lease"; there is no lease, the lock having been removed
 entirely (D5). An outcome whose precondition cannot arise is not an error to raise — it is a
@@ -45,6 +50,7 @@ line to strike, and striking it is recorded rather than assumed.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -67,10 +73,16 @@ from engine.resume import ResumeService
 from engine.rows import RowService
 from engine.storage import Storage
 from engine.tasks import TaskGraphService
+from engine.terms import TermService
 from engine.validation import SpikeSpec, ValidationService
 from engine.warnings import WarningService
 
 LOG_FILENAME = "toolcalls.log"
+
+#: The door's display form as an *input*: `name (table:ordinal)`. It reads the address out
+#: of what this surface printed, so what goes out can come back. Anchored at the end,
+#: because the name in front of it is prose and may hold brackets of its own.
+DISPLAYED = re.compile(r"\(([a-z][a-z0-9_]*:[1-9][0-9]*)\)\s*$")
 
 #: `dep_failure_modes:11`-`15` — the failure-mode vocabulary `contracts:51` labels each
 #: logged event with. `ok` is not one of them: a successful call is not a failure mode, and
@@ -126,9 +138,19 @@ def as_bool(field_name: str, value: Any) -> bool:
 
 
 def as_ref(field_name: str, value: Any) -> RowRef:
+    """An address, in either form the caller could have got it in.
+
+    `requirements:61` is the storage form. `the plan is living (requirements:61)` is the
+    **display** form, and it is the only form this surface ever prints: D19 forbids an
+    address from travelling without the name of what it addresses. So a caller who reads a
+    ref out of one payload and passes it to the next tool is handing back exactly what we
+    printed — and refusing it is the round-trip the door broke once already, when
+    annotation changed a gap key's shape. Whatever the tool emits, the tool accepts.
+    """
     if isinstance(value, str):
+        match = DISPLAYED.search(value)
         try:
-            return RowRef.parse(value)
+            return RowRef.parse(match.group(1) if match else value)
         except ValueError as exc:
             raise _fail(field_name, str(exc), value) from exc
     raise _fail(field_name, "an address like 'requirements:61'", value)
@@ -560,6 +582,48 @@ REGISTRY: dict[str, Tool] = {
         _t("get_auxiliary", "guidance", "get_auxiliary", DEVIATION,
            "A script that belongs to no single package — the red team's, for one.",
            Param("name", "str", note="which auxiliary script")),
+        # --- the glossary (components:2, by deviation) ---
+        _t("define_term", "terms", "define_term", DEVIATION,
+           "Propose what a word means in this plan; the owner settles it. Draft the "
+           "definition yourself — you have just read the rows it appears in.",
+           Param("term", "str", note="the word itself"),
+           Param("definition", "str",
+                 note="what you believe it means here, in a sentence, for the owner to "
+                      "accept or rewrite"),
+           Param("names_ref", "ref", required=False,
+                 note="the row this word names, if it names one"),
+           writes=True),
+        _t("approve_term", "terms", "approve_term", DEVIATION,
+           "Record the owner settling a definition — as proposed, or in his own words.",
+           Param("term", "str", note="the word being settled"),
+           Param("definition", "str", required=False,
+                 note="the owner's own wording, when he rewrote it; omit to accept the "
+                      "proposal as it stands"),
+           writes=True),
+        _t("redefine_term", "terms", "redefine_term", DEVIATION,
+           "Sharpen what a word means, keeping the old wording as history. Also how a "
+           "retired word comes back.",
+           Param("term", "str", note="the word being redefined"),
+           Param("definition", "str", note="what it means now"),
+           Param("names_ref", "ref", required=False,
+                 note="the row it names, if that changed too"),
+           writes=True),
+        _t("retire_term", "terms", "retire_term", DEVIATION,
+           "Take a word out of use, saying where it may no longer appear and what to say "
+           "instead.",
+           Param("term", "str", note="the word being retired"),
+           Param("ban_scope", "str",
+                 note="where it is out: prose, identifier, or both"),
+           Param("ban_reason", "str", note="why, so the next writer can agree with it"),
+           Param("use_instead", "str", required=False,
+                 note="the word to say instead; it must be defined already"),
+           writes=True),
+        _t("glossary", "terms", "glossary", DEVIATION,
+           "Every word this plan has agreed the meaning of, retired ones included."),
+        _t("export_glossary", "terms", "export_glossary", DEVIATION,
+           "Publish the vocabulary as a manifest in the workspace for your own checks to "
+           "read.",
+           writes=False),
         # --- the render (components:15, by deviation) ---
         _t("render_plan", "renderer", "render_plan", DEVIATION,
            "Write the plan to a document in the workspace for the owner to read; the "
@@ -623,6 +687,25 @@ ADDED: tuple[Absence, ...] = (
     Absence(DEVIATION, "assign_task",
             "the other half of D13's membership: the placement is the recorded judgment "
             "and nothing else can record it (D13, F39)"),
+    Absence(DEVIATION, "define_term",
+            "the eight planning packages never ask what the words mean, so a plan could "
+            "not say — and a vocabulary nothing records is the one F27 broke (D23)"),
+    Absence(DEVIATION, "approve_term",
+            "a definition the tool took from a planning session and filed as settled is "
+            "the tool deciding what the owner's words mean; he accepts it or writes his "
+            "own (D23)"),
+    Absence(DEVIATION, "redefine_term",
+            "a meaning sharpens, and the old wording has to stay readable or the change "
+            "reads as a contradiction later (D23)"),
+    Absence(DEVIATION, "retire_term",
+            "retiring a word is the act the whole mechanism exists to make visible, and "
+            "the banned list is what every check downstream counts against (D23)"),
+    Absence(DEVIATION, "glossary",
+            "a writer needs the words before typing, and a resuming planner has no other "
+            "way back to them (D23)"),
+    Absence(DEVIATION, "export_glossary",
+            "the delivery point that achieves the most: the tool publishes the vocabulary "
+            "and the codebase's own checks enforce it, with no judgment exercised (D23)"),
     Absence(DEVIATION, "packaging",
             "package ids are the only way to assign and a declaration returns one once, so "
             "a planner resuming cold could not get back to them (D13, F39)"),
@@ -764,7 +847,12 @@ class Surface:
 
     def __init__(self, storage: Storage, *, guidance: Guidance | None = None):
         self.storage = storage
-        self.rows = RowService(storage)
+        self.terms = TermService(storage)
+        # The glossary is built before the row service, which consults it at submission:
+        # the moment of typing is the only moment at which saying "that word is retired"
+        # changes what gets written (D23).
+        self.rows = RowService(storage, terms=self.terms)
+        self.terms.rows = self.rows
         self.graph = LinkGraph(storage)
         self.conflicts = ConflictService(storage, self.rows)
         self.warns = WarningService(storage)
@@ -774,7 +862,7 @@ class Surface:
         self.findings = FindingService(storage, self.rows)
         self.gates = GateEngine(
             storage, self.rows, self.conflicts, self.warns, gaps=self.gaps,
-            findings=self.findings,
+            findings=self.findings, terms=self.terms,
         )
         self.validation = ValidationService(
             storage, self.rows, self.graph, self.conflicts
@@ -786,7 +874,7 @@ class Surface:
         )
         self.briefs = BriefComposer(
             storage, self.tasks, graph=self.graph, attachments=self.attachments,
-            obligations=self.obligations,
+            obligations=self.obligations, terms=self.terms,
         )
         self.guidance = guidance or Guidance()
         # `renderer`, not `render`: the door's `render` is a module-level function used a
@@ -794,7 +882,8 @@ class Surface:
         # is exactly the collision this build keeps writing down.
         self.renderer = PlanRender(storage, self.rows, self.findings)
         self.resume = ResumeService(
-            storage, gaps=self.gaps, warnings=self.warns, guidance=self.guidance
+            storage, gaps=self.gaps, warnings=self.warns, guidance=self.guidance,
+            terms=self.terms,
         )
         self.log = ObservabilityLog(storage.workspace)
         self._resolve = resolver_from(self.rows, self.findings)

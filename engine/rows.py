@@ -67,6 +67,12 @@ RESERVED_TABLES = {
         "is write-once, so findings have a store of their own. File it with file_finding, "
         "which addresses it as findings:N and links it to the rows it attacks"
     ),
+    "terms": (
+        "'terms' is not a plan-row table: the glossary is a real table, because a word "
+        "being *redefined* and a word being *replaced* are two different relations that "
+        "supersession collapses into one. Record it with define_term, which takes the word "
+        "and what it means here"
+    ),
 }
 
 
@@ -80,9 +86,19 @@ class RowService:
         storage: Storage,
         detector: ContradictionDetector = _no_contradictions,
         containment: dict[str, str] | None = None,
+        terms=None,
     ):
         self.storage = storage
         self.detect_contradiction = detector
+        #: The plan's glossary, consulted at submission so a retired word is mentioned at
+        #: the moment of typing rather than at a gate a week later. Constructed here rather
+        #: than injected by the surface alone, because a scan that is on only when somebody
+        #: remembered to pass it is a check that reports success by being absent.
+        if terms is None:
+            from engine.terms import TermService
+
+            terms = TermService(storage)
+        self.terms = terms
         #: Child row type -> mandatory parent row type, from the methodology revision in
         #: force. The engine holds no opinion about which row types these are; it
         #: enforces the map it is handed. Pass `{}` to disable (used by tests that
@@ -118,6 +134,7 @@ class RowService:
                         v["accepted"],
                         RowRef.parse(v["ref"]) if v["ref"] else None,
                         v["problem"],
+                        v.get("note"),
                     )
                     for v in replay["meta"]["verdicts"]
                 ),
@@ -189,7 +206,7 @@ class RowService:
                 )
             )
             op_index.append(index)
-            verdicts.append(RowVerdict(index, True))
+            verdicts.append(RowVerdict(index, True, note=self._vocabulary_note(submission)))
 
         # Links ride in the SAME batch as the rows they belong to.
         #
@@ -234,7 +251,7 @@ class RowService:
             assigned[index] = RowRef.parse(result["ref"])
 
         final = tuple(
-            RowVerdict(v.index, v.accepted, assigned.get(v.index), v.problem)
+            RowVerdict(v.index, v.accepted, assigned.get(v.index), v.problem, v.note)
             for v in verdicts
         )
         # Record the verdicts against the key so a replay can return them verbatim.
@@ -247,6 +264,7 @@ class RowService:
                         "accepted": v.accepted,
                         "ref": str(v.ref) if v.ref else None,
                         "problem": v.problem,
+                        "note": v.note,
                     }
                     for v in final
                 ]
@@ -300,6 +318,24 @@ class RowService:
             elif self._row(link.target) is None:
                 return f"link target {link.target} does not exist"
         return None
+
+    def _vocabulary_note(self, submission: RowSubmission) -> str | None:
+        """Retired words this row used, said back to the submitter as it is filed.
+
+        This is the delivery point that attacks F27's actual cause. The vocabulary was not
+        broken by anyone disagreeing with it; it was broken because naming happens at the
+        point of least attention, and the moment of typing is the only moment at which
+        saying so changes anything. A word noticed at a gate three days later has already
+        been copied into six more rows.
+
+        It warns and never rejects. A retired word inside a quotation of the owner is
+        legitimate, and a check that refuses those would have the tool editing his words —
+        which is the line the whole output design is drawn along.
+        """
+        found = self.terms.violations(submission.content)
+        if not found:
+            return None
+        return "; ".join(str(usage) for usage in found)
 
     def _duplicate_name_problem(
         self, submission: RowSubmission, index: int, batch: list[RowSubmission]

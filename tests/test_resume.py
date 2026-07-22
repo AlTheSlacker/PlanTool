@@ -297,3 +297,23 @@ def _store_baseline(storage, fingerprint: dict) -> None:
             "SELECT id FROM workspace_fingerprints"
         ))),
     )
+
+
+# --- the glossary in the digest (D23) ---
+
+
+def test_a_cold_planner_is_told_the_glossary_exists(services):
+    """The chicken and egg the packaging defect taught: a line that appears only once
+    there are terms can never be the line that produces the first one."""
+    _, _, resume = services
+    assert "define_term()" in resume.plan_status().present()
+
+
+def test_the_digest_counts_the_agreed_terms(services):
+    from engine.terms import TermService
+
+    storage, _, resume = services
+    TermService(storage).define_term("package", "a declared grouping of tasks")
+    digest = resume.plan_status()
+    assert digest.glossary.count == 1
+    assert "1 agreed term — glossary()" in digest.present()

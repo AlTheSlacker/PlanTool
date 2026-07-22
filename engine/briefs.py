@@ -45,6 +45,7 @@ from engine.clock import now
 from engine.idempotency import key
 from engine.storage import FromOp, Op, Storage
 from engine.tasks import PENDING
+from engine.terms import TermService
 
 INCLUDED = "included"
 OMITTED = "omitted"
@@ -115,6 +116,19 @@ class Brief:
     serve_epoch: int
     goal: str
     rows: tuple[BriefRow, ...]
+    #: The plan's vocabulary, as a section of its own and **outside the 100% accounting**.
+    #: Candidate rows are *context* and may be waived with a reason; a glossary is a
+    #: *constraint on the output* and cannot be, or it is not a constraint. That
+    #: distinction is one the frozen plan never draws, and F27 is what it costs: the
+    #: vocabulary reached the writer as a document nobody had to read.
+    #:
+    #: Attached live at read time rather than frozen with the brief, which looks like
+    #: F26's mistake and is its mirror. F26 is about a *denominator*: an accounting
+    #: measured against a set that moves is meaningless, so the candidate closure is
+    #: frozen. A constraint is the opposite case — it binds as it stands now, and a brief
+    #: serving last week's glossary would enforce a rule the plan has since retired.
+    #: Nothing counts these, so nothing drifts.
+    glossary: tuple = ()
     is_draft: bool = False
     supersedes: int | None = None
     superseded_by: int | None = None
@@ -174,12 +188,13 @@ class BriefAudit:
 
 class BriefComposer:
     def __init__(self, storage: Storage, tasks, graph=None, attachments=None,
-                 obligations=None):
+                 obligations=None, terms=None):
         self.storage = storage
         self.tasks = tasks
         self.graph = graph
         self.attachments = attachments
         self.obligations = obligations or ObligationService(storage)
+        self.terms = terms or TermService(storage)
 
     # --- contracts:68 ---
 
@@ -520,6 +535,7 @@ class BriefComposer:
             serve_epoch=r["serve_epoch"],
             goal=r["goal"],
             rows=rows,
+            glossary=self.terms.glossary(),
             is_draft=bool(r["is_draft"]),
             supersedes=r["supersedes"],
             superseded_by=r["superseded_by"],

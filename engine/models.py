@@ -209,6 +209,12 @@ class RowVerdict:
     accepted: bool
     ref: RowRef | None = None
     problem: str | None = None
+    #: Advice the row was filed *with* — a retired word it used, and what to say instead.
+    #: Separate from `problem` because the two have opposite consequences: a problem is why
+    #: nothing was filed, and a note rides along with a row that stands. Warn-don't-block is
+    #: the only tenable rule here, since a retired word inside a quotation is legitimate and
+    #: refusing one would put the tool in the business of editing the owner's words.
+    note: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
