@@ -23,6 +23,16 @@ had both missed):
    inferred from `plan_rows.content`, which is free-form JSON with no per-table schema. The
    banned-word list *is* a denominator, so `ban_scope` has to be a queryable column.
 
+**A definition is proposed here and settled by the owner.** A glossary without definitions
+is a spelling test, so `definition` is required — but a definition the tool took from a
+planning session and filed as settled would be the tool deciding what the owner's own words
+mean while looking like a record of him deciding. So `define_term` *proposes*: the planning
+session writes the first draft, because it has just read every row the word appears in and
+that is the cheap half; `approve_term` is the owner accepting it or replacing it with his
+own. A rewrite supersedes the proposal instead of overwriting it, and the difference between
+the two is the most interesting line in a glossary's history — it is exactly where the
+tool's reading of the plan and the owner's diverged.
+
 **The trap, stated because a naive reading walks straight into it.** A retired word must
 stay in **live reads**. Everywhere else in v2, retiring drops a row out of live reads; apply
 that here and the banned list goes empty, so the check runs, finds nothing to ban, and
@@ -84,6 +94,10 @@ class TermExists(PlanToolError):
     """A live term already defines this word; sharpening it is a redefinition."""
 
 
+class AlreadyApproved(PlanToolError):
+    """The owner has already settled this definition; changing it now is a redefinition."""
+
+
 class DefinitionRequired(PlanToolError):
     """A word with no meaning recorded beside it is not a glossary entry."""
 
@@ -106,6 +120,11 @@ class Term:
     id: int
     term: str
     definition: str
+    #: When the owner settled this definition. `None` means the planner proposed it and the
+    #: owner has not answered — a real state, and one a reader must be able to see: a
+    #: definition nobody agreed to is not yet what the word means, however confidently it
+    #: is written.
+    approved_at: str | None = None
     names_ref: RowRef | None = None
     ban_scope: str | None = None
     ban_reason: str | None = None
@@ -123,6 +142,10 @@ class Term:
         """A banned word is still live, and that is the whole point — see the module
         docstring's trap."""
         return self.ban_scope is not None
+
+    @property
+    def is_approved(self) -> bool:
+        return self.approved_at is not None
 
     @property
     def is_live(self) -> bool:
@@ -167,13 +190,19 @@ class GlossaryExport:
     path: str
     terms: int
     banned: int
+    awaiting_approval: int = 0
     written_at: str = ""
 
     def present(self) -> str:
+        waiting = (
+            "" if not self.awaiting_approval
+            else f" {self.awaiting_approval} definition(s) are still proposals waiting on "
+                 f"the owner, and are marked as such."
+        )
         return (
             f"{EXPORT_FILENAME} written with {self.terms} term(s), {self.banned} of them "
-            f"retired. Point the codebase's own vocabulary check at it: the tool publishes "
-            f"the words, the codebase polices itself."
+            f"retired.{waiting} Point the codebase's own vocabulary check at it: the tool "
+            f"publishes the words, the codebase polices itself."
         )
 
 
@@ -194,7 +223,16 @@ class TermService:
     def define_term(
         self, term: str, definition: str, names_ref: RowRef | str | None = None
     ) -> Term:
-        """Record what a word means in this plan."""
+        """Propose what a word means in this plan. The owner settles it.
+
+        The definition is **required** — a glossary is definitions; a bare list of approved
+        words is a spelling test — and it is **proposed**, not decided. The planning session
+        writes the first draft because that is the cheap half and it has just read the rows
+        the word appears in; the owner then accepts it or writes his own (`approve_term`).
+        A definition the tool accepted from a planning session and filed as settled would be
+        the tool exercising judgment about the owner's own vocabulary while looking like a
+        record of it, which is the one thing this engine never does (`decisions:12`).
+        """
         word = self._word(term)
         if not definition.strip():
             raise DefinitionRequired(
@@ -243,6 +281,62 @@ class TermService:
                 term=word,
             )
         current = self._require(word)
+        # Proposed again, and not carried over as approved: a new meaning is a new thing to
+        # agree with. Approval that survived the definition it approved would be the plan
+        # recording the owner's assent to words he never saw.
+        return self._succeed(current, definition, names_ref, approved=False)
+
+    def approve_term(self, term: str, definition: str | None = None) -> Term:
+        """The owner settles a proposed definition — as it stands, or in his own words.
+
+        Two acts in one call because they are one decision with two outcomes, and because
+        the friction has to be small: a glossary is a handful of words, and a review step
+        that costs a paragraph per word does not get done.
+
+        Rewriting supersedes the proposal rather than overwriting it, so the record shows
+        what was suggested and what was actually agreed. That difference is the most
+        interesting line in a glossary's history — it is where the tool's reading of the
+        plan and the owner's diverged.
+        """
+        word = self._word(term)
+        current = self._require(word)
+        if definition is not None and not definition.strip():
+            raise DefinitionRequired(
+                f"approving '{word}' with an empty definition would delete the meaning "
+                "rather than settle it; approve it as it stands, or write your own",
+                term=word,
+            )
+        if definition is None or definition.strip() == current.definition:
+            if current.is_approved:
+                raise AlreadyApproved(
+                    f"'{word}' is already settled; changing what it means now is a "
+                    "redefinition, which keeps this wording as history — redefine_term "
+                    "does that",
+                    term=word,
+                )
+            self.storage.write_atomic(
+                [Op("update", "terms",
+                    {"approved_at": now(), "updated_at": now()},
+                    where={"id": current.id})],
+                key("approve_term", word, current.id),
+            )
+            return self.get(current.id)
+        return self._succeed(current, definition, None, approved=True)
+
+    def _succeed(
+        self,
+        current: Term,
+        definition: str,
+        names_ref: RowRef | str | None,
+        approved: bool,
+    ) -> Term:
+        """Replace a live entry with a new one for the same word, in one transaction.
+
+        F33 was a supersession that ran as two, so an interruption left the plan holding
+        both halves of a change nobody made. The old entry is stamped *before* the new one
+        is written, because the live-word index would otherwise see two live entries for one
+        word for the length of one statement and reject the write outright.
+        """
         stamp = now()
         receipt = self.storage.write_atomic(
             [
@@ -250,17 +344,25 @@ class TermService:
                    {"superseded_at": stamp, "updated_at": stamp},
                    where={"id": current.id}),
                 Op("insert", "terms", {
-                    "term": word,
+                    "term": current.term,
                     "definition": definition.strip(),
+                    "approved_at": stamp if approved else None,
                     "names_ref": (
                         str(names_ref) if names_ref
                         else (str(current.names_ref) if current.names_ref else None)
                     ),
+                    # A rewrite at approval carries the retirement forward — the owner is
+                    # settling what the word meant, not putting it back into use. A
+                    # redefinition clears it, because giving a word a new meaning is
+                    # exactly how a retired word comes back.
+                    "ban_scope": current.ban_scope if approved else None,
+                    "ban_reason": current.ban_reason if approved else None,
+                    "use_instead": current.use_instead if approved else None,
                     "created_at": stamp,
                     "updated_at": stamp,
                 }),
             ],
-            key("redefine_term", word, current.id),
+            key("succeed_term", current.term, current.id, approved),
         )
         return self.get(receipt["results"][1]["id"])
 
@@ -348,6 +450,15 @@ class TermService:
         can only be empty when nothing has been retired.
         """
         return tuple(t for t in self.glossary() if t.is_banned)
+
+    def awaiting_approval(self) -> tuple[Term, ...]:
+        """Definitions the planner proposed and the owner has not answered.
+
+        A count the digest carries, because it is the one outstanding thing in a glossary
+        that only the owner can clear — and a proposal nobody is shown is a proposal that
+        quietly becomes the definition by default.
+        """
+        return tuple(t for t in self.glossary() if not t.is_approved)
 
     def history(self, term: str) -> tuple[Term, ...]:
         """Every entry this word has ever had, oldest first — including the retirement it
@@ -468,11 +579,19 @@ class TermService:
             path=str(path),
             terms=len(entries),
             banned=sum(1 for t in entries if t.is_banned),
+            awaiting_approval=sum(1 for t in entries if not t.is_approved),
             written_at=payload["written_at"],
         )
 
     def _entry(self, term: Term) -> dict:
-        entry: dict = {"term": term.term, "definition": term.definition}
+        # `approved` travels with every entry rather than being filtered out here. A
+        # consumer deciding what to enforce is exercising judgment, and that judgment is
+        # not the tool's to make on its behalf — but it cannot make it without being told.
+        entry: dict = {
+            "term": term.term,
+            "definition": term.definition,
+            "approved": term.is_approved,
+        }
         if term.names_ref is not None:
             entry["names"] = {
                 "ref": str(term.names_ref),
@@ -513,6 +632,7 @@ class TermService:
             id=r["id"],
             term=r["term"],
             definition=r["definition"],
+            approved_at=r["approved_at"],
             names_ref=RowRef.parse(r["names_ref"]) if r["names_ref"] else None,
             ban_scope=r["ban_scope"],
             ban_reason=r["ban_reason"],

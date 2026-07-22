@@ -9,6 +9,7 @@ from engine.terms import (
     BOTH,
     IDENTIFIER,
     PROSE,
+    AlreadyApproved,
     BanNeedsReason,
     DefinitionRequired,
     TermExists,
@@ -38,6 +39,73 @@ def test_a_term_records_what_a_word_means(terms):
     assert term.term == "package"
     assert term.is_banned is False
     assert terms.find("Package").definition == "a declared grouping of tasks"
+
+
+# --- proposed by the planner, settled by the owner ---
+
+
+def test_a_definition_arrives_as_a_proposal(terms):
+    """A definition the tool took from a planning session and filed as settled would be the
+    tool deciding what the owner's words mean while looking like a record of him deciding."""
+    term = terms.define_term("package", "a declared grouping of tasks")
+    assert term.is_approved is False
+    assert terms.awaiting_approval() == (term,)
+
+
+def test_the_owner_can_accept_the_proposal_as_it_stands(terms):
+    terms.define_term("package", "a declared grouping of tasks")
+    settled = terms.approve_term("package")
+    assert settled.is_approved is True
+    assert settled.definition == "a declared grouping of tasks"
+    assert terms.awaiting_approval() == ()
+    assert len(terms.history("package")) == 1
+
+
+def test_the_owner_rewriting_keeps_what_was_proposed(terms):
+    """The difference between the two is the most interesting line in a glossary's history:
+    it is where the tool's reading of the plan and the owner's diverged."""
+    terms.define_term("package", "a declared grouping of tasks")
+    settled = terms.approve_term("package", "the level at which I say 'the GUI'")
+
+    assert settled.definition == "the level at which I say 'the GUI'"
+    assert settled.is_approved is True
+    history = terms.history("package")
+    assert [t.definition for t in history] == [
+        "a declared grouping of tasks", "the level at which I say 'the GUI'",
+    ]
+    assert history[0].is_approved is False
+
+
+def test_approving_a_settled_definition_twice_is_refused(terms):
+    terms.define_term("package", "a declared grouping of tasks")
+    terms.approve_term("package")
+    with pytest.raises(AlreadyApproved) as exc:
+        terms.approve_term("package")
+    assert "redefine_term" in str(exc.value)
+
+
+def test_approving_with_an_empty_definition_is_refused(terms):
+    terms.define_term("package", "a declared grouping of tasks")
+    with pytest.raises(DefinitionRequired):
+        terms.approve_term("package", "   ")
+
+
+def test_a_new_meaning_needs_settling_again(terms):
+    """Approval that survived the definition it approved would be the plan recording the
+    owner's assent to words he never saw."""
+    terms.define_term("task", "a unit of work")
+    terms.approve_term("task")
+    terms.redefine_term("task", "the work of realising one component")
+    assert terms.find("task").is_approved is False
+
+
+def test_the_owner_rewriting_does_not_put_a_retired_word_back_into_use(terms):
+    """A rewrite at approval settles what the word meant; it is not the act that brings a
+    retired word back. Redefinition is."""
+    terms.define_term("component", "the old word for a task")
+    terms.retire_term("component", PROSE, "one entity, two spellings")
+    terms.approve_term("component", "what we called a task before 2026")
+    assert terms.find("component").is_banned is True
 
 
 def test_a_word_cannot_be_defined_twice(terms):

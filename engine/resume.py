@@ -191,6 +191,10 @@ class PlanStatus:
     next_action_source: str
     drift: Drift
     advisories: tuple[str, ...] = ()
+    #: Definitions a planner proposed that the owner has not answered. Its own line because
+    #: it is the one thing in a glossary only he can clear, and a proposal nobody puts in
+    #: front of him becomes the definition by default.
+    terms_awaiting_approval: int = 0
 
     def present(self) -> str:
         """The digest as text, which is what an agent surface actually serves.
@@ -224,6 +228,16 @@ class PlanStatus:
         lines.append(self.gaps.present())
         if self.glossary.count:
             lines.append(self.glossary.present())
+            if self.terms_awaiting_approval:
+                waiting = self.terms_awaiting_approval
+                subject = (
+                    "is a definition" if waiting == 1 else "are definitions"
+                )
+                lines.append(
+                    f"  {waiting} of them {subject} proposed by a planner and not yet "
+                    f"settled by the owner — put them to him and record his answer with "
+                    f"approve_term()"
+                )
         else:
             # Said even at zero, and that is the point of saying it. Every other count here
             # reports something the plan already has; this one has to reach a planner who
@@ -362,6 +376,7 @@ class ResumeService:
             glossary=Fetch(
                 "agreed term", "glossary()", len(self.terms.glossary())
             ),
+            terms_awaiting_approval=len(self.terms.awaiting_approval()),
             journal=notes,
             earlier_journal=earlier,
             next_action=next_action,

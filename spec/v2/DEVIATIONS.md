@@ -1005,6 +1005,22 @@ the wrong place. The real one is **content vs structure**: a row that makes a cl
 domain is generic and interchangeable; a thing that constrains or organises other rows gets a
 real table.
 
+**A definition is proposed by the planner and settled by the owner** (added on the owner's
+instruction, 2026-07-22: *"what is a glossary without definitions?! They should be suggested
+by you and approved or re-written by the user."*). `definition` is required — a glossary is
+its definitions, and a list of approved words with no meanings is a spelling test. But a
+definition the tool took from a planning session and filed as settled would be the tool
+deciding what the owner's own words mean while looking like a record of him deciding, which
+`decisions:12` forbids. So `define_term` *proposes*: the session writes the first draft,
+because it has just read every row the word appears in and that is the cheap half.
+`approve_term` is the owner accepting it or replacing it with his own wording, and a rewrite
+**supersedes** the proposal rather than overwriting it — the difference between the two is the
+most interesting line in a glossary's history, being exactly where the tool's reading of the
+plan and the owner's diverged. A redefinition is proposed again, because approval that
+survived the definition it approved would record the owner's assent to words he never saw.
+The overhead is deliberate and small: a glossary is a handful of words, and the owner said so
+when asking for this.
+
 **The trap, and it is the whole reason this entry is long.** A retired word must stay in
 **live reads**. Everywhere else in v2 retirement drops a row out of live reads (settled
 2026-07-20 for spike-refuted assumptions); apply that here and the banned list goes *empty*,
@@ -1053,8 +1069,14 @@ exactly what distinguishes it from the 2 -> 3 bump, where a backfill would have 
 the names that column exists to prevent. It is also the first migration step this engine has
 ever had, so `contracts:8`'s success path is reachable for the first time.
 
-**What none of it catches, stated so it is not oversold.** Inventing a *new* name for a
-concept that already exists, where the two names share no lexical structure. No mechanism
-without judgment can. The counting move that would help — words appearing in N rows with no
-term of their own, which is pure counting and the same shape as the section-coverage meter —
-is **not built**, and is bound to the M6 gate rather than left floating.
+**What none of it catches, stated so it is not oversold.** A word invented for a concept
+that already has one, where the two words share no letters — `packet` and `sub-task`, say.
+Nothing without judgment can see that the two mean the same thing.
+
+**One counting move would help, and is deliberately not built.** The tool could count how
+often each word appears across submitted rows, and ask the owner to define any word that
+keeps turning up without a glossary entry of its own. That is pure counting, the same shape
+as the section-coverage meter, and it converts *you must notice* into *the tool asks* — with
+the existing entries in front of him at the moment he answers, which is where a duplicate
+name gets spotted. It needs a threshold, though, and a threshold set too low asks the owner
+what "system" means. Bound to the M6 gate rather than left floating.

@@ -661,6 +661,14 @@ CREATE TABLE IF NOT EXISTS checkpoints (
 # the mechanism built to prevent F27. Retirement is `ban_scope IS NOT NULL`, and liveness is
 # `superseded_at IS NULL` and nothing else.
 #
+# **A definition is proposed by the planner and approved by the owner**, which is the design
+# spine applied to words: the tool records judgment and never exercises it, and what a word
+# means in someone's own plan is theirs to settle. So a definition arrives as a proposal
+# (`approved_at IS NULL`), and the owner either accepts it or writes his own — which
+# supersedes the proposal and keeps it behind. The alternative, a definition that is simply
+# whatever the planning session typed, is the tool having opinions about the owner's
+# vocabulary while looking like a record of his.
+#
 # `use_instead` holds the replacement *word*, not a row id: a retirement outlives the entry
 # it points at, since the replacement will be redefined one day too, and the word is the
 # identity that survives that. It is also how this table is looked up everywhere else — by
@@ -670,6 +678,8 @@ CREATE TABLE IF NOT EXISTS terms (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     term          TEXT    NOT NULL,
     definition    TEXT    NOT NULL,
+    approved_at   TEXT,                    -- null == the planner proposed it, owner has
+                                           -- not answered yet
     names_ref     TEXT,                    -- the row this word names, if any
     ban_scope     TEXT,                    -- null == in use; prose | identifier | both
     ban_reason    TEXT,

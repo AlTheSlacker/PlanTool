@@ -170,11 +170,14 @@ binds conflicts and open assumptions is the M6 decision.
 ### 2.7 Glossary delivery to the writer — F27 — **DONE 2026-07-22**
 Built as designed in §3: the `terms` table, the manifest export, the brief section outside
 the accounting, and warn-at-submission/count-at-the-gate. DEVIATIONS.md D23; the hole in the
-planning method is DEFECTS.md F40. **One piece of §3.4 is deliberately not built** — the
-counting gap rule for words appearing in N rows with no term of their own — and it is bound
-to the **M6 gate** rather than left floating. It needs a rule type in the gap engine and a
-threshold, and a threshold chosen badly is the cry-wolf failure the whole warning design is
-written around.
+planning method is DEFECTS.md F40. Definitions are **proposed by the planner and
+settled by the owner** — his instruction, 2026-07-22 — so `define_term` drafts and
+`approve_term` records him accepting or rewriting it.
+
+**One piece of §3.4 is deliberately not built:** counting how often each word appears across
+submitted rows, and asking the owner to define any word that keeps turning up with no
+glossary entry of its own. It is bound to the **M6 gate** rather than left floating, and what
+it needs is a threshold — set too low, the tool asks him what "system" means.
 
 ### 2.8 Every row has a name — added 2026-07-22, **CLOSED 2026-07-22**
 See §6. The item that changes the most: it puts a required field on `submit_rows`, a migration
@@ -199,8 +202,12 @@ D18) and the door now resolves every call name in outgoing text against the regi
 > - Two schema departures, both so that the *word* is the identity: the replacement is
 >   `use_instead`, the word itself, not a `terms.id`; and `superseded_by` is `superseded_at`,
 >   since ordering one word's entries by id already *is* the lineage.
-> - All three delivery points below are built. §3.4's counting gap rule is **not**, and is
->   bound to the M6 gate (§2.7).
+> - All three delivery points below are built. The counting rule in §3.4 — ask about a word
+>   that keeps appearing with no definition of its own — is **not**, and is bound to the M6
+>   gate (§2.7).
+> - **Definitions are proposed, then settled by the owner** (his instruction, after reading
+>   the first cut): `define_term` drafts, `approve_term` accepts or replaces the wording, and
+>   a rewrite supersedes the proposal so both survive.
 > - Un-banning needed no call of its own: a word comes back by being redefined, which is
 >   what returning to use actually is, and the banned entry keeps its reason behind it.
 > - Found while building it: **F41** — every ref the surface prints is in display form and

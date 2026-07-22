@@ -584,12 +584,21 @@ REGISTRY: dict[str, Tool] = {
            Param("name", "str", note="which auxiliary script")),
         # --- the glossary (components:2, by deviation) ---
         _t("define_term", "terms", "define_term", DEVIATION,
-           "Record what a word means in this plan, once, so two readers cannot read it "
-           "two ways.",
+           "Propose what a word means in this plan; the owner settles it. Draft the "
+           "definition yourself — you have just read the rows it appears in.",
            Param("term", "str", note="the word itself"),
-           Param("definition", "str", note="what it means here, in a sentence"),
+           Param("definition", "str",
+                 note="what you believe it means here, in a sentence, for the owner to "
+                      "accept or rewrite"),
            Param("names_ref", "ref", required=False,
                  note="the row this word names, if it names one"),
+           writes=True),
+        _t("approve_term", "terms", "approve_term", DEVIATION,
+           "Record the owner settling a definition — as proposed, or in his own words.",
+           Param("term", "str", note="the word being settled"),
+           Param("definition", "str", required=False,
+                 note="the owner's own wording, when he rewrote it; omit to accept the "
+                      "proposal as it stands"),
            writes=True),
         _t("redefine_term", "terms", "redefine_term", DEVIATION,
            "Sharpen what a word means, keeping the old wording as history. Also how a "
@@ -681,6 +690,10 @@ ADDED: tuple[Absence, ...] = (
     Absence(DEVIATION, "define_term",
             "the eight planning packages never ask what the words mean, so a plan could "
             "not say — and a vocabulary nothing records is the one F27 broke (D23)"),
+    Absence(DEVIATION, "approve_term",
+            "a definition the tool took from a planning session and filed as settled is "
+            "the tool deciding what the owner's words mean; he accepts it or writes his "
+            "own (D23)"),
     Absence(DEVIATION, "redefine_term",
             "a meaning sharpens, and the old wording has to stay readable or the change "
             "reads as a contradiction later (D23)"),

@@ -174,6 +174,11 @@ A **term** is one word this plan has agreed the meaning of, with what it means, 
 the row it names, and — when it has been retired — where it may no longer appear, why, and
 what to say instead. It lives in `terms` (DEVIATIONS.md **D23**).
 
+**A definition is proposed and then settled.** The planning session drafts what a word
+means; the owner accepts that wording or writes his own, and a rewrite supersedes the
+proposal so the record shows both. A definition nobody has agreed to is not yet what the word
+means, and the digest says how many are waiting on him.
+
 **A retired word stays in live reads.** Everywhere else in v2 retirement drops a row out of
 live reads. Do that here and the banned list empties, so every check downstream runs, finds
 nothing to ban and reports success — F23's missing denominator, inside the mechanism built

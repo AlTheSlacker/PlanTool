@@ -622,3 +622,42 @@ class TestWhatGoesOutComesBack:
         }))
         assert not result.ok
         assert result.error == "MalformedCall"
+
+
+class TestSettlingADefinition:
+    """A definition is proposed by the planner and settled by the owner (D23). The tool
+    records the judgment; it never makes it."""
+
+    def test_the_digest_puts_unsettled_proposals_in_front_of_the_planner(self, surface):
+        surface.dispatch(ToolCall("define_term", {
+            "term": "package", "definition": "a declared grouping of tasks",
+        }))
+        digest = surface.dispatch(ToolCall("plan_status", {})).payload["summary"]
+        assert "approve_term()" in digest
+
+        surface.dispatch(ToolCall("approve_term", {"term": "package"}))
+        settled = surface.dispatch(ToolCall("plan_status", {})).payload["summary"]
+        assert "approve_term()" not in settled
+        assert "1 agreed term — glossary()" in settled
+
+    def test_the_owner_s_own_wording_wins_and_the_proposal_survives(self, surface):
+        surface.dispatch(ToolCall("define_term", {
+            "term": "package", "definition": "a declared grouping of tasks",
+        }))
+        result = surface.dispatch(ToolCall("approve_term", {
+            "term": "package", "definition": "the level where I say 'the GUI'",
+        }))
+        assert result.ok, result.problem
+        assert result.payload["definition"] == "the level where I say 'the GUI'"
+        assert result.payload["approved_at"] is not None
+
+    def test_the_manifest_says_which_definitions_are_still_proposals(self, surface):
+        surface.dispatch(ToolCall("define_term", {
+            "term": "package", "definition": "a declared grouping of tasks",
+        }))
+        result = surface.dispatch(ToolCall("export_glossary", {}))
+        assert "waiting on the owner" in result.payload["summary"]
+        written = json.loads(
+            (surface.storage.workspace / "glossary.json").read_text(encoding="utf-8")
+        )
+        assert written["terms"][0]["approved"] is False
