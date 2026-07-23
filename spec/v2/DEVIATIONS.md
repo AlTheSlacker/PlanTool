@@ -1183,3 +1183,27 @@ so the stamp moves.
 **What still nothing catches**, and now honestly: a word invented for a concept that already
 has one, where the two share no letters — `packet` and `sub-task`. The mandate asks a planner
 to notice; nothing mechanical does, and nothing mechanical could without judgment.
+
+---
+
+## D24 — The revision-migration path is forward-only, from rev 3
+
+**The requirement, read strictly.** `requirements:71` provides "an update path that migrates a
+plan from one methodology revision to the next." Two revisions are installed, and a plain
+reading implies you can migrate *from* either. This deviation records that we do not: the path
+is forward-only and rev 3 is its earliest endpoint.
+
+**Why.** rev 2 is the PlanTool v1 methodology vendored verbatim (decisions:61 / findings:4) —
+kept for provenance and byte-faithful on purpose, written in v1's vocabulary (`stages:`) and
+naming v1's retired tools. It cannot be loaded without either editing it (forbidden) or teaching
+the loader to read a revision nothing can author under (option (a) of the rev-2-unloadable fork,
+which the owner declined — see DEFECTS.md F43). So there is no loadable revision behind rev 3 to
+migrate a plan *up from*, and `load()` now refuses anything earlier with `RevisionNotLoadable`
+rather than pretending otherwise.
+
+**What this does not foreclose.** The migration *mechanism itself* — carrying a live plan across
+a real revision boundary — is the revision-service's job at M7 (F20/F21 bind there). This
+deviation narrows only the set of source revisions that mechanism will ever be asked to start
+from: rev 3 onward. If a genuine need to load a v1-authored plan for migration ever appears, it
+reopens as option (a); today nothing asks for it, and declaring the floor honestly beats leaving
+`load(2)` to fail as if it were a bug.

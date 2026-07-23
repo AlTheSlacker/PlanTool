@@ -1856,3 +1856,54 @@ and `refuted` close the assumption, so it never reaches the criterion. This is o
 *because* of D16's filing lock: every world-assumption is now born with a registered spike, so
 "no spike at all" is unrepresentable and the criterion stops policing existence and starts
 policing conclusion — the backstop with nothing to find, exactly as the D16 writeup intended.
+
+---
+
+## F43 — Methodology rev 2 was unloadable, and failed as if it were a bug
+
+**Found:** 2026-07-22, as the tail of F31 — while fixing rev 3's stolen identity it became
+clear that `load(2)` did not merely return the wrong thing, it could not run at all. Owner
+decided the resolution 2026-07-23.
+
+**The promise.** `requirements:71` ships the methodology as versioned content assets and
+provides "an update path that migrates a plan from one methodology revision to the next."
+Two revisions are installed. Read at face value, the requirement implies both are loadable —
+otherwise there is no revision to migrate *from*.
+
+**What was there instead.** `load()` reads `manifest["packages"]`, but `rev2/manifest.yaml`
+heads its list with `stages:` — v1's word, because rev 2 is the PlanTool v1 methodology
+vendored verbatim (decisions:61, the answer to findings:4). So `load(2)` raised a raw
+`KeyError('packages')`: not "revision 2 is frozen," but the traceback of a dictionary lookup
+that missed, indistinguishable from a bug in the loader. The scripts inside rev 2 also name
+v1's retired tools (`submit_use_cases`, `record_decision`, `submit_contract_deps`), so even
+past the manifest nothing could be authored under it through the v2 surface. The defect was
+latent only because `DEFAULT_REVISION = 3` and no live path ever calls `load(2)`.
+
+**The fork, and the owner's decision.** Two honest ways out. (a) Teach `load()` to accept
+`stages:` as an alias for `packages:` — rev 2 stays byte-faithful and *loads*, but into a
+revision whose scripts still name absent tools, so it loads into something nothing can author
+under: half a bridge. (b) Declare rev 2 intentionally non-loadable provenance — the findings:4
+red-team artifact and the source text rev 3 was derived from — make the refusal honest, and
+state that `requirements:71`'s migration path is forward-only with rev 3 as the earliest
+loadable baseline. The owner chose **(b)** (2026-07-23). The reasoning that decided it: the
+real revision→revision *migration mechanism* is the revision-service at M7 (F20/F21 already
+bind there), so at M6 the honest job is to make the engine's state *truthful* about what rev 2
+is, not to manufacture a loadable-but-useless rev 2 that implies a migration nobody has built.
+
+**Fixed here.** `EARLIEST_LOADABLE_REVISION = 3`; `load()` guards any earlier revision and
+raises `RevisionNotLoadable` — a distinct type (subclass of `MethodologyUnavailable`) carrying
+a message that names rev 3 as the baseline and the migration path as forward-only. The type is
+the point: a raw `KeyError` implied a bug and a plain "could not be read" would imply
+corruption, but rev 2 is neither broken nor missing — it is deliberately frozen, and now says
+so, to code as well as to a reader. `guidance.py` lets `RevisionNotLoadable` cross its boundary
+unchanged rather than relabel it `GuidanceUnreadable`, which frames things as an integrity
+failure. **rev 2's content was not touched** — option (b) refuses to load it, it does not
+rewrite it; a test asserts the manifest still says `stages:` and never `packages:`, so the next
+hand cannot quietly turn this into option (a). See DEVIATIONS.md D24 for the requirements:71
+narrowing this records.
+
+**Class.** F17's shape — surface the truth, do not fake the capability — applied to a data
+asset rather than a citation. The pre-build checks could not have caught it: the manifest is
+well-formed YAML and the mismatch is between one key name and the loader's expectation, which
+no contract or state-machine audit inspects. Like F31 it lived in vendored content and was
+found by reasoning about the migration path, not by a green suite.

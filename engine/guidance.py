@@ -14,7 +14,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from engine.errors import PlanToolError
-from engine.methodology import Methodology, MethodologyUnavailable, load
+from engine.methodology import (
+    Methodology,
+    MethodologyUnavailable,
+    RevisionNotLoadable,
+    load,
+)
 
 
 class GuidanceUnreadable(PlanToolError):
@@ -46,6 +51,11 @@ class Guidance:
             self.methodology: Methodology = (
                 load() if revision is None else load(revision)
             )
+        except RevisionNotLoadable:
+            # A deliberate policy refusal, not an integrity failure — GuidanceUnreadable
+            # would misdescribe it as corrupt/partial methodology. Let the honest type and
+            # message stand (DEFECTS.md F43).
+            raise
         except MethodologyUnavailable as exc:
             raise GuidanceUnreadable(str(exc)) from exc
 

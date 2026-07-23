@@ -24,12 +24,42 @@ import yaml
 ASSETS = Path(__file__).parent
 DEFAULT_REVISION = 3
 
+#: The oldest revision this loader will load. Earlier revisions are retained on disk as
+#: frozen provenance and are deliberately not loadable.
+#:
+#: rev 2 is the PlanTool v1 methodology vendored verbatim (decisions:61, the answer to the
+#: findings:4 red-team finding) — both the red-team artifact and the source text rev 3 was
+#: derived from. It is written in v1's vocabulary (`stages:`, not the `packages:` this
+#: loader reads) and its scripts name v1's retired tool surface, so a plan cannot be
+#: authored under it through the v2 surface. It is kept byte-faithful on purpose and must
+#: never be edited.
+#:
+#: So requirements:71's revision-migration path ("migrate a plan from one revision to the
+#: next") is forward-only: rev 3 is the earliest loadable baseline and there is nothing
+#: loadable behind it. This is the owner's decision of 2026-07-23 — option (b) of the
+#: rev-2-unloadable fork: declare the provenance frozen and make the refusal honest,
+#: rather than teach the loader to read `stages:` into a revision nothing can author under.
+#: See DEFECTS.md F43.
+EARLIEST_LOADABLE_REVISION = 3
+
 
 class MethodologyUnavailable(Exception):
     """A content asset is missing or unreadable.
 
     Surfaced to callers as GuidanceUnreadable: never answer from partial methodology
     (uc_extensions:4).
+    """
+
+
+class RevisionNotLoadable(MethodologyUnavailable):
+    """A revision below EARLIEST_LOADABLE_REVISION was requested (DEFECTS.md F43).
+
+    Not an integrity failure — the content is intact and on disk. The revision is retained
+    as frozen provenance and intentionally not loaded. A distinct type because the truth
+    matters here: a raw ``KeyError`` implied a bug, a plain "could not be read" would imply
+    corruption, and this says what is actually so — the refusal is deliberate. A migration
+    caller can catch this specifically to know it has reached the frozen baseline rather
+    than a broken asset.
     """
 
 
@@ -120,6 +150,13 @@ class Methodology:
 
 @lru_cache(maxsize=4)
 def load(revision: int = DEFAULT_REVISION) -> Methodology:
+    if revision < EARLIEST_LOADABLE_REVISION:
+        raise RevisionNotLoadable(
+            f"methodology revision {revision} precedes the earliest loadable baseline "
+            f"(revision {EARLIEST_LOADABLE_REVISION}); earlier revisions are retained as "
+            f"frozen provenance and are not loaded — requirements:71's migration path is "
+            f"forward-only from there"
+        )
     root = ASSETS / f"rev{revision}"
     manifest_path = root / "manifest.yaml"
     rules_path = root / "gap_rules.yaml"

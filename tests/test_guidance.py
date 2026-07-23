@@ -3,7 +3,13 @@
 import pytest
 
 from engine.guidance import Guidance, GuidanceUnreadable, UnknownPackage
-from engine.methodology import DEFAULT_REVISION, load
+from engine.methodology import (
+    ASSETS,
+    DEFAULT_REVISION,
+    EARLIEST_LOADABLE_REVISION,
+    RevisionNotLoadable,
+    load,
+)
 
 
 @pytest.fixture
@@ -78,13 +84,44 @@ def test_each_revision_stamp_names_its_own_revision():
     copy and reported success for eighteen days. Assert the *relationship*, never the value.
 
     Only rev 3 is asserted here, because rev 2 is frozen v1 provenance written in v1's
-    vocabulary (`stages:`, not `packages:`) and this loader cannot read it. That is worth
-    knowing on its own: `requirements:71` promises a path that migrates a plan from one
-    revision to the next, and there is currently exactly one loadable revision to migrate
-    between. Bound to the M6 gate with rev 3's outstanding half.
+    vocabulary (`stages:`, not `packages:`) and this loader will not read it. That is
+    resolved deliberately, not merely observed: rev 2 is declared frozen provenance and
+    rev 3 is the earliest loadable baseline, so `requirements:71`'s migration path is
+    forward-only. See DEFECTS.md F43 and the frozen-provenance tests below.
     """
     stamp = load(DEFAULT_REVISION).revision_stamp
     assert f"rev{DEFAULT_REVISION}" in stamp, stamp
+
+
+def test_frozen_provenance_revision_is_not_loadable():
+    """rev 2 is retained as frozen provenance and refuses to load — honestly, by its own
+    type, not with a raw KeyError('packages') from meeting `stages:` (DEFECTS.md F43)."""
+    with pytest.raises(RevisionNotLoadable) as exc:
+        load(2)
+    message = str(exc.value)
+    assert f"revision {EARLIEST_LOADABLE_REVISION}" in message
+    assert "forward-only" in message
+
+
+def test_rev2_is_still_verbatim_v1_provenance():
+    """Option (b), not (a): the loader refuses rev 2; it does not rewrite rev 2's content.
+    The asset stays byte-faithful v1 — still `stages:`, never migrated to `packages:`."""
+    manifest = (ASSETS / "rev2" / "manifest.yaml").read_text(encoding="utf-8")
+    assert "\nstages:" in manifest
+    assert "\npackages:" not in manifest
+
+
+def test_earliest_loadable_baseline_actually_loads():
+    """The floor is not above the default — the earliest loadable revision loads."""
+    assert EARLIEST_LOADABLE_REVISION <= DEFAULT_REVISION
+    assert load(EARLIEST_LOADABLE_REVISION).revision == EARLIEST_LOADABLE_REVISION
+
+
+def test_frozen_provenance_revision_is_refused_by_guidance():
+    """The deliberate refusal survives the guidance boundary as itself — not relabelled
+    GuidanceUnreadable, which would frame an intentional policy as an integrity failure."""
+    with pytest.raises(RevisionNotLoadable):
+        Guidance(revision=2)
 
 
 def test_missing_revision_is_unreadable():
