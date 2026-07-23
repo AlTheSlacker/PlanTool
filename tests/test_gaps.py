@@ -3,7 +3,7 @@
 import pytest
 
 from engine.gaps import AlreadyResolved, GapEngine, GapNotFound, NotDismissed
-from engine.models import LinkSpec, Provenance, RowRef, RowSubmission
+from engine.models import LinkSpec, Provenance, RowRef, RowSubmission, SpikeSpec
 
 from .conftest import PAPER
 
@@ -95,7 +95,10 @@ def test_world_and_intent_assumptions_are_separated(gaps, rows):
     rows.submit_rows(
         [
             RowSubmission("decisions", {"title": "SMB handles O_EXCL"},
-                          provenance=Provenance.ASSUMED, assumption_kind="world", name="SMB handles O_EXCL"),
+                          provenance=Provenance.ASSUMED, assumption_kind="world",
+                          name="SMB handles O_EXCL",
+                          spike=SpikeSpec("Does SMB handle O_EXCL?", "it does",
+                                          "race two writers", "1 day")),
             RowSubmission("decisions", {"title": "owner wants dark mode"},
                           provenance=Provenance.ASSUMED, assumption_kind="intent", name="owner wants dark mode"),
         ],

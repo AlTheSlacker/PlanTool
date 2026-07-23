@@ -1796,3 +1796,46 @@ brackets. The rule to hold on to: **whatever the tool emits, the tool accepts.**
 transformation applied on the way out is owed the inverse on the way in — and the way to find
 the next one is to write the test that feeds output back in, rather than the test that knows
 what the storage form looks like.
+
+---
+
+## F42 — The world-assumption gate criterion read a backing link nothing writes
+
+**Found:** 2026-07-23, driving D16 — file a world-assumption, register a *real* spike against
+it (`register_spike`, the contracted mechanism), and run the package-6 gate. The assumption
+still read as unbacked.
+
+**What was there.** `world_assumption_backed` (`_c_unbacked_assumption`) decided whether an
+assumption was backed by querying the `links` table for a source row whose table was `spikes`
+or `accepted_risks`:
+
+```sql
+SELECT source_ref FROM links WHERE target_ref = ?   -- the assumption
+-- "backed" iff any source_ref starts with "spikes:" or "accepted_risks:"
+```
+
+But a registered spike does not live in `plan_rows` and is not a link. It is a row in the
+dedicated `spikes` table, addressed by an integer `id`, carrying the assumption ref in its
+`assumption` column — no `links` row is ever written. Likewise an owner-accepted risk is a
+`findings` row in state `accepted_risk`, reached through `finding_refs`, not a link. **No live
+code path writes the thing the criterion reads.** The one test that passed it,
+`test_a_spike_backs_a_world_assumption`, fabricated a plan-row in a table literally named
+`"spikes"` with a hand-made `LinkSpec` — a shape nothing in the system produces. So the gate
+was green against a fiction and red against every real spike.
+
+**Why it is the F30 class.** A reader with no matching writer — the mirror of the gate-history
+bug, where three readers were promised a record `run_gate` never stored. Here the criterion is
+the reader; the writer it imagines (something that links a `spikes:`/`accepted_risks:` plan-row
+to the assumption) does not exist. It could not be caught by the pre-build checks: every
+contract is well-formed and the gap is *between* the criterion's SQL and the spike store's
+schema, which no state-machine or contract audit inspects. It took **driving the real
+mechanism and reading the result**, exactly the case [[v2-build-conventions]] keeps logging.
+
+**Fixed here (with D16).** The criterion now reads the real stores: an assumption is backed
+iff its spike has a **recorded outcome** in the `spikes` table (`outcome IS NOT NULL` — the
+experiment was actually run) *and*, because the only outcomes that leave an assumption open
+are `inconclusive` and `blocked`, an **owner-accepted-risk finding** covers it. `confirmed`
+and `refuted` close the assumption, so it never reaches the criterion. This is only coherent
+*because* of D16's filing lock: every world-assumption is now born with a registered spike, so
+"no spike at all" is unrepresentable and the criterion stops policing existence and starts
+policing conclusion — the backstop with nothing to find, exactly as the D16 writeup intended.

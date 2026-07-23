@@ -36,7 +36,7 @@ from engine.clock import now
 from engine.conflicts import Conflict, ConflictService, GateScope
 from engine.door import label
 from engine.errors import PlanToolError
-from engine.findings import Finding, FindingService
+from engine.findings import ACCEPTED_RISK, Finding, FindingService
 from engine.idempotency import key
 from engine.storage import Op
 from engine.gaps import GapEngine, name_of
@@ -632,21 +632,53 @@ class GateEngine:
         return holes
 
     def _c_unbacked_assumption(self, criterion: Criterion) -> list[Hole]:
-        """A world-assumption with no spike and no accepted risk behind it."""
-        spec = criterion.spec
-        backing = tuple(spec["backing_tables"])
+        """A world-assumption whose spike has not been run to a conclusion, or whose weak
+        conclusion the owner has not signed off on.
+
+        Since D16 this criterion is a backstop, not the first line of defence: a
+        world-assumption cannot be *filed* without a spike registered atomically
+        (row-service enforces that), so "has no spike at all" is now unrepresentable and
+        there is nothing for it to find on that count. What it checks instead is that the
+        spike was actually run — a spike still sitting in `registered` at the package-6
+        gate means the experiment was queued and forgotten — and, because confirmed and
+        refuted both *close* the assumption (so it never reaches this loop), that the only
+        outcomes reaching here, inconclusive and blocked, carry the owner's explicit
+        acceptance of proceeding on them. An inconclusive result is a very weak answer;
+        proceeding past it needs a recorded sign-off, not silence.
+
+        It reads the real stores. The predecessor read the `links` table for a `spikes:` or
+        `accepted_risks:` source that no live code path ever wrote — a registered spike
+        lives in the `spikes` table addressed by its own id, and an accepted risk is a
+        finding, neither of which is a link. It could be satisfied only by a fabricated
+        plan-row in a table literally named "spikes", so a real spike left the assumption
+        reading as unbacked forever. See DEFECTS.md F42.
+        """
         holes = []
         for row in self._open_assumptions():
-            if row.assumption_kind != spec["assumption_kind"]:
+            if row.assumption_kind != criterion.spec["assumption_kind"]:
                 continue
-            backed = any(
-                r["source_ref"].split(":")[0] in backing
-                for r in self.storage.query(
-                    "SELECT source_ref FROM links WHERE target_ref = ?", (str(row.ref),)
-                )
+            concluded = bool(self.storage.query(
+                "SELECT 1 FROM spikes WHERE assumption = ? AND outcome IS NOT NULL "
+                "LIMIT 1",
+                (str(row.ref),),
+            ))
+            if not concluded:
+                holes.append(self._hole(
+                    criterion, row,
+                    reason="has a registered spike that has not been run to a "
+                           "conclusion — the experiment is still open",
+                ))
+                continue
+            signed_off = any(
+                f.state == ACCEPTED_RISK for f in self.findings.findings_for(row.ref)
             )
-            if not backed:
-                holes.append(self._hole(criterion, row))
+            if not signed_off:
+                holes.append(self._hole(
+                    criterion, row,
+                    reason="rests on a spike that concluded inconclusive or blocked, "
+                           "which is too weak to proceed on without the owner's recorded "
+                           "acceptance of the residual risk",
+                ))
         return sorted(holes, key=lambda h: (h.ref.table, h.ref.ordinal))
 
     def _c_prior_gates_green(self, criterion: Criterion) -> list[Hole]:

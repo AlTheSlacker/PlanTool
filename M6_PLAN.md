@@ -176,8 +176,12 @@ I did **not** build a NULL-backstop the schema makes untestable (the F23 shape).
 the backstop, `resolve_by` has to go nullable, which reopens what F28 closed — a real trade.
 
 **D16** follows from the same session: assumptions are attacked on arrival, not audited at
-package 6. **D16 is still unbuilt** — it is the next job. The original statement of the item
-follows.
+package 6. **D16 is BUILT (2026-07-23).** A world-assumption is filed with its spike in one
+atomic act, through both birth doors (`submit_rows` and `supersede_row`); the package-6
+`world_assumption_backed` criterion became a backstop that reads the real spike store and
+requires a recorded outcome plus — the owner's ruling — the owner's explicit acceptance of any
+inconclusive or blocked result. See DEVIATIONS D16 "Built" and DEFECTS F42 (the gate read a
+backing link nothing writes). The original statement of the item follows.
 
 
 Decided 2026-07-20; built here, in gate-engine. **The load-bearing work is drawing the

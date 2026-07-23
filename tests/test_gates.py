@@ -4,6 +4,7 @@ import pytest
 
 from engine.gates import RESOLVE_BY_LOCK, BlockedByConflict, UnknownPackage
 from engine.models import LinkSpec, Provenance, RowRef, RowSubmission
+from engine.validation import SpikeSpec
 
 
 def submit(rows, *submissions, key="k"):
@@ -170,28 +171,79 @@ def test_an_escape_row_satisfies_a_non_empty_criterion(gate, rows):
     assert "dependencies_registered" not in after
 
 
-def test_an_unbacked_world_assumption_is_a_package_six_hole(gate, rows):
-    submit(
-        rows,
-        RowSubmission("contracts", {"title": "SMB honours O_EXCL"},
-                      provenance=Provenance.ASSUMED, assumption_kind="world", name="SMB honours O_EXCL"),
-    )
-    holes = [
-        h for h in gate.run_gate(6).holes if h.criterion_id == "world_assumption_backed"
-    ]
-    assert holes and holes[0].ref == RowRef("contracts", 1)
+SPIKE = SpikeSpec(
+    question="Does SMB honour O_EXCL?",
+    hypothesis="It does",
+    method="Two writers race for the same lock on the real share",
+    budget="1 day",
+)
 
 
-def test_a_spike_backs_a_world_assumption(gate, rows):
-    submit(
+def _world_assumption(rows, key="wa"):
+    """A world-assumption filed the only way D16 allows: with its spike, atomically."""
+    receipt = submit(
         rows,
         RowSubmission("contracts", {"title": "SMB honours O_EXCL"},
-                      provenance=Provenance.ASSUMED, assumption_kind="world", name="SMB honours O_EXCL"),
-        RowSubmission("spikes", {"title": "probe SMB locking"}, links=[LinkSpec(0)], name="probe SMB locking"),
+                      provenance=Provenance.ASSUMED, assumption_kind="world",
+                      name="SMB honours O_EXCL", spike=SPIKE),
+        key=key,
     )
-    assert not [
+    return receipt.verdicts[0].ref
+
+
+def _atomic_spike_id(store, ref):
+    return store.query(
+        "SELECT id FROM spikes WHERE assumption = ? ORDER BY id", (str(ref),)
+    )[0]["id"]
+
+
+def _backed_holes(gate):
+    return [
         h for h in gate.run_gate(6).holes if h.criterion_id == "world_assumption_backed"
     ]
+
+
+def test_a_registered_spike_not_yet_run_is_a_package_six_hole(gate, rows):
+    """D16 — filing forces a spike, so the gate stops policing existence and starts
+    policing whether the spike was run. A spike still sitting in `registered` is a hole."""
+    ref = _world_assumption(rows)
+    holes = _backed_holes(gate)
+    assert holes and holes[0].ref == ref
+    assert "not been run" in holes[0].problem
+
+
+def test_an_inconclusive_spike_needs_the_owners_recorded_signoff(
+    gate, rows, store, validation, findings
+):
+    """An inconclusive result is a very weak answer; proceeding past it takes the owner's
+    explicit acceptance, not silence."""
+    ref = _world_assumption(rows)
+    spike_id = _atomic_spike_id(store, ref)
+    validation.start_spike(spike_id)
+    validation.record_spike_result(spike_id, "inconclusive", "torn commits seen once")
+
+    holes = _backed_holes(gate)
+    assert holes and holes[0].ref == ref
+    assert "recorded acceptance" in holes[0].problem
+
+    finding = findings.file_finding(
+        [ref], "SMB locking is unverified but we proceed", "medium",
+        name="SMB lock risk", resolve_by=6,
+    )
+    findings.resolve_finding(finding.id, "accepted_risk", "owner accepts the SMB risk")
+    assert not _backed_holes(gate)
+
+
+def test_a_confirmed_spike_closes_the_assumption_so_the_gate_is_moot(
+    gate, rows, store, validation
+):
+    """Confirmed or refuted resolves the assumption, so it never reaches the criterion —
+    the backstop finds nothing, which is exactly the point."""
+    ref = _world_assumption(rows)
+    spike_id = _atomic_spike_id(store, ref)
+    validation.start_spike(spike_id)
+    validation.record_spike_result(spike_id, "confirmed", "O_EXCL held under contention")
+    assert not _backed_holes(gate)
 
 
 def test_package_eight_folds_in_every_earlier_gate(gate):

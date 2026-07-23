@@ -313,11 +313,14 @@ packages:
       - id: world_assumption_backed
         type: unbacked_assumption
         assumption_kind: world
-        backing_tables: [spikes, accepted_risks]
-        problem: "{ref} (\"{name}\") rests on an unverified world-assumption"
+        problem: "{ref} (\"{name}\") {reason}"
         fix: >-
-          Spike it against the real dependency, or record an owner-accepted risk linking
-          it. A world-assumption is never resolved by asking the owner.
+          Run its spike against the real dependency and record the result. If the spike
+          concluded inconclusive or blocked, the assumption cannot ride into the frozen
+          plan on silence — record the owner's explicit acceptance of the residual risk
+          (file_finding on it, then resolve as accepted_risk). A world-assumption is never
+          resolved by asking the owner what they meant; it is settled by what the world
+          does, or by the owner knowingly accepting the risk of not knowing.
 
   # --- package 7: adversarial ----------------------------------------------------------
   - package: 7

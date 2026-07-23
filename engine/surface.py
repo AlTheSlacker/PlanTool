@@ -191,7 +191,8 @@ def as_submission(field_name: str, value: Any) -> RowSubmission:
     """
     got = as_dict(field_name, value)
     unknown = set(got) - {
-        "table", "content", "name", "provenance", "assumption_kind", "links", "package"
+        "table", "content", "name", "provenance", "assumption_kind", "links", "package",
+        "spike",
     }
     if unknown:
         raise _fail(field_name, f"a row; it has no field {sorted(unknown)[0]!r}", value)
@@ -218,6 +219,13 @@ def as_submission(field_name: str, value: Any) -> RowSubmission:
             for i, link in enumerate(got.get("links") or [])
         ],
         package=got.get("package"),
+        # D16 — a world-assumption is filed with the spike that will attack it; row-service
+        # requires it there and refuses it anywhere else, so the decoder just carries it.
+        spike=(
+            as_spike_spec(f"{field_name}.spike", got["spike"])
+            if got.get("spike") is not None
+            else None
+        ),
     )
 
 
@@ -388,7 +396,9 @@ REGISTRY: dict[str, Tool] = {
         _t("submit_rows", "rows", "submit_rows", "contracts:9",
            "File a batch of rows; each is accepted or rejected on its own, and the batch is "
            "atomic.",
-           Param("batch", "rows", note="the rows to file, each with a name of its own"),
+           Param("batch", "rows", note="the rows to file, each with a name of its own; a "
+                                       "world-assumption also carries the spike that will "
+                                       "attack it (question, hypothesis, method, budget)"),
            Param("idempotency_key", "str", note="replaying this key returns the first receipt"),
            writes=True),
         _t("read_rows", "rows", "read_rows", "contracts:10",
@@ -409,7 +419,9 @@ REGISTRY: dict[str, Tool] = {
         _t("supersede_row", "rows", "supersede_row", "contracts:12",
            "Replace a row with a new one, keeping the old as frozen history.",
            Param("old", "ref", note="the row being replaced"),
-           Param("replacement", "row", note="the row that replaces it"),
+           Param("replacement", "row", note="the row that replaces it; if it is a "
+                                            "world-assumption it carries its spike, as at "
+                                            "submission"),
            Param("idempotency_key", "str", note="replaying this key returns the first result"),
            writes=True),
         _t("retire_row", "rows", "retire_row", "contracts:13",

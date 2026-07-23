@@ -80,6 +80,12 @@ class AlreadySuperseded(PlanToolError):
     """contracts:12 — lineage is write-once; supersede the live replacement instead."""
 
 
+class SpikeRequired(PlanToolError):
+    """contracts:9 / contracts:12 (D16) — a world-assumption is filed with the spike that
+    will attack it, atomically. Raised when a replacement mints a world-assumption with no
+    spike, or attaches a spike to a row that is not one; nothing is written."""
+
+
 class AlreadyRetired(PlanToolError):
     """contracts:13 — refused so the audit trail records exactly one retirement."""
 

@@ -31,6 +31,9 @@ SPEC = SpikeSpec(
 
 
 def _assumption(rows, kind="world", text="SMB honours fsync"):
+    # D16 — a world-assumption is filed WITH its first spike, atomically; an
+    # intent-assumption must not carry one. register_spike (exercised below) is now the
+    # *further* spike, so this fixture is also what puts spike #1 on the assumption.
     receipt = rows.submit_rows(
         [RowSubmission(
             table="assumptions",
@@ -38,6 +41,7 @@ def _assumption(rows, kind="world", text="SMB honours fsync"):
             name=text,
             provenance=Provenance.ASSUMED,
             assumption_kind=kind,
+            spike=SPEC if kind == "world" else None,
         )],
         f"assume:{kind}:{text}",
     )

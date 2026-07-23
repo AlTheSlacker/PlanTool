@@ -114,6 +114,25 @@ class LinkSpec:
         return isinstance(self.target, int)
 
 
+@dataclass(frozen=True, slots=True)
+class SpikeSpec:
+    """contracts:29 — question, hypothesis, method against the real dependency, budget.
+
+    All four are mandatory. A spike with no hypothesis cannot be refuted, and one with
+    no budget is the open-ended investigation the spike mechanism exists to bound.
+
+    It lives here, beside RowSubmission, because D16 makes filing a world-assumption and
+    registering its spike one act: a world-assumption submission carries its spike, so the
+    two shapes cross the same boundary together. validation-service still owns the spike
+    lifecycle and re-exports this name.
+    """
+
+    question: str
+    hypothesis: str
+    method: str
+    budget: str
+
+
 def content_fingerprint(content: dict[str, Any]) -> str:
     """The fingerprint a row's name was given for (M6_PLAN.md §6.6).
 
@@ -142,6 +161,12 @@ class RowSubmission:
     assumption_kind: str | None = None
     links: list[LinkSpec] = field(default_factory=list)
     package: int | None = None
+    #: D16 — a world-assumption is filed WITH the spike that will attack it, in one
+    #: atomic act, so unbacked becomes unrepresentable rather than caught five packages
+    #: later. Required on a world-assumption, forbidden on anything else (a spike resolves
+    #: world-assumptions only). row-service writes it into the spikes table in the same
+    #: transaction, borrowing the just-assigned row ref.
+    spike: SpikeSpec | None = None
 
     def initial_state(self) -> RowState:
         return (

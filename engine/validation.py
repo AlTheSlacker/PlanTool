@@ -18,10 +18,13 @@ import re
 from dataclasses import dataclass
 
 from engine.errors import PlanToolError
-from engine.models import Provenance, RowRef
+from engine.models import Provenance, RowRef, SpikeSpec
 from engine.clock import now
 from engine.idempotency import key
 from engine.storage import FromOp, Op, Storage
+
+__all__ = ["SpikeSpec", "ValidationService", "spike_insert_op", "spike_spec_problem",
+           "spike_directory", "spike_slug"]
 
 # --- state_machines:5, the Spike lifecycle ---
 
@@ -131,20 +134,6 @@ class InvalidTransition(PlanToolError):
 
 
 @dataclass(frozen=True, slots=True)
-class SpikeSpec:
-    """contracts:29 — question, hypothesis, method against the real dependency, budget.
-
-    All four are mandatory. A spike with no hypothesis cannot be refuted, and one with
-    no budget is the open-ended investigation the spike mechanism exists to bound.
-    """
-
-    question: str
-    hypothesis: str
-    method: str
-    budget: str
-
-
-@dataclass(frozen=True, slots=True)
 class Spike:
     id: int
     assumption: RowRef
@@ -164,7 +153,7 @@ class Spike:
         Derived rather than stored so the path can never drift out of step with the
         record it belongs to.
         """
-        return f"spikes/{self.id:03d}_{self.slug}"
+        return spike_directory(self.id, self.slug)
 
 
 @dataclass(frozen=True, slots=True)
@@ -226,6 +215,57 @@ def _slugify(text: str) -> str:
     return cleaned[:40].rstrip("_") or "spike"
 
 
+def spike_slug(question: str) -> str:
+    """The slug half of a spike's quarantine directory.
+
+    Public so the atomic filing path (row-service) can name the directory it must create
+    with the same rule `spike_insert_op` stored on the row, rather than a second copy that
+    could drift.
+    """
+    return _slugify(question)
+
+
+def spike_directory(spike_id: int, slug: str) -> str:
+    """requirements:3 — the quarantine directory, `spikes/{id:03d}_{slug}`.
+
+    One owner for the path, so the two writers that create a spike — register_spike and
+    D16's atomic submit — cannot spell it differently.
+    """
+    return f"spikes/{spike_id:03d}_{slug}"
+
+
+def spike_spec_problem(spec: SpikeSpec) -> str | None:
+    """The reason `spec` cannot register a spike, or None.
+
+    Shared so row-service's atomic filing lock (D16) refuses an incomplete spec with the
+    same words register_spike does, rather than a second, drifting copy of the rule.
+    """
+    for field_name in ("question", "hypothesis", "method", "budget"):
+        if not getattr(spec, field_name).strip():
+            return f"a spike spec needs a {field_name}; nothing registered"
+    return None
+
+
+def spike_insert_op(assumption: str | FromOp, spec: SpikeSpec) -> Op:
+    """The single INSERT that registers a spike against `assumption`.
+
+    `assumption` is the stored ref (register_spike, whose assumption row already exists)
+    or a `FromOp` borrowing the ref a row insert assigns in the same transaction (D16's
+    atomic path, where the assumption is being filed right now). Both spell the spikes row
+    identically — the only difference is when the ref becomes known.
+    """
+    return Op("insert", "spikes", {
+        "assumption": assumption,
+        "question": spec.question,
+        "hypothesis": spec.hypothesis,
+        "method": spec.method,
+        "budget": spec.budget,
+        "slug": spike_slug(spec.question),
+        "state": REGISTERED,
+        "created_at": now(),
+    })
+
+
 class ValidationService:
     def __init__(self, storage: Storage, rows=None, graph=None, conflicts=None):
         self.storage = storage
@@ -238,7 +278,13 @@ class ValidationService:
     def register_spike(
         self, assumption: RowRef | str, spec: SpikeSpec
     ) -> Spike:
-        """Register a spike against a world-assumption, with its quarantine directory.
+        """Register a *further* spike against a world-assumption already on file.
+
+        Since D16, a world-assumption is born with its first spike in the same act that
+        files it (row-service does the atomic write), so this is no longer how an
+        assumption first gets backed — it is the second experiment, when the first came
+        back inconclusive and the method has been sharpened. The assumption therefore
+        always already exists here.
 
         requirements:24 — registration without a linked assumption is rejected. The
         spike exists to close a specific piece of uncertainty; an unlinked one is an
@@ -265,25 +311,12 @@ class ValidationService:
                 ref=str(ref),
                 assumption_kind=row["assumption_kind"],
             )
-        for field_name in ("question", "hypothesis", "method", "budget"):
-            if not getattr(spec, field_name).strip():
-                raise AssumptionNotFound(
-                    f"a spike spec needs a {field_name}; nothing registered",
-                    ref=str(ref),
-                )
+        problem = spike_spec_problem(spec)
+        if problem is not None:
+            raise AssumptionNotFound(problem, ref=str(ref))
 
-        stamp = now()
         receipt = self.storage.write_atomic(
-            [Op("insert", "spikes", {
-                "assumption": str(ref),
-                "question": spec.question,
-                "hypothesis": spec.hypothesis,
-                "method": spec.method,
-                "budget": spec.budget,
-                "slug": _slugify(spec.question),
-                "state": REGISTERED,
-                "created_at": stamp,
-            })],
+            [spike_insert_op(str(ref), spec)],
             key("register_spike", ref),
         )
         spike = self.get_spike(receipt["results"][0]["id"])
