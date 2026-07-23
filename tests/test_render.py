@@ -122,6 +122,115 @@ class TestCitations:
         ]
 
 
+class TestSupersededCitationsResolveToTheirSuccessor:
+    """F17, the owner's ruling (2026-07-23). A superseded citation is not merely flagged —
+    it is resolved through the write-once supersession chain to the live row that replaced
+    it, or told the chain is closed. A brief is read by a code engine that cannot go and
+    look, so a superseded address that names its successor is a lead where a bare flag was
+    a dead end."""
+
+    def _cite(self, surface, prose):
+        submit(surface, [
+            {"table": "decisions", "name": "ship on Postgres",
+             "content": {"text": "Run a server."}},
+            {"table": "requirements", "name": "the store is a single file",
+             "content": {"text": prose}},
+        ], "base")
+
+    def test_a_superseded_citation_names_its_live_successor(self, surface):
+        self._cite(surface, "Rests on decisions:1.")
+        replaced = surface.dispatch(ToolCall("supersede_row", {
+            "old": "decisions:1",
+            "replacement": {"table": "decisions", "name": "ship on SQLite",
+                            "content": {"text": "One file, no server."}},
+            "idempotency_key": "sup",
+        }))
+        assert replaced.ok, replaced.problem
+        body = rendered(surface)
+        assert (
+            "cites: decisions:1 — ship on Postgres (superseded), "
+            "now decisions:2 — ship on SQLite" in body
+        )
+
+    def test_a_multi_hop_chain_resolves_to_the_current_head(self, surface):
+        """`lineage_head` walks the whole chain, so a citation of the first version lands on
+        the last, not on the middle one that also superseded away."""
+        self._cite(surface, "Rests on decisions:1.")
+        for i, (old, name) in enumerate(
+            [("decisions:1", "ship on SQLite"), ("decisions:2", "ship on DuckDB")]
+        ):
+            step = surface.dispatch(ToolCall("supersede_row", {
+                "old": old,
+                "replacement": {"table": "decisions", "name": name,
+                                "content": {"text": f"version {i}."}},
+                "idempotency_key": f"hop-{i}",
+            }))
+            assert step.ok, step.problem
+        body = rendered(surface)
+        assert "now decisions:3 — ship on DuckDB" in body
+
+    def test_a_closed_chain_says_no_live_successor(self, surface):
+        """The cited row was struck out with nothing put in its place. The owner asked for
+        this said plainly rather than repaired to a successor that is not there."""
+        self._cite(surface, "Rests on decisions:1.")
+        struck = surface.dispatch(ToolCall("retire_row", {
+            "ref": "decisions:1", "reason": "the decision was withdrawn",
+            "idempotency_key": "gone",
+        }))
+        assert struck.ok, struck.problem
+        body = rendered(surface)
+        assert "decisions:1 — ship on Postgres (retired), no live successor" in body
+
+    def test_a_successor_that_is_itself_retired_is_a_closed_chain(self, surface):
+        """A→B, then B struck out: the chain reaches a row, but not a live one. That is the
+        closed case, not the repaired one."""
+        self._cite(surface, "Rests on decisions:1.")
+        replaced = surface.dispatch(ToolCall("supersede_row", {
+            "old": "decisions:1",
+            "replacement": {"table": "decisions", "name": "ship on SQLite",
+                            "content": {"text": "One file."}},
+            "idempotency_key": "sup2",
+        }))
+        assert replaced.ok, replaced.problem
+        struck = surface.dispatch(ToolCall("retire_row", {
+            "ref": "decisions:2", "reason": "changed our minds entirely",
+            "idempotency_key": "gone2",
+        }))
+        assert struck.ok, struck.problem
+        body = rendered(surface)
+        assert "decisions:1 — ship on Postgres (superseded), no live successor" in body
+
+    def test_the_receipt_counts_a_closed_chain_but_not_a_repaired_one(self, surface):
+        """A citation resolved to a live successor reaches a live row and is not dead. Only
+        the closed chain lands on the receipt the planner reads."""
+        submit(surface, [
+            {"table": "decisions", "name": "ship on Postgres",
+             "content": {"text": "Run a server."}},
+            {"table": "decisions", "name": "keep a cache",
+             "content": {"text": "A cache in front."}},
+            {"table": "requirements", "name": "the store is a single file",
+             "content": {"text": "Rests on decisions:1."}},
+            {"table": "requirements", "name": "the cache is dropped",
+             "content": {"text": "Rests on decisions:2."}},
+        ], "two-cites")
+        # decisions:1 gets a live successor (decisions:3); decisions:2 is struck out.
+        assert surface.dispatch(ToolCall("supersede_row", {
+            "old": "decisions:1",
+            "replacement": {"table": "decisions", "name": "ship on SQLite",
+                            "content": {"text": "One file."}},
+            "idempotency_key": "r-sup",
+        })).ok
+        assert surface.dispatch(ToolCall("retire_row", {
+            "ref": "decisions:2", "reason": "no cache after all",
+            "idempotency_key": "r-ret",
+        })).ok
+        result = surface.dispatch(ToolCall("render_plan", {}))
+        assert result.ok, result.problem
+        assert result.payload["detail"]["dead_citations"] == [
+            "keep a cache (decisions:2) — no live successor"
+        ]
+
+
 class TestTheDocumentIsDerived:
     def test_the_receipt_carries_the_path_and_not_the_document(self, surface):
         """`requirements:62` — a full-plan dump is never how a session rehydrates. A tool

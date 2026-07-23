@@ -530,9 +530,26 @@ the pre-build audit catches missing *events* cleanly but says nothing about unde
 
 ## F17 — Row citations inside prose are unvalidated and break silently on supersession
 
-**Status: OPEN. Resolve-by gate: M6 (surface).** Chosen because the fix is a read-time
-concern — how a row's text is served, and how an unresolvable prose ref is surfaced — and
-M6 is where `plan_status` and the MCP surface are built. It does not block M5.
+**Status: RESOLVED at M6 (2026-07-23).** Both halves are built. The *visibility* half (the
+door resolving each cited address beside the untouched prose, and the render surfacing it in
+a *cites* line) landed with the surface. The *what-to-do* half was the owner's call between
+option 1 (resolve) and option 3 (flag), settled here: **resolve.** When prose cites a dead
+row, `door.successor_lookup` walks the write-once supersession chain to its live head and the
+annotation reads `contracts:59 — <name> (superseded), now contracts:62 — <name>`; when the
+chain is closed — the head is itself retired, or the row was struck out with nothing put in
+its place — it reads *no live successor* rather than repairing to a row that is not there.
+The receipt the planner reads counts a closed chain as dead and a repaired one as live,
+because a repaired citation now leads somewhere the reader can go. **The frozen prose is
+never touched** — successor address and name travel in their own keys of the resolution, so a
+brief's code-engine reader gets a machine-readable pointer, not a rewritten sentence. Chosen
+over option 3 because the consumer of a brief cannot go and look: telling it a row was
+superseded and stopping there strands it exactly where F15's wrong diagnosis stranded a
+person. Following `superseded_by` is not the tool exercising judgment — it is resolving a
+structural pointer, the same mechanical act as resolving a name.
+
+**Original status: OPEN. Resolve-by gate: M6 (surface).** Chosen because the fix is a
+read-time concern — how a row's text is served, and how an unresolvable prose ref is surfaced
+— and M6 is where `plan_status` and the MCP surface are built. It did not block M5.
 
 **Rows:** `findings:3`, `findings:8`, `findings:9`, `findings:10` (the four carrying
 dangling citations); mechanism rows `requirements:61`, `decisions:42` (write-once
