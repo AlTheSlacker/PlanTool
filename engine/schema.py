@@ -16,7 +16,13 @@ database". Every other module reaches persistence through storage.py's typed ope
 #: glossary, and empty is the truthful answer rather than an invented one. The DDL below
 #: only ever runs at init, so without a step a version-3 store would open fine and fail on
 #: the first read of a table it does not have.
-SCHEMA_VERSION = 4
+#:
+#: Bumped to 5 on 2026-07-23 for `findings.resolve_by` and the `finding_reallocations`
+#: audit table (D15 — the gate hard-lock). This migrates too, and honestly: before D15 the
+#: only gate that blocked on an open finding was finalization (requirements:32), so every
+#: finding was *implicitly* "resolve by finalization". The 4 -> 5 step makes that implicit
+#: allocation explicit rather than inventing one — the same test the glossary passed.
+SCHEMA_VERSION = 5
 
 DDL = """
 PRAGMA journal_mode = WAL;
@@ -298,6 +304,15 @@ CREATE TABLE IF NOT EXISTS claim_tracks (
 -- `findings:N` and that address reaches readers, so it may never travel alone (D19). It is
 -- NOT NULL at creation and never derived from `description` — a name guessed from content is
 -- the failure D12 argued out of the row schema and F32 then found three copies of.
+--
+-- `resolve_by` is the D15 hard-lock (M6_PLAN.md §2.6). A finding is an outstanding item,
+-- and every outstanding item is allocated to the package gate that must not pass while it
+-- is still open. It is NOT NULL and supplied at filing: an item with no gate to answer to
+-- is one that only finalization catches, which is the pile-up D15 exists to break up. The
+-- two exits are `resolve_finding` (contracts:34) and a *recorded* reallocation to a later
+-- gate — the deferral costs a reason the owner reads (finding_reallocations), which is what
+-- keeps it from being silent procrastination. Gaps are deliberately outside this scheme:
+-- they are closable by the agent now, so a deferred gap is procrastination with no cost.
 CREATE TABLE IF NOT EXISTS findings (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     name        TEXT    NOT NULL,       -- what this finding says, in a few words
@@ -307,6 +322,7 @@ CREATE TABLE IF NOT EXISTS findings (
     outcome     TEXT,                   -- addressed | accepted_risk | withdrawn
     rationale   TEXT,                   -- for accepted_risk: the owner's acceptance
     dispute     TEXT,                   -- the standing argument against the finding
+    resolve_by  INTEGER NOT NULL,       -- D15: the package gate that locks until resolved
     created_at  TEXT    NOT NULL,
     resolved_at TEXT
 );
@@ -694,6 +710,37 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_terms_live ON terms (term)
 """
 
 DDL += TERMS_DDL
+
+
+# D15's deferral log and the index the gate reads (DEVIATIONS.md D15, M6_PLAN.md §2.6).
+# Held apart from DDL above for the same reason TERMS_DDL is: the 4 -> 5
+# migration and a fresh init must create these from one text, or the reallocations table and
+# its indexes drift between stores that were migrated and stores that were born.
+#
+# `finding_reallocations` records each deferral of an open finding to a later gate. Re-
+# allocating is legitimate — a finding genuinely belongs to a later package sometimes — but
+# it is a judgement the owner is entitled to see, so it is a recorded act and not an in-place
+# edit of `resolve_by` that leaves no trace. Same friction shape as obligation_amendments and
+# scope_attachments' promotion history: the accounting can move, never silently. `to_package`
+# is always strictly later than `from_package`; the service enforces it, and the log is the
+# proof it happened.
+REALLOCATIONS_DDL = """
+CREATE TABLE IF NOT EXISTS finding_reallocations (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    finding_id   INTEGER NOT NULL,
+    from_package INTEGER NOT NULL,
+    to_package   INTEGER NOT NULL,
+    reason       TEXT    NOT NULL,
+    created_at   TEXT    NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_findings_resolve_by
+    ON findings (resolve_by, state);
+CREATE INDEX IF NOT EXISTS idx_reallocations_finding
+    ON finding_reallocations (finding_id, id);
+"""
+
+DDL += REALLOCATIONS_DDL
 
 
 def statements(ddl: str) -> list[str]:

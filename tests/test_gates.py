@@ -2,7 +2,7 @@
 
 import pytest
 
-from engine.gates import BlockedByConflict, UnknownPackage
+from engine.gates import RESOLVE_BY_LOCK, BlockedByConflict, UnknownPackage
 from engine.models import LinkSpec, Provenance, RowRef, RowSubmission
 
 
@@ -345,14 +345,14 @@ def test_the_gate_sees_a_finding_filed_the_way_the_script_says_to_file_it(
     assert any("no adversarial findings" in hole.problem for hole in result.holes)
 
     findings.file_finding([_attacked(rows)], "the gate is too weak", "high",
-                          name="gate 4 passes with no tests")
+                          name="gate 4 passes with no tests", resolve_by=8)
     result = gate.run_gate(7)
     assert not any("no adversarial findings" in hole.problem for hole in result.holes)
 
 
 def test_an_unresolved_finding_is_a_hole_that_names_it(gate, rows, findings):
     findings.file_finding([_attacked(rows)], "the gate is too weak", "high",
-                          name="gate 4 passes with no tests")
+                          name="gate 4 passes with no tests", resolve_by=8)
     holes = [h for h in gate.run_gate(7).holes if h.criterion_id == "findings_dispositioned"]
     assert len(holes) == 1
     # D19: the hole names the finding before it addresses it.
@@ -362,7 +362,7 @@ def test_an_unresolved_finding_is_a_hole_that_names_it(gate, rows, findings):
 
 def test_a_resolved_finding_leaves_no_hole(gate, rows, findings):
     finding = findings.file_finding([_attacked(rows)], "the gate is too weak", "high",
-                                    name="gate 4 passes with no tests")
+                                    name="gate 4 passes with no tests", resolve_by=8)
     findings.resolve_finding(finding.id, "addressed", "criteria tightened in package 4")
     assert not [
         h for h in gate.run_gate(7).holes if h.criterion_id == "findings_dispositioned"
@@ -374,8 +374,81 @@ def test_an_accepted_risk_still_needs_its_rationale(gate, rows, findings):
     closed with no recorded acceptance is indistinguishable at handoff from one somebody
     forgot about."""
     finding = findings.file_finding([_attacked(rows)], "the gate is too weak", "high",
-                                    name="gate 4 passes with no tests")
+                                    name="gate 4 passes with no tests", resolve_by=8)
     findings.resolve_finding(finding.id, "accepted_risk", "the owner will live with it")
     assert not [
         h for h in gate.run_gate(7).holes if h.criterion_id == "findings_dispositioned"
     ]
+
+
+# --- D15: the hard-lock (M6_PLAN.md §2.6) ---
+
+
+def _lock_holes(result):
+    return [h for h in result.holes if h.criterion_id == RESOLVE_BY_LOCK]
+
+
+def test_a_gate_locks_while_an_open_finding_is_allocated_to_it(gate, rows, findings):
+    """The whole of D15. A finding allocated to package 4 is an item with that gate's name
+    on it, so gate 4 does not pass while it is open — and it is a hole, not a raise, because
+    the plan is perfectly readable."""
+    finding = findings.file_finding(
+        [_attacked(rows)], "the gate is too weak", "high",
+        name="gate 4 passes with no tests", resolve_by=4,
+    )
+    result = gate.run_gate(4)
+    holes = _lock_holes(result)
+    assert result.passed is False
+    assert len(holes) == 1
+    # D19: the hole names the finding before pointing at it, and names both exits.
+    assert "gate 4 passes with no tests (findings:1)" in holes[0].problem
+    assert "resolve_finding()" in holes[0].fix and "reallocate_finding()" in holes[0].fix
+    # A finding allocated to 4 does not lock gate 3.
+    assert _lock_holes(gate.run_gate(3)) == []
+
+
+def test_resolving_a_finding_frees_its_gate(gate, rows, findings):
+    finding = findings.file_finding(
+        [_attacked(rows)], "the gate is too weak", "high",
+        name="a hole in the gate", resolve_by=4,
+    )
+    findings.resolve_finding(finding.id, "addressed", "the criterion was tightened")
+    assert _lock_holes(gate.run_gate(4)) == []
+
+
+def test_reallocating_moves_the_lock_to_the_later_gate(gate, rows, findings):
+    """Deferring is the second exit: gate 4 is freed and gate 6 takes the lock instead."""
+    finding = findings.file_finding(
+        [_attacked(rows)], "the gate is too weak", "high",
+        name="a hole in the gate", resolve_by=4,
+    )
+    findings.reallocate_finding(finding.id, 6, "the fix needs the architecture package first")
+    assert _lock_holes(gate.run_gate(4)) == []
+    assert len(_lock_holes(gate.run_gate(6))) == 1
+
+
+def test_the_lock_stands_aside_where_a_findings_catchall_already_runs(gate, rows, findings):
+    """The adversarial package (7) carries `findings_dispositioned`, which already refuses
+    every open finding regardless of allocation. The D15 lock stands aside there rather than
+    naming the same finding twice — but `findings_dispositioned` still fires, so the finding
+    is not let through."""
+    findings.file_finding(
+        [_attacked(rows)], "the gate is too weak", "high",
+        name="a hole in the gate", resolve_by=7,
+    )
+    result = gate.run_gate(7)
+    assert _lock_holes(result) == []
+    assert [h for h in result.holes if h.criterion_id == "findings_dispositioned"]
+
+
+def test_a_finding_bound_to_freeze_cannot_reach_a_frozen_plan(gate, rows, findings):
+    """A finding allocated to the terminal gate is named there by the lock, and package 8
+    also re-runs the adversarial catch-all through prior_gates_green — so an open finding
+    cannot pass finalization however it was allocated."""
+    findings.file_finding(
+        [_attacked(rows)], "the gate is too weak", "high",
+        name="a hole in the gate", resolve_by=8,
+    )
+    result = gate.run_gate(8)
+    assert result.passed is False
+    assert len(_lock_holes(result)) == 1

@@ -657,6 +657,53 @@ system for a lock that already exists, not a second weaker lock.
 
 **Related:** D7, D9, D10; DEFECTS.md F28; `decisions:31`, `requirements:32`, `requirements:79`.
 
+### Built 2026-07-23
+
+Findings gained `resolve_by` (`findings.resolve_by`, `NOT NULL`, schema 5, `engine/terms.py`
+neighbourhood in `engine/findings.py`), the gate learned the lock, and the second exit got a
+tool. What landed and where it departed from the writeup above:
+
+- **`resolve_by` is a required argument to `file_finding`**, a deviation from `contracts:33`
+  the same way `name` was (D22): the contract predates the rule, and the tool cannot choose a
+  finding's gate for the same reason it cannot choose its name — that is the owner's judgment
+  (`decisions:12`). It is validated against the loaded methodology's package range, so an
+  allocation to a gate that does not exist is refused at filing, not discovered later.
+- **The second exit is `reallocate_finding` (new tool, `DEVIATION`, in `ADDED`).** It moves an
+  *open* finding to a *strictly later* gate and costs a reason, recorded in a new
+  `finding_reallocations` table — the deferral history is the owner's review surface, the same
+  friction shape as `obligation_amendments` and scope-promotion history. Deferring backward or
+  deferring a closed finding is refused.
+- **The lock is engine-level, beside the conflict block, not a `gate_criteria.yaml` entry.**
+  The rule holds for every gate of every plan whatever methodology is loaded, so it cannot be a
+  per-package methodology asset. It reports a *hole* (`criterion_id = "d15_resolve_by_lock"`, a
+  word not a citation, the honesty the surface's `DEVIATION` sentinel makes visible) rather than
+  raising, because the plan is readable — there is simply an outstanding item with this gate's
+  name on it — so it composes with the package's other holes.
+- **The lock stands aside where a `findings_resolved` criterion already runs** — the
+  adversarial package (7) carries `findings_dispositioned`, which refuses *every* open finding
+  regardless of allocation, so the lock there would only name the same finding twice. It is not
+  the *terminal* gate that is special (an early misread I corrected while driving it): the
+  catch-all lives at package 7, and package 8 re-runs it through `prior_gates_green`, so a
+  finding allocated to any gate still cannot reach a frozen plan open. The two are not redundant
+  elsewhere: this one fires at the earlier gate the finding was bound to, which is the
+  pile-up-at-the-catch-all the scheme exists to break up.
+
+**Where the implementation contradicts the writeup, on the record.** Above I wrote both that
+"unallocated is unrepresentable" (`NOT NULL`, F28) *and* that "the clause-3 lock stays as the
+backstop … with a test proving it can fire." Building it, those two cannot both hold: `NOT NULL`
+plus range-validation at creation means a genuinely unallocated finding cannot be written through
+the service at all, so there is no state for a clause-3 backstop to fire on and no way to write a
+test that reaches it. The escape hatch clause 3 feared — "never allocate" — is closed at the
+*front door* by F28 instead of at the gate. The rule's intent survives intact by a different
+route: `findings_dispositioned` at finalization refuses any open finding whatever its allocation,
+and finalization cannot be skipped, so no finding can reach a frozen plan unresolved. I did not
+build a NULL-backstop that the schema makes untestable; that would be a mechanism dressed to look
+like the writeup while checking nothing (the F23 shape). If the owner wants the backstop, it needs
+`resolve_by` nullable, which reopens the front-door hole F28 closed — a real trade, his to make.
+
+**Related implementation:** DEFECTS.md F28; schema version 5 and its 4 → 5 migration (which makes
+every pre-D15 finding's implicit "resolve by finalization" explicit rather than inventing one).
+
 ---
 
 ## D16 — An assumption is attacked when it is made, not audited five packages later

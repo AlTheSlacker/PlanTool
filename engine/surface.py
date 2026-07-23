@@ -495,12 +495,21 @@ REGISTRY: dict[str, Tool] = {
            Param("description", "str", note="the attack, stated so it can be adjudicated"),
            Param("severity", "str", note="how badly it matters"),
            Param("name", "str", note="what the finding says, in a few words"),
+           Param("resolve_by", "int",
+                 note="the package gate this must be resolved by — its deadline, made a gate"),
            writes=True),
         _t("resolve_finding", "findings", "resolve_finding", "contracts:34",
            "Take a finding to a terminal outcome; an accepted risk stays visible at handoff.",
            Param("finding_id", "int", note="the finding being closed"),
            Param("outcome", "str", note="how it was closed"),
            Param("rationale", "str", note="the reasoning, which an accepted risk needs most"),
+           writes=True),
+        _t("reallocate_finding", "findings", "reallocate_finding", DEVIATION,
+           "Defer an open finding to a later gate, on the record. The one alternative to "
+           "resolving it at its own gate.",
+           Param("finding_id", "int", note="the open finding being deferred"),
+           Param("resolve_by", "int", note="the later package gate it now answers to"),
+           Param("reason", "str", note="why it belongs there instead — the owner reads this"),
            writes=True),
         # --- task-graph (components:11) ---
         _t("declare_package", "tasks", "declare_package", DEVIATION,
@@ -709,6 +718,10 @@ ADDED: tuple[Absence, ...] = (
     Absence(DEVIATION, "packaging",
             "package ids are the only way to assign and a declaration returns one once, so "
             "a planner resuming cold could not get back to them (D13, F39)"),
+    Absence(DEVIATION, "reallocate_finding",
+            "D15 gives a finding two exits, resolve or defer-to-a-later-gate; without a tool "
+            "for the second, the gate lock could only ever be satisfied by resolving, and a "
+            "finding that genuinely belongs later would have no honest move (D15, F39)"),
 )
 
 #: `contracts:50`'s `NotWriter`, struck rather than implemented. Recorded here because an

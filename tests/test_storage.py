@@ -130,3 +130,34 @@ def test_migration_with_no_path_fails_loudly_and_restores(store, rows):
     with pytest.raises(MigrationFailed):
         store.migrate(99)
     assert len(store.query("SELECT * FROM plan_rows")) == 1
+
+
+def test_migration_4_to_5_makes_the_old_implicit_allocation_explicit(store):
+    """D15's migration. Before D15 the only gate that blocked on an open finding was
+    finalization, so every finding was implicitly "resolve by finalization" — the 4 -> 5
+    step states that (resolve_by = 8, the terminal gate), it does not invent it."""
+    # Rebuild the store as a version-4 one: findings without resolve_by, no reallocations.
+    store.conn.executescript(
+        """
+        DROP TABLE findings;
+        DROP TABLE IF EXISTS finding_reallocations;
+        CREATE TABLE findings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL, description TEXT NOT NULL, severity TEXT NOT NULL,
+            state TEXT NOT NULL, outcome TEXT, rationale TEXT, dispute TEXT,
+            created_at TEXT NOT NULL, resolved_at TEXT
+        );
+        """
+    )
+    store.conn.execute(
+        "INSERT INTO findings (name, description, severity, state, created_at) "
+        "VALUES ('old finding', 'filed before D15 existed', 'high', 'filed', '2026-01-01')"
+    )
+    store.conn.execute("UPDATE plan SET schema_version = 4 WHERE guard = 1")
+    store.conn.commit()
+
+    report = store.migrate(5)
+    assert (report.from_version, report.to_version) == (4, 5)
+    assert store.query("SELECT resolve_by FROM findings WHERE id = 1")[0]["resolve_by"] == 8
+    # The deferral log now exists and is empty.
+    assert store.query("SELECT COUNT(*) AS n FROM finding_reallocations")[0]["n"] == 0

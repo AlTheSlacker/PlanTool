@@ -521,17 +521,29 @@ class Storage:
     def _migration_steps(self, current: int, target: int) -> list[str]:
         """The SQL that moves the store from one schema version to the next.
 
-        One path exists: **3 -> 4**, which adds the glossary. It is here and the earlier
-        bumps are not, and the difference is the test of whether a migration is honest. A
-        `2 -> 3` step would have to invent a name for every finding, which is precisely what
-        that column exists to prevent; a plan that predates the glossary genuinely has an
-        empty one, so the migration states a truth rather than manufacturing one.
+        Two paths exist, and both pass the same test — the migrated value is a truth the
+        old store already implied, never one invented to satisfy a NOT NULL:
+
+          **3 -> 4** adds the glossary. A plan that predates it genuinely has an empty one.
+          (A `2 -> 3` step is *absent* on purpose: it would have to invent a name for every
+          finding, which is precisely what that column exists to prevent.)
+
+          **4 -> 5** adds `findings.resolve_by` (D15). Before D15 the only gate that blocked
+          on an open finding was finalization, so every finding was implicitly "resolve by
+          finalization" — the DEFAULT below states that, it does not manufacture it. The
+          literal is the terminal package of the shipped standard methodology; a migration
+          is a point-in-time step and is allowed to name it.
 
         Anything else is an error and never a silent no-op (decisions:45) — including a
         downgrade, which would have to drop rows to succeed.
         """
         if (current, target) == (3, 4):
             return schema.statements(schema.TERMS_DDL)
+        if (current, target) == (4, 5):
+            return [
+                "ALTER TABLE findings ADD COLUMN resolve_by INTEGER NOT NULL DEFAULT 8",
+                *schema.statements(schema.REALLOCATIONS_DDL),
+            ]
         raise ValueError(
             f"no migration path from schema version {current} to {target}"
         )

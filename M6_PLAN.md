@@ -150,14 +150,34 @@ and proceeds on a summary. That is F14's shape — a check that ran, passed, and
 This is also `requirements:58` doing real work rather than being decorative. Recorded as
 **D17** with Q1, since they are one decision about what a digest is for.
 
-### 2.6 D9 — the hard-lock as a product requirement — **DECIDED 2026-07-21 as D15**
+### 2.6 D9 — the hard-lock as a product requirement — **DECIDED 2026-07-21 as D15, BUILT 2026-07-23**
 Settled: a gate locks on every open item **allocated to it**; `resolve_by` is required at
 creation and `NOT NULL`; the two exits are resolve, or re-allocate to a later gate with a
 reason. Gaps are outside the scheme — they are closable by the agent now, so deferring one is
 procrastination. No infinite-deferral brake is needed: you cannot defer to a gate that does
 not exist, so the worst case is a pile-up at freeze, which correctly refuses to freeze.
+
+**Built for findings** (the one item class with a create contract, an open/closed lifecycle
+and an addressable identity — conflicts already hard-block via `requirements:28`, assumptions
+are D16's). `findings.resolve_by` (`NOT NULL`, schema 5, its own 4 → 5 migration);
+`file_finding` takes it and validates it against the package range; `reallocate_finding` is
+the recorded second exit, logging to `finding_reallocations`; the gate lock is engine-level
+beside the conflict block (`gates.RESOLVE_BY_LOCK`), reporting a hole and standing aside at
+the adversarial package (7), whose `findings_dispositioned` already refuses every open finding
+— not at the terminal gate, an early misread caught while driving it. See DEVIATIONS.md D15
+"Built 2026-07-23".
+
+**One thing the build turned up, for the owner.** The D15 writeup asks for both `NOT NULL`
+*and* a "clause-3 backstop lock, with a test proving it can fire". Those contradict: `NOT
+NULL` makes an unallocated finding unwritable through the service, so there is no state left
+for the backstop to fire on. The escape hatch is closed at the front door (F28) instead of at
+the gate, and finalization's existing catch-all covers any oddly-allocated finding regardless.
+I did **not** build a NULL-backstop the schema makes untestable (the F23 shape). If you want
+the backstop, `resolve_by` has to go nullable, which reopens what F28 closed — a real trade.
+
 **D16** follows from the same session: assumptions are attacked on arrival, not audited at
-package 6. Both are unbuilt. The original statement of the item follows.
+package 6. **D16 is still unbuilt** — it is the next job. The original statement of the item
+follows.
 
 
 Decided 2026-07-20; built here, in gate-engine. **The load-bearing work is drawing the

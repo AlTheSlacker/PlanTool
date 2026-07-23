@@ -16,6 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from engine.errors import PlanToolError
+from engine.methodology import Methodology, load
 from engine.models import RowRef
 from engine.clock import now
 from engine.idempotency import key
@@ -80,6 +81,11 @@ class InvalidTransition(PlanToolError):
     unchanged."""
 
 
+class InvalidAllocation(PlanToolError):
+    """D15 — `resolve_by` is not a package gate, or a reallocation does not move the
+    finding to a strictly later one; the allocation is unchanged."""
+
+
 @dataclass(frozen=True, slots=True)
 class Finding:
     id: int
@@ -90,6 +96,9 @@ class Finding:
     description: str
     severity: str
     state: str
+    #: D15 — the package gate that must not pass while this finding is open. NOT NULL, set
+    #: at filing. It is the answer to "by when", made mechanical: the gate is the deadline.
+    resolve_by: int
     created_at: str
     outcome: str | None = None
     rationale: str | None = None
@@ -128,9 +137,13 @@ class FindingService:
     #: nowhere else, so the address space has one owner (D22).
     TABLE = Finding.TABLE
 
-    def __init__(self, storage: Storage, rows=None):
+    def __init__(self, storage: Storage, rows=None, methodology: Methodology | None = None):
         self.storage = storage
         self.rows = rows
+        #: The package set, so `resolve_by` can be validated against gates that exist and
+        #: an integrity finding can be allocated to the terminal one. Loaded, not hard-coded:
+        #: the range is the methodology's to declare, not this module's to assume.
+        self.methodology = methodology or load()
 
     # --- contracts:33 ---
 
@@ -140,6 +153,7 @@ class FindingService:
         description: str,
         severity: str,
         name: str,
+        resolve_by: int,
     ) -> Finding:
         """File a finding against the specific rows it attacks (requirements:31).
 
@@ -153,6 +167,12 @@ class FindingService:
         session that already wrote the description can write the six-word version of it, and
         the tool cannot — deriving the name from the description is the guess D19 exists to
         remove.
+
+        `resolve_by` is D15 (M6_PLAN.md §2.6), also a deviation from `contracts:33`. It is
+        the package gate that must not pass while the finding is open, required here because
+        an item with no gate to answer to is one only finalization catches — the pile-up the
+        allocation scheme exists to break up. Which gate is a judgement (`decisions:12`): the
+        tool checks the gate exists and records the choice; it does not choose it.
         """
         parsed = [RowRef.coerce(r) for r in refs]
         if not parsed:
@@ -170,11 +190,20 @@ class FindingService:
                 "and look it up — so the name is what gets shown and the address rides "
                 "alongside it"
             )
+        self._check_package(resolve_by, "resolve_by")
         for ref in parsed:
             if not self._row_exists(ref):
                 raise RefNotFound("no such row; nothing filed", ref=str(ref))
 
-        return self._insert(parsed, description, severity, name)
+        return self._insert(parsed, description, severity, name, resolve_by)
+
+    def _check_package(self, package: int, field: str) -> None:
+        low, high = self.methodology.package_range
+        if isinstance(package, bool) or not isinstance(package, int) or not low <= package <= high:
+            raise InvalidAllocation(
+                f"{field} must be a package gate in {low}-{high}; nothing filed",
+                **{field: repr(package)},
+            )
 
     def file_integrity_finding(
         self, report, refs: list[RowRef | str] | None = None
@@ -192,12 +221,17 @@ class FindingService:
             f"Unreadable: {', '.join(str(r) for r in unreadable) or 'unnamed rows'}."
         )
         # The one finding the tool names itself, because the tool is the one filing it.
+        # Allocated to the terminal gate: an unreadable plan already refuses every gate
+        # (run_gate raises PlanUnreadable before evaluating), so the allocation is a formality
+        # — the terminal package is the honest home for "must be gone before freeze".
         return self._insert(
-            unreadable, description, "blocking", "plan state is unreadable"
+            unreadable, description, "blocking", "plan state is unreadable",
+            self.methodology.package_range[1],
         )
 
     def _insert(
-        self, refs: list[RowRef], description: str, severity: str, name: str
+        self, refs: list[RowRef], description: str, severity: str, name: str,
+        resolve_by: int,
     ) -> Finding:
         stamp = now()
         ops = [
@@ -206,6 +240,7 @@ class FindingService:
                 "description": description,
                 "severity": severity,
                 "state": FILED,
+                "resolve_by": resolve_by,
                 "created_at": stamp,
             }),
             *[
@@ -249,6 +284,62 @@ class FindingService:
             _OUTCOME_EVENT[outcome],
             {"outcome": outcome, "rationale": rationale, "resolved_at": now()},
         )
+
+    # --- D15's second exit: defer to a later gate, on the record ---
+
+    def reallocate_finding(
+        self, finding_id: int, resolve_by: int, reason: str
+    ) -> Finding:
+        """Move an open finding's gate allocation to a strictly later package, with a reason.
+
+        The one legitimate alternative to resolving a finding at its gate: it genuinely
+        belongs to a later package sometimes. But deferral is exactly where "we'll get to
+        it" quietly becomes "we never did", so it costs a reason the owner reads and leaves
+        a row in `finding_reallocations` — the accounting can move, never silently.
+
+        Only an *open* finding can be re-allocated: a resolved one has left the scheme, and
+        moving its deadline forward would be recording a deadline for something already done.
+        And only *forward*: an earlier gate has either passed or is where the finding should
+        have been answered, so re-allocating backward is not a deferral at all.
+        """
+        finding = self.get(finding_id)
+        if not finding.is_open:
+            raise InvalidAllocation(
+                "only an open finding is allocated to a gate; this one is "
+                f"{finding.state} and has left the scheme",
+                finding_id=finding_id,
+                state=finding.state,
+            )
+        self._check_package(resolve_by, "resolve_by")
+        if resolve_by <= finding.resolve_by:
+            raise InvalidAllocation(
+                "a reallocation defers to a *later* gate; this finding is already "
+                f"allocated to package {finding.resolve_by}",
+                finding_id=finding_id,
+                current=finding.resolve_by,
+                requested=resolve_by,
+            )
+        if not reason.strip():
+            raise InvalidAllocation(
+                "deferring a finding to a later gate records why; nothing changed",
+                finding_id=finding_id,
+            )
+        stamp = now()
+        self.storage.write_atomic(
+            [
+                Op("update", "findings", {"resolve_by": resolve_by},
+                   where={"id": finding_id}),
+                Op("insert", "finding_reallocations", {
+                    "finding_id": finding_id,
+                    "from_package": finding.resolve_by,
+                    "to_package": resolve_by,
+                    "reason": reason,
+                    "created_at": stamp,
+                }),
+            ],
+            key("reallocate_finding", finding_id, resolve_by),
+        )
+        return self.get(finding_id)
 
     # --- DEFECTS.md F13: the contracts that fire state_machines:7's missing events ---
 
@@ -323,6 +414,7 @@ class FindingService:
             description=r["description"],
             severity=r["severity"],
             state=r["state"],
+            resolve_by=r["resolve_by"],
             created_at=r["created_at"],
             outcome=r["outcome"],
             rationale=r["rationale"],
@@ -354,6 +446,31 @@ class FindingService:
             (ADDRESSED, ACCEPTED_RISK),
         )
         return [self.get(r["id"]) for r in rows]
+
+    def open_allocated_to(self, package: int) -> list[Finding]:
+        """D15 — open findings whose gate is `package`. What locks that gate.
+
+        `is_open` is `state NOT IN (addressed, accepted_risk)`: an accepted risk is a
+        settled decision the owner made and does not lock anything, which is what keeps
+        `requirements:33`'s "visible at handoff" from meaning "still blocking".
+        """
+        rows = self.storage.query(
+            "SELECT id FROM findings "
+            "WHERE resolve_by = ? AND state NOT IN (?, ?) ORDER BY id",
+            (package, ADDRESSED, ACCEPTED_RISK),
+        )
+        return [self.get(r["id"]) for r in rows]
+
+    def reallocations_of(self, finding_id: int) -> list[dict]:
+        """The deferral history of a finding, oldest first — the owner's review surface."""
+        return [
+            dict(r)
+            for r in self.storage.query(
+                "SELECT from_package, to_package, reason, created_at "
+                "FROM finding_reallocations WHERE finding_id = ? ORDER BY id",
+                (finding_id,),
+            )
+        ]
 
     def accepted_risks(self) -> list[Finding]:
         """requirements:33 — visible at implementation handoff."""
