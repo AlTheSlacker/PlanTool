@@ -39,6 +39,61 @@ def test_file_finding_links_the_attacked_rows(rows, findings):
     assert finding.is_open is True
 
 
+def test_two_distinct_findings_on_the_same_rows_both_file(rows, findings):
+    """A row can carry more than one finding. Keying idempotency on the refs alone made
+    the second replay the first: the write vanished and the caller got the first finding's
+    id back reporting success. The discriminator is the finding's own substance."""
+    ref = _row(rows)
+    first = findings.file_finding(
+        [ref], "gate 4 passes with zero tests", "high",
+        name="no tests at gate 4", resolve_by=8,
+    )
+    second = findings.file_finding(
+        [ref], "no rollback path for the migration", "high",
+        name="no rollback path", resolve_by=8,
+    )
+
+    assert second.id != first.id
+    assert {f.id for f in findings.findings_for(ref)} == {first.id, second.id}
+    assert {f.name for f in findings.findings_for(ref)} == {
+        "no tests at gate 4", "no rollback path",
+    }
+
+
+def test_re_filing_an_identical_finding_is_idempotent(rows, findings):
+    """The retry the discriminator must still collapse: the same call sent twice is one
+    finding, not two, or a dropped network reply would double every finding."""
+    ref = _row(rows)
+    first = findings.file_finding(
+        [ref], "gate 4 passes with zero tests", "high",
+        name="no tests at gate 4", resolve_by=8,
+    )
+    again = findings.file_finding(
+        [ref], "gate 4 passes with zero tests", "high",
+        name="no tests at gate 4", resolve_by=8,
+    )
+
+    assert again.id == first.id
+    assert [f.id for f in findings.findings_for(ref)] == [first.id]
+
+
+def test_a_changed_input_files_a_new_finding_rather_than_dropping_it(rows, findings):
+    """Silent success is the failure this codebase fears most: a caller who re-files with a
+    changed severity or gate must not have that change swallowed by a replay of the old one."""
+    ref = _row(rows)
+    first = findings.file_finding(
+        [ref], "a problem", "high", name="a problem", resolve_by=8,
+    )
+    reworded = findings.file_finding(
+        [ref], "a problem", "blocking", name="a problem", resolve_by=8,
+    )
+    regated = findings.file_finding(
+        [ref], "a problem", "high", name="a problem", resolve_by=5,
+    )
+
+    assert len({first.id, reworded.id, regated.id}) == 3
+
+
 # --- D22: a finding is addressable, named, and not a plan row ---
 
 
