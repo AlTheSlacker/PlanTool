@@ -21,6 +21,7 @@ from engine.errors import (
     InvalidSelector,
     NotAssumed,
     RowNotFound,
+    SpikeRequired,
     UpgradeFailed,
 )
 from engine.models import (
@@ -40,6 +41,12 @@ from engine.models import (
 from engine.clock import now
 from engine.idempotency import key
 from engine.storage import FromOp, Op, Storage
+from engine.validation import (
+    spike_directory,
+    spike_insert_op,
+    spike_slug,
+    spike_spec_problem,
+)
 
 #: A contradiction detector: given a candidate submission and the store, return a
 #: human-readable description of what stored row it contradicts, or None.
@@ -149,6 +156,8 @@ class RowService:
                 problem = self._containment_problem(submission, batch)
             if problem is None:
                 problem = self._duplicate_name_problem(submission, index, batch)
+            if problem is None:
+                problem = self._spike_problem(submission)
             if problem is not None:
                 problems[index] = problem
                 continue
@@ -240,7 +249,21 @@ class RowService:
                     )
                 )
 
+        # D16 — a world-assumption's spike rides the same transaction, so the row and the
+        # experiment that will attack it commit together or not at all. Its `assumption`
+        # borrows the ref this row insert assigns, exactly as a link does. Spike ops go
+        # after every row op so the ref-assignment readback below (which zips results with
+        # op_index) still lands on the leading row results. Each is remembered by its
+        # position so the quarantine directory can be created once the id is known.
+        spike_ops: list[tuple[int, str]] = []
+        for index in op_index:
+            spec = batch[index].spike
+            if spec is not None:
+                spike_ops.append((len(ops), spike_slug(spec.question)))
+                ops.append(spike_insert_op(FromOp(op_position[index], "ref"), spec))
+
         receipt = self.storage.write_atomic(ops, idempotency_key)
+        self._create_spike_directories(receipt, spike_ops)
 
         # Read assignments from the receipt, not from the ops: on an idempotent replay
         # the ops were never executed and carry no results, but the stored receipt has
@@ -276,6 +299,23 @@ class RowService:
             receipt["written_at"],
             replayed=receipt.get("replayed", False),
         )
+
+    def _create_spike_directories(
+        self, receipt: dict[str, Any], spike_ops: list[tuple[int, str]]
+    ) -> None:
+        """requirements:3 — each new spike's quarantine directory, created the moment the
+        spike exists so probe code has exactly one legitimate place to live.
+
+        The ids come from the receipt rather than the ops, so a crash between the write
+        and this call is recoverable: a replay returns the stored receipt with the same
+        ids, and `mkdir(exist_ok=True)` makes re-creating an existing directory a no-op.
+        """
+        results = receipt.get("results", [])
+        for position, slug in spike_ops:
+            result = results[position] if position < len(results) else None
+            if result and result.get("id"):
+                path = self.storage.workspace / spike_directory(result["id"], slug)
+                path.mkdir(parents=True, exist_ok=True)
 
     def _validate(
         self, submission: RowSubmission, index: int = 0, batch_size: int = 1
@@ -317,6 +357,43 @@ class RowService:
                     return "a row cannot link to itself"
             elif self._row(link.target) is None:
                 return f"link target {link.target} does not exist"
+        return None
+
+    def _spike_problem(self, submission: RowSubmission) -> str | None:
+        """D16 — a world-assumption is filed WITH the spike that will attack it.
+
+        The F28 move applied to assumptions: rather than let an unbacked world-assumption
+        be written and caught five packages later at the package-6 gate, the row and its
+        first spike are one atomic act, so unbacked is unrepresentable. An assumption made
+        in the first hour that turns out false is the milestone-time re-plan this tool
+        exists to prevent, reproduced inside the tool — registering a spike is cheap even
+        when concluding it is not, which is what makes "as they happen" affordable.
+
+        A spike on anything other than a world-assumption is refused, not ignored: spikes
+        resolve world-assumptions only, and a spike attached to a decided row or an
+        intent-assumption is a caller mistake worth naming rather than dropping silently.
+        `_validate` has already guaranteed that an assumed row carries its kind.
+        """
+        is_world = (
+            submission.provenance is Provenance.ASSUMED
+            and (submission.assumption_kind or "").strip().lower() == "world"
+        )
+        if is_world:
+            if submission.spike is None:
+                return (
+                    "a world-assumption is filed with the spike that will attack it, in "
+                    "the same act (D16): pass a spike with its question, hypothesis, "
+                    "method against the real dependency, and budget. An unbacked "
+                    "world-assumption is the milestone-time surprise this tool exists to "
+                    "prevent"
+                )
+            return spike_spec_problem(submission.spike)
+        if submission.spike is not None:
+            return (
+                "a spike resolves a world-assumption only; this row is not one, so its "
+                "spike has nothing to attack. Drop the spike, or file the row as an "
+                "assumed/world row if that is what it is"
+            )
         return None
 
     def _vocabulary_note(self, submission: RowSubmission) -> str | None:
@@ -736,6 +813,14 @@ class RowService:
                 ref=str(old),
             )
 
+        # D16 — superseding is the second door that mints a world-assumption (a decided
+        # row can be replaced by one), so it carries the same filing lock as submit_rows:
+        # a world-assumption replacement is filed with its spike, atomically, and a spike
+        # on any other replacement is refused.
+        spike_problem = self._spike_problem(replacement)
+        if spike_problem is not None:
+            raise SpikeRequired(spike_problem, ref=str(old))
+
         stamp = now()
         insert = Op(
             "insert_row",
@@ -772,7 +857,15 @@ class RowService:
                {"superseded_by": FromOp(1, "ref")},
                where=where_old),
         ]
+        # D16 — a world-assumption replacement carries its spike into the same transaction,
+        # borrowing the ref the insert (position 1) assigns.
+        spike_ops: list[tuple[int, str]] = []
+        if replacement.spike is not None:
+            spike_ops.append((len(batch), spike_slug(replacement.spike.question)))
+            batch.append(spike_insert_op(FromOp(1, "ref"), replacement.spike))
+
         receipt = self.storage.write_atomic(batch, idempotency_key)
+        self._create_spike_directories(receipt, spike_ops)
         new_ref = RowRef.parse(receipt["results"][1]["ref"])
         return {"old": old, "new": new_ref, "superseded_at": stamp}
 

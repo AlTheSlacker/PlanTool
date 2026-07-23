@@ -17,7 +17,13 @@ import pytest
 
 from engine.errors import UpgradeFailed
 from engine.gaps import name_of
-from engine.models import Provenance, RowSelector, RowSubmission, content_fingerprint
+from engine.models import (
+    Provenance,
+    RowSelector,
+    RowSubmission,
+    SpikeSpec,
+    content_fingerprint,
+)
 
 
 def _submit(rows, key, **kwargs):
@@ -161,7 +167,9 @@ def _assumption(rows, key="k"):
     receipt = _submit(rows, key, table="assumptions",
                       content={"text": "SMB honours fsync"},
                       name="the share honours fsync", provenance=Provenance.ASSUMED,
-                      assumption_kind="world")
+                      assumption_kind="world",
+                      spike=SpikeSpec("Does the share honour fsync?", "it does",
+                                      "fsync then pull the plug", "1 day"))
     return receipt.verdicts[0].ref
 
 

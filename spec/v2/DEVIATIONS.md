@@ -749,6 +749,41 @@ enforcement.
 **Related:** D15; `requirements:5`, `requirements:26`, `contracts:11`, `contracts:30`,
 `decisions:61`, `findings:4`.
 
+**Built (2026-07-23).** Two coupled mechanisms.
+
+*The filing lock.* `RowSubmission` gained a `spike` field. A world-assumption submission must
+carry it; anything else must not (a spike resolves world-assumptions only, so one on a decided
+row or an intent-assumption is a caller mistake worth naming, not dropping). `submit_rows`
+enforces this per row and writes the spike into the `spikes` table in the **same** atomic
+write, its `assumption` column borrowing the row ref via `FromOp`, exactly as a link does — so
+the assumption and the experiment that will attack it commit together or not at all.
+`supersede_row` carries the identical lock, because replacing a decided row with a
+world-assumption is the second door that mints one; guarding only `submit_rows` would leave it
+open (the F28 side-door lesson). `register_spike` survives as the *further* spike — the second
+experiment after an inconclusive first — and now shares the op-builder, slug and directory
+helpers with the atomic path (DRY), so the two writers cannot spell a spike differently.
+
+*The backstop.* `world_assumption_backed` was rewired to read the real stores rather than a
+`links` row nothing writes — that pre-existing hole is F42. Backed now means the spike has a
+recorded outcome (it was run) **and** the owner has recorded acceptance of the residual risk.
+
+*The owner's ruling on "backed" (2026-07-23), and the one place I extended it.* Al accepted
+the recommendation — backed = the spike has a recorded outcome — and sharpened it:
+**inconclusive is a very weak response; proceeding on it needs the owner's explicit sign-off.**
+An accepted-risk finding on the assumption is that sign-off (`resolve_finding(..., accepted_risk,
+rationale)`, whose rationale is the owner's recorded acceptance). Since `confirmed`/`refuted`
+close the assumption, the only outcomes that reach the gate are `inconclusive` and `blocked` —
+and I applied the sign-off requirement to **both**, not inconclusive alone. `blocked` means the
+dependency could not even be reached (`requirements:26` keeps such an assumption visibly open
+and unsettled); riding it into a frozen plan on silence is at least as weak as inconclusive, so
+the same "look, then let the owner accept the risk" gate applies. Flagged here so the owner can
+narrow it back to inconclusive-only if he disagrees.
+
+*The escape hatch, honoured.* The design says the owner can always accept the risk but "cannot
+accept it instead of looking". The two-part check enforces exactly that: an accepted risk with
+no concluded spike does not pass (no recorded outcome → hole), and a concluded-but-weak spike
+with no accepted risk does not pass either.
+
 ---
 
 ## D17 — The digest points at what it stands for; it never carries it
