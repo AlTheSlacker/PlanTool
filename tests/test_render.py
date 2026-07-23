@@ -203,6 +203,7 @@ class TestFindingsAreAddressableWithoutBeingPlanRows:
             "description": "40 ms is not achievable on the target hardware",
             "severity": "high",
             "name": "40 ms is unachievable on this hardware",
+            "resolve_by": 8,
         }))
         assert filed.ok, filed.problem
         submit(surface, [

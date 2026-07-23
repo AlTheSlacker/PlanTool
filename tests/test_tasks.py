@@ -102,7 +102,7 @@ def test_finalize_detects_cycles(tasks, rows):
 def test_finalize_blocks_on_unresolved_findings(tasks, rows, findings):
     """requirements:32 — wired to findings.open_findings(), not reinvented."""
     ref = _contracts(rows, 1)[0]
-    findings.file_finding([ref], "the gate is too weak", "high", name="the gate is too weak")
+    findings.file_finding([ref], "the gate is too weak", "high", name="the gate is too weak", resolve_by=8)
     with pytest.raises(UnresolvedFindings) as exc:
         tasks.finalize_plan()
     assert "findings:1" in str(exc.value)

@@ -53,6 +53,13 @@ from engine.warnings import Warning, WarningService
 #: two conditions.
 RETIRED_TERM = "retired_term"
 
+#: D15 — the criterion_id the gate hard-lock reports its holes under. It is a word, not a
+#: `gate_criteria.yaml` id, and deliberately so: the lock applies to every gate of every
+#: plan whatever methodology is loaded, so it is not a per-package methodology criterion at
+#: all. A plausible criterion id here would be a citation to a row that checks something
+#: else — the surface's `DEVIATION` sentinel makes the same honesty visible for tools.
+RESOLVE_BY_LOCK = "d15_resolve_by_lock"
+
 
 class UnknownPackage(PlanToolError):
     """contracts:22 — names the valid range."""
@@ -159,6 +166,7 @@ class GateEngine:
         holes: list[Hole] = []
         for criterion in criteria:
             holes.extend(self._evaluate(criterion))
+        holes.extend(self._resolve_by_lock(package))
 
         warnings = self._raise_warnings(package)
         passed = not holes
@@ -234,6 +242,45 @@ class GateEngine:
 
     def _is_terminal(self, package: int) -> bool:
         return package == self.methodology.package_range[1]
+
+    # --- D15 the hard-lock (M6_PLAN.md §2.6) ---
+
+    def _resolve_by_lock(self, package: int) -> list[Hole]:
+        """A gate does not pass while an open finding is allocated to it.
+
+        Engine-level, beside the conflict block and not in `gate_criteria.yaml`: the rule
+        holds for every gate of every plan, whatever methodology is loaded, so it cannot be
+        a per-package methodology asset. It reports a *hole* rather than raising (unlike the
+        conflict block) because the plan is perfectly readable — there is simply an
+        outstanding item carrying this gate's name — so it composes with the package's other
+        holes into one report the same way a criterion does.
+
+        Skipped at any gate that already carries a `findings_resolved` criterion (the
+        adversarial package does), because that criterion refuses *every* open finding
+        regardless of allocation, so the lock there would only name the same finding twice.
+        The two are not redundant elsewhere — this one fires at the earlier gate the finding
+        was bound to, which is the pile-up-at-the-catch-all that D15 exists to prevent. The
+        catch-all is still the backstop: package 8 re-runs it through `prior_gates_green`, so
+        a finding allocated to any gate cannot reach a frozen plan open.
+        """
+        if any(c.type == "findings_resolved" for c in self.methodology.criteria_for(package)):
+            return []
+        return [
+            Hole(
+                criterion_id=RESOLVE_BY_LOCK,
+                table=Finding.TABLE,
+                problem=(
+                    f"{label(finding.name, finding.ref)} is allocated to this gate and is "
+                    f"still open ({finding.state})"
+                ),
+                fix=(
+                    "resolve it — resolve_finding() — or defer it to a later gate with a "
+                    "reason — reallocate_finding()"
+                ),
+                ref=finding.ref,
+            )
+            for finding in self.findings.open_allocated_to(package)
+        ]
 
     # --- warnings (requirements:21, decisions:31) ---
 
