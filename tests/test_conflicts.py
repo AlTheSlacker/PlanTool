@@ -34,6 +34,30 @@ def raise_one(conflicts, refs):
     )
 
 
+def test_two_distinct_conflicts_on_the_same_rows_both_file(conflicts, two_rows):
+    """The same rows can contradict on more than one axis. Keying idempotency on the refs
+    alone made the second replay the first (F44): the write vanished and the caller got the
+    first conflict's id back reporting success. The discriminator is the conflict's substance."""
+    first = conflicts.raise_conflict(
+        list(two_rows), description="they name different stores",
+        recommendation="keep SQLite",
+    )
+    second = conflicts.raise_conflict(
+        list(two_rows), description="they also disagree on the retention window",
+        recommendation="keep the 90-day window",
+    )
+    assert second.id != first.id
+    assert {c.id for c in conflicts.conflicts_for(two_rows[0])} == {first.id, second.id}
+
+
+def test_re_raising_an_identical_conflict_is_idempotent(conflicts, two_rows):
+    """The retry the discriminator must still collapse: a dropped reply must not double it."""
+    first = raise_one(conflicts, two_rows)
+    again = raise_one(conflicts, two_rows)
+    assert again.id == first.id
+    assert [c.id for c in conflicts.open_conflicts()] == [first.id]
+
+
 # --- contracts:26 -----------------------------------------------------------------
 
 

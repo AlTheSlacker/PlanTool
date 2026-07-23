@@ -20,7 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from engine.errors import PlanToolError
-from engine.models import RowRef, RowSubmission
+from engine.models import RowRef, RowSubmission, content_fingerprint
 from engine.clock import now
 from engine.idempotency import key
 from engine.storage import FromOp, Op, Storage
@@ -157,8 +157,17 @@ class ConflictService:
                 for ref in parsed
             ],
         ]
+        # The refs alone do not identify the operation: the same rows can contradict on
+        # more than one axis, so keying on refs only made a second conflict on a row-set
+        # replay the first — the write vanished and the caller got the first conflict's id
+        # back as success. The discriminator is the conflict's own substance, so a
+        # byte-identical retry still replays but a genuinely different contradiction files a
+        # distinct conflict. `created_at` stays out of the key (F44, the F29 family).
+        content = content_fingerprint(
+            {"description": description, "recommendation": recommendation}
+        )
         receipt = self.storage.write_atomic(
-            ops, key("conflict", ",".join(str(r) for r in parsed))
+            ops, key("conflict", ",".join(str(r) for r in parsed), content)
         )
         return self.get(receipt["results"][0]["id"])
 

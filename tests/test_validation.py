@@ -240,6 +240,28 @@ def test_file_claim_both_opens_two_tracks(rows, validation):
     assert sorted(t.track for t in claim.tracks) == ["research", "spike"]
 
 
+def test_two_distinct_claims_on_the_same_rows_both_file(rows, validation):
+    """A row can rest on more than one technical claim. Keying idempotency on the refs alone
+    made the second replay the first (F44): the write vanished and the caller got the first
+    claim's id back reporting success. The discriminator is the claim's own substance."""
+    ref = _dependent(rows, on=_assumption(rows), text="use FTS5")
+    first = validation.file_claim("FTS5 is compiled into the runtime", "software", [ref])
+    second = validation.file_claim("the WAL survives a power cut", "software", [ref])
+
+    assert second.id != first.id
+    assert {c.id for c in validation.claims_for(ref)} == {first.id, second.id}
+
+
+def test_re_filing_an_identical_claim_is_idempotent(rows, validation):
+    """The retry the discriminator must still collapse: a dropped reply must not double it."""
+    ref = _dependent(rows, on=_assumption(rows), text="use FTS5")
+    first = validation.file_claim("FTS5 is compiled into the runtime", "software", [ref])
+    again = validation.file_claim("FTS5 is compiled into the runtime", "software", [ref])
+
+    assert again.id == first.id
+    assert [c.id for c in validation.claims_for(ref)] == [first.id]
+
+
 def test_file_claim_rejects_unknown_ref(validation):
     with pytest.raises(RefNotFound) as exc:
         validation.file_claim("something", "software", ["decisions:99"])

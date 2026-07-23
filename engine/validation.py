@@ -18,7 +18,7 @@ import re
 from dataclasses import dataclass
 
 from engine.errors import PlanToolError
-from engine.models import Provenance, RowRef, SpikeSpec
+from engine.models import Provenance, RowRef, SpikeSpec, content_fingerprint
 from engine.clock import now
 from engine.idempotency import key
 from engine.storage import FromOp, Op, Storage
@@ -490,8 +490,17 @@ class ValidationService:
                 for track in _KIND_TRACKS[kind]
             ],
         ]
+        # The refs alone do not identify the operation: a row can rest on more than one
+        # technical claim, so keying on refs only made a second claim on a row-set replay the
+        # first — the write vanished and the caller got the first claim's id back as success.
+        # The discriminator is the claim's own substance, so a byte-identical retry still
+        # replays but a distinct assertion files a distinct claim. `created_at` stays out of
+        # the key (F44, the F29 family).
+        content = content_fingerprint(
+            {"text": text, "kind": kind, "red_flag": red_flag}
+        )
         receipt = self.storage.write_atomic(
-            ops, key("file_claim", ",".join(str(r) for r in parsed))
+            ops, key("file_claim", ",".join(str(r) for r in parsed), content)
         )
         return self.get_claim(receipt["results"][0]["id"])
 

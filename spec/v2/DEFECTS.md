@@ -1940,7 +1940,15 @@ a repeat was never detected and the replay path was unreachable. This keyed on *
 refs only, so two different operations collapsed into one. Both are the key answering the wrong
 question, which is exactly what `engine/idempotency.py`'s docstring warns against: name what the
 operation acts on, and where a caller legitimately repeats with no natural discriminator, give
-it one that means something. **The same refs-only shape stands in two siblings** —
-`conflicts.py`'s `key("conflict", refs)` and `validation.py`'s `key("file_claim", refs)` — and
-carries the same latent collapse if a row can hold two conflicts or rest on two claims. Left for
-the owner to fold in or track separately rather than widened into this fix unasked.
+it one that means something.
+
+**Two siblings carried the identical shape, and the owner had them fixed in the same change.**
+`conflicts.py`'s `raise_conflict` keyed on `key("conflict", refs)` and `validation.py`'s
+`file_claim` on `key("file_claim", refs)` — the same collapse, because the same rows can
+contradict on more than one axis and a single row can rest on more than one technical claim.
+Both now carry the content fingerprint of their own caller-set fields beside the refs
+(`{description, recommendation}` for a conflict, `{text, kind, red_flag}` for a claim), and both
+have the same paired regression: two distinct filings on one row-set both land, a byte-identical
+re-file replays. Owner's call (2026-07-23) was to fold them into this fix rather than leave two
+known-identical latent defects standing — the DRY reflex the engine exists to enforce, applied
+to the engine itself.
