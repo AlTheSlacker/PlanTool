@@ -1207,3 +1207,59 @@ deviation narrows only the set of source revisions that mechanism will ever be a
 from: rev 3 onward. If a genuine need to load a v1-authored plan for migration ever appears, it
 reopens as option (a); today nothing asks for it, and declaring the floor honestly beats leaving
 `load(2)` to fail as if it were a bug.
+
+## D25 — Revision changes apply live and conflict-checked, not deferred to a single apply
+
+**The frozen text.** `contracts:57` reads: "nothing mutates plan rows until apply_revision
+commits the entire staged change-set atomically (deferred application)." That wording was the
+red team's fix for `findings:5` — you cannot un-supersede a row, so applying changes during the
+walkthrough would make `abandon_revision`'s clean rollback impossible.
+
+**What we built, and why.** The owner decided (2026-07-23) differently: when the owner supplies
+new wording for a row, the tool runs it through the conflict check, and the moment it comes back
+clean the row is **superseded on the live plan right then** — not held to a deferred apply. A
+wording whose row is under an *open conflict* is not applied; the conflict is surfaced and the
+change held until the owner resolves it. `apply_revision` is therefore the closing act (verify
+every repercussion was adjudicated, move the plan `revising → finalized`), not the moment of
+mutation.
+
+**Why this is still consistent with write-once history.** Abandon does not try to un-supersede
+anything — it rewinds the whole plan to the immutable snapshot taken when the revision opened
+(D26). `findings:5`'s own text named "restore the pre-change snapshot" as the alternative to
+deferred application, and this build takes it. The rewind is clean because the revision's
+analysis record lives *outside* the plan-row snapshot (`requirements:72`), so restoring the plan
+never destroys the record of what was tried.
+
+**The conflict gate, concretely.** The tool records judgment and never exercises it, so "checked
+for conflict" is not a semantic check the tool performs — it is structural: a row carrying an
+open conflict (`conflict.state == open`) cannot be quietly reworded inside a revision. The
+resolution of that conflict is the owner's to make. This is the reading of the owner's
+instruction "checked for conflict and applied at the point that no conflict is shown."
+
+## D26 — abandon_revision is a confirmed, two-step rewind
+
+**The frozen signature.** `contracts:46` is `abandon_revision(revision_id: int) -> RollbackReport`.
+
+**What we built, and why.** Because changes are live by the time an abandon is requested (D25),
+abandoning silently would throw applied work away without warning. So `abandon_revision` takes a
+`confirm` flag (not in the frozen signature — hence this deviation). The unconfirmed call is a
+**pure read** that returns a `RewindPreview` naming exactly which applied changes a rewind would
+revert; only `confirm=True` restores the opening snapshot and marks the revision abandoned. This
+is the owner's instruction (2026-07-23): "warn the user of the abandon-by-rewind consequences —
+tell them what will change — and allow them to re-approve or abandon the change."
+
+## D27 — A Revision is born in `walkthrough`; `proposed` and `analyzing` are never persisted
+
+**The state machine.** `state_machines:10` lists five states:
+`proposed → analyzing → walkthrough → applied | abandoned`.
+
+**What we built, and why.** The analysis a revision runs is `graph.impact` (`contracts:15`), a
+synchronous pure read that finishes inside `open_revision`'s own call — there is no asynchronous
+"analyzing" phase for anyone to observe or interrupt. So `open_revision` does the snapshot,
+version bump and impact enumeration in one atomic act and returns a Revision already in
+`walkthrough`. `proposed` and `analyzing` exist in the state machine but are passed through
+inside that call and never written. This closes a hole cleanly: `apply_revision` is then always
+reached from `walkthrough` (which the state machine makes mandatory before apply, `sm_cells:172`),
+so it needs no error for "you have not walked the repercussions yet" — an error its frozen
+contract does not offer. Opening a revision and immediately abandoning it remains possible
+(abandon from `walkthrough`), so no capability is lost.

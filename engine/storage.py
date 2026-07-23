@@ -420,6 +420,22 @@ class Storage:
             raise StorageUnavailable("snapshot failed", cause=str(exc)) from exc
         return snapshot_id
 
+    def restore_snapshot(self, snapshot_id: int) -> int:
+        """Rewind the store to a specific snapshot (entities:11) — revision-service's abandon.
+
+        Distinct from `recover('restore')`, which always takes the *latest* snapshot: a
+        revision rewinds to the snapshot it took when it opened, named by id, whatever has
+        happened since. Only the tables the snapshot covers are touched, so the revision and
+        its repercussions — stored outside it — survive the rewind (requirements:72).
+        """
+        snap = self.conn.execute(
+            "SELECT version, payload FROM plan_versions WHERE id = ?", (snapshot_id,)
+        ).fetchone()
+        if snap is None:
+            raise NoGoodVersion("no such snapshot to rewind to", snapshot=snapshot_id)
+        self._restore_payload(json.loads(snap["payload"]))
+        return snap["version"]
+
     def _latest_snapshot(self) -> sqlite3.Row | None:
         rows = self.query(
             "SELECT * FROM plan_versions ORDER BY id DESC LIMIT 1"
@@ -534,6 +550,9 @@ class Storage:
           literal is the terminal package of the shipped standard methodology; a migration
           is a point-in-time step and is allowed to name it.
 
+          **5 -> 6** adds the revision tables (M7). They start empty; a plan that predates
+          revision-service genuinely has no revisions, so nothing is invented.
+
         Anything else is an error and never a silent no-op (decisions:45) — including a
         downgrade, which would have to drop rows to succeed.
         """
@@ -544,6 +563,10 @@ class Storage:
                 "ALTER TABLE findings ADD COLUMN resolve_by INTEGER NOT NULL DEFAULT 8",
                 *schema.statements(schema.REALLOCATIONS_DDL),
             ]
+        if (current, target) == (5, 6):
+            # M7 adds the revision tables. A plan that predates them genuinely has no
+            # revisions — the new tables start empty, inventing nothing (M7_PLAN.md).
+            return schema.statements(schema.REVISIONS_DDL)
         raise ValueError(
             f"no migration path from schema version {current} to {target}"
         )

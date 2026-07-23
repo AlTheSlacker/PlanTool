@@ -18,9 +18,9 @@ module would report success the first time somebody added a contract and forgot.
 Three of those 39 are the writer lock, deleted with the mechanism it guarded (D5). They are
 `EXCLUDED` here, each carrying its reason, rather than quietly absent: a permanent false
 shortfall is a gap everyone learns to ignore, and a real omission eventually hides inside
-it. Five more belong to revision-service, which is not built yet; they are `DEFERRED` and
-each names the build package that owes it. Both lists are what the coverage test subtracts,
-so nothing is unaccounted for and nothing is silently missing.
+it. The five revision-service contracts were `DEFERRED` until M7 and are now built and
+exposed, so `DEFERRED` is empty. `EXCLUDED` is what the coverage test subtracts, so nothing
+is unaccounted for and nothing is silently missing.
 
 **Six tools are here that the frozen plan does not send here** — the mandate, the package
 script, the active warnings, the journal, the gate history and `compose_brief` (DEVIATIONS
@@ -73,10 +73,20 @@ from engine.gaps import GapEngine
 from engine.gates import GateEngine
 from engine.graph import LinkGraph
 from engine.guidance import Guidance
-from engine.models import LinkSpec, Provenance, RowRef, RowSelector, RowSubmission
+from engine.models import (
+    ChangeRequest,
+    Disposition,
+    LinkSpec,
+    OwnerDecision,
+    Provenance,
+    RowRef,
+    RowSelector,
+    RowSubmission,
+)
 from engine.obligations import ObligationService
 from engine.render import PlanRender
 from engine.resume import ResumeService
+from engine.revision import RevisionService
 from engine.rows import RowService
 from engine.storage import Storage
 from engine.tasks import TaskGraphService
@@ -303,6 +313,52 @@ def as_selection(field_name: str, value: Any) -> BriefSelection:
     )
 
 
+def as_change_request(field_name: str, value: Any) -> ChangeRequest:
+    got = as_dict(field_name, value)
+    unknown = set(got) - {"targets", "intent"}
+    if unknown:
+        raise _fail(
+            field_name, f"a change request; it has no field {sorted(unknown)[0]!r}", value
+        )
+    for required in ("targets", "intent"):
+        if not got.get(required):
+            raise _fail(field_name, f"a change request with {required}", value)
+    return ChangeRequest(
+        targets=tuple(as_refs(f"{field_name}.targets", got["targets"])),
+        intent=as_str(f"{field_name}.intent", got["intent"]),
+    )
+
+
+def as_owner_decision(field_name: str, value: Any) -> OwnerDecision:
+    got = as_dict(field_name, value)
+    unknown = set(got) - {"disposition", "words", "replacement"}
+    if unknown:
+        raise _fail(
+            field_name, f"a decision; it has no field {sorted(unknown)[0]!r}", value
+        )
+    for required in ("disposition", "words"):
+        if not got.get(required):
+            raise _fail(field_name, f"a decision with {required}", value)
+    try:
+        disposition = Disposition(as_str(f"{field_name}.disposition", got["disposition"]))
+    except ValueError as exc:
+        raise _fail(
+            f"{field_name}.disposition",
+            "one of " + ", ".join(d.value for d in Disposition),
+            got["disposition"],
+        ) from exc
+    replacement = (
+        as_submission(f"{field_name}.replacement", got["replacement"])
+        if got.get("replacement") is not None
+        else None
+    )
+    return OwnerDecision(
+        disposition=disposition,
+        words=as_str(f"{field_name}.words", got["words"]),
+        replacement=replacement,
+    )
+
+
 def as_split(field_name: str, value: Any) -> list[tuple[str, list[int]]]:
     """The sub-tasks a split divides into: each a title and the obligations it takes on."""
     if not isinstance(value, list):
@@ -337,6 +393,8 @@ DECODERS: dict[str, Callable[[str, Any], Any]] = {
     "selection": as_selection,
     "split": as_split,
     "evidence": as_text_map,
+    "change_request": as_change_request,
+    "owner_decision": as_owner_decision,
 }
 
 
@@ -657,6 +715,36 @@ REGISTRY: dict[str, Tool] = {
            "Write the plan to a document in the workspace for the owner to read; the "
            "rows stay the only source of truth.",
            writes=False),
+        # --- revision-service (components:13) ---
+        _t("open_revision", "revision", "open_revision", "contracts:42",
+           "Open a revision of a finalized plan: it snapshots the plan, bumps the version, "
+           "and enumerates every row the change touches.",
+           Param("change", "change_request",
+                 note="the rows you want to change, and why, in your words"),
+           writes=True),
+        _t("next_repercussion", "revision", "next_repercussion", "contracts:43",
+           "The next ripple to decide on, or notice that the walkthrough is complete.",
+           Param("revision_id", "int", note="the open revision")),
+        _t("adjudicate_repercussion", "revision", "adjudicate_repercussion", "contracts:57",
+           "Decide the ripple the walkthrough is presenting: accept it, reword the row, or "
+           "defer. A reword applies to the live plan the moment it is conflict-free.",
+           Param("revision_id", "int", note="the open revision"),
+           Param("item_id", "int", note="the repercussion the walkthrough is presenting now"),
+           Param("decision", "owner_decision",
+                 note="accept, modify (carrying the replacement row), or defer — in your "
+                      "words"),
+           writes=True),
+        _t("apply_revision", "revision", "apply_revision", "contracts:45",
+           "Close a fully-adjudicated revision; the plan's new version goes live.",
+           Param("revision_id", "int", note="the revision to close"),
+           writes=True),
+        _t("abandon_revision", "revision", "abandon_revision", "contracts:46",
+           "Preview or perform a rewind of the plan to how it stood when the revision "
+           "opened. Without confirmation it only shows what would be undone.",
+           Param("revision_id", "int", note="the revision to abandon"),
+           Param("confirm", "bool", required=False,
+                 note="true to actually rewind; omit to preview what a rewind reverts"),
+           writes=True),
     )
 }
 
@@ -690,11 +778,6 @@ EXCLUDED: tuple[Absence, ...] = (
 #: Not built yet, each bound to the build package that owes it — the outstanding-problem
 #: rule: an unresolved item is fixed now or bound to a named gate, never floating.
 DEFERRED: tuple[Absence, ...] = (
-    Absence("contracts:42", "open_revision", "revision-service; owed by M7"),
-    Absence("contracts:43", "next_repercussion", "revision-service; owed by M7"),
-    Absence("contracts:45", "apply_revision", "revision-service; owed by M7"),
-    Absence("contracts:46", "abandon_revision", "revision-service; owed by M7"),
-    Absence("contracts:57", "adjudicate_repercussion", "revision-service; owed by M7"),
 )
 
 #: The other direction from `DEFERRED`: tools that exist with no contract behind them. The
@@ -907,6 +990,9 @@ class Surface:
         self.briefs = BriefComposer(
             storage, self.tasks, graph=self.graph, attachments=self.attachments,
             obligations=self.obligations, terms=self.terms,
+        )
+        self.revision = RevisionService(
+            storage, self.graph, self.rows, self.findings, self.warns, self.conflicts
         )
         self.guidance = guidance or Guidance()
         # `renderer`, not `render`: the door's `render` is a module-level function used a

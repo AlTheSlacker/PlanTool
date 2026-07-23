@@ -134,3 +134,36 @@ class SourceTextUnavailable(PlanToolError):
     Refusing is deliberate: an unverifiable extract is exactly the thing the design
     exists to prevent.
     """
+
+
+# --- revision-service (components:13) ---
+
+
+class NotFinalized(PlanToolError):
+    """contracts:42 — draft plans are edited through the interview; revisions are for
+    finalized plans. Distinct from `PlanNotFinalized` (contracts:55, next_subtask): same
+    condition, different contract and different caller advice."""
+
+
+class RevisionInProgress(PlanToolError):
+    """contracts:42 — one revision at a time; names the open revision."""
+
+
+class RevisionNotFound(PlanToolError):
+    """contracts:43 / 45 / 46 / 57 — names the missing revision id."""
+
+
+class UnadjudicatedItems(PlanToolError):
+    """contracts:45 — every repercussion must be adjudicated before apply; names the
+    remainder."""
+
+
+class RevisionAlreadyApplied(PlanToolError):
+    """contracts:46 — the frozen spelling is `AlreadyApplied`. Applied revisions roll forward
+    via a new revision, never backward."""
+
+
+class RepercussionOutOfStep(PlanToolError):
+    """contracts:57 — the frozen spelling is `InvalidState`. The revision is not in
+    walkthrough, or the item is not the current step; state unchanged. Renamed from the
+    generic frozen name so it says which invalid state (GLOSSARY policy, DEFECTS.md F27)."""
