@@ -1907,3 +1907,48 @@ asset rather than a citation. The pre-build checks could not have caught it: the
 well-formed YAML and the mismatch is between one key name and the loader's expectation, which
 no contract or state-machine audit inspects. Like F31 it lived in vendored content and was
 found by reasoning about the migration path, not by a green suite.
+
+
+## F44 — A second finding on the same rows was silently swallowed as a retry
+
+**Found:** while building the gate hard-lock (D15), 2026-07-23. Fixed as its own job on the
+same day.
+
+**The promise.** A finding attacks the specific rows it is filed against (requirements:31),
+and a row can be wrong in more than one way — nothing says a row carries at most one finding.
+So filing two different findings against the same rows must produce two findings.
+
+**What was there instead.** `file_finding` built its idempotency key from the attacked refs
+alone: `key("file_finding", ",".join(refs))`. Two findings on the same rows therefore spelled
+the *same* key, so the second call took the replay path — it wrote nothing and returned the
+first finding's id, reporting success. The caller who filed a genuinely new problem was handed
+the old one back with no sign anything had gone wrong: the silent-success failure this engine
+exists to refuse. It was latent only because no live path and no test ever filed two distinct
+findings on one row-set; the idempotency key was checking whether two operations touched the
+same rows, when the question it exists to answer is whether they are the same operation.
+
+**Fixed here.** The key now carries the finding's own substance beside its refs — the content
+fingerprint of the fields the caller sets (name, description, severity, resolve_by), reusing
+`models.content_fingerprint`. A byte-identical re-file still replays, so a dropped network
+reply cannot double a finding; any changed input files a distinct finding rather than having
+the change swallowed by a replay of the old one. `created_at` stays out of the key, which is
+the whole point of the idempotency module (F29). Driven end to end through the tool surface:
+two distinct findings on one row both land, an identical re-file returns the first.
+
+**Class.** The mirror of F29. F29 keyed on *too much* — a timestamp, never equal to itself, so
+a repeat was never detected and the replay path was unreachable. This keyed on *too little* —
+refs only, so two different operations collapsed into one. Both are the key answering the wrong
+question, which is exactly what `engine/idempotency.py`'s docstring warns against: name what the
+operation acts on, and where a caller legitimately repeats with no natural discriminator, give
+it one that means something.
+
+**Two siblings carried the identical shape, and the owner had them fixed in the same change.**
+`conflicts.py`'s `raise_conflict` keyed on `key("conflict", refs)` and `validation.py`'s
+`file_claim` on `key("file_claim", refs)` — the same collapse, because the same rows can
+contradict on more than one axis and a single row can rest on more than one technical claim.
+Both now carry the content fingerprint of their own caller-set fields beside the refs
+(`{description, recommendation}` for a conflict, `{text, kind, red_flag}` for a claim), and both
+have the same paired regression: two distinct filings on one row-set both land, a byte-identical
+re-file replays. Owner's call (2026-07-23) was to fold them into this fix rather than leave two
+known-identical latent defects standing — the DRY reflex the engine exists to enforce, applied
+to the engine itself.

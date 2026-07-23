@@ -17,7 +17,7 @@ from dataclasses import dataclass
 
 from engine.errors import PlanToolError
 from engine.methodology import Methodology, load
-from engine.models import RowRef
+from engine.models import RowRef, content_fingerprint
 from engine.clock import now
 from engine.idempotency import key
 from engine.storage import FromOp, Op, Storage
@@ -249,8 +249,19 @@ class FindingService:
                 for ref in refs
             ],
         ]
+        # The refs alone do not identify the operation: a plan row can carry more than one
+        # finding, so keying on refs only made the second finding on a row-set replay the
+        # first — the write vanished and the caller got the first finding's id back as a
+        # success. The discriminator is the finding's own substance (its content
+        # fingerprint), so a byte-identical retry still replays but any changed input files
+        # a distinct finding rather than silently swallowing the change. `created_at` is the
+        # clock and stays out of the key — that is the whole point of the idempotency module.
+        content = content_fingerprint(
+            {"name": name, "description": description,
+             "severity": severity, "resolve_by": resolve_by}
+        )
         receipt = self.storage.write_atomic(
-            ops, key("file_finding", ",".join(str(r) for r in refs))
+            ops, key("file_finding", ",".join(str(r) for r in refs), content)
         )
         return self.get(receipt["results"][0]["id"])
 
