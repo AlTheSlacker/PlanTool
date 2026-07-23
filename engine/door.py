@@ -116,8 +116,9 @@ class Verbatim(str):
     flight is a far worse defect than a lookup (M6_PLAN.md §6.8). So verbatim strings are
     exempt from both invariants and the tool **annotates alongside** instead: `render`
     appends the resolution of every address the prose cites, which is also where F17 stops
-    being silent. A dead citation reads as "no live row at this address" instead of dangling
-    unnoticed.
+    being silent. A citation of a superseded row is resolved to its live successor, one
+    whose chain is closed says so, and an address that reaches nothing at all reads as "no
+    live row at this address" — none of it by touching the frozen prose (owner, 2026-07-23).
 
     A `str` subclass rather than a wrapper, so the exemption travels with the value through
     every nested structure and the scan cannot miss it.
@@ -183,10 +184,57 @@ def display(ref: RowRef, resolve: Callable[[RowRef], tuple[str | None, str]]) ->
     return label(name, ref)
 
 
+#: The two states a plan row is in when it has dropped out of live reads. A citation of
+#: such a row is F17's whole subject: the prose is frozen and keeps pointing where it
+#: pointed, and the row it points at has moved on or been struck out.
+DEAD_STATES = ("superseded", "retired")
+
+
+def successor_lookup(rows: Any, findings: Any = None) -> Callable[[RowRef], tuple[RowRef, str] | None]:
+    """For a citation of a dead row, where its lineage stands now (owner, 2026-07-23).
+
+    F17's read-time half made a dead citation *visible*; this is the owner's ruling on
+    what to do once it is seen — **resolve it to the live successor, or say the chain is
+    closed.** A brief is consumed by a code engine that cannot go and look, so telling it a
+    row was superseded and stopping there strands it exactly where the wrong diagnosis of
+    F15 stranded a person. Following `superseded_by` is not the tool exercising judgment: it
+    is a write-once structural pointer, resolved the same mechanical way a name is.
+
+    Returns `(head_ref, head_name)` when the supersession chain reaches a row that is still
+    live, and `None` when it does not — either the chain ends at a row that was itself
+    retired, or nothing superseded the cited row and it was simply struck out. `None` is the
+    "no live successor" case the owner asked to be stated plainly rather than repaired.
+
+    Only ever asked about plan rows. A finding has a state machine, not a supersession
+    chain, so a `findings:` address never has a successor to follow — the guard makes that
+    explicit rather than leaving it to `lineage_head` returning the ref unchanged.
+    """
+
+    def follow(ref: RowRef) -> tuple[RowRef, str] | None:
+        if findings is not None and ref.table == findings.TABLE:
+            return None
+        try:
+            head_ref = rows.lineage_head(ref)
+        except Exception:
+            return None
+        if str(head_ref) == str(ref):
+            return None  # nothing superseded it; the chain ends where it was cited
+        try:
+            head = rows.get(head_ref)
+        except Exception:
+            return None
+        if not head.is_live:
+            return None  # the chain is closed: its end is itself dead
+        return head_ref, head.name
+
+    return follow
+
+
 def collect(
     text: str,
     resolve: Callable[[RowRef], tuple[str | None, str]],
     into: list[Resolution],
+    follow: Callable[[RowRef], tuple[RowRef, str] | None] | None = None,
 ) -> Verbatim:
     """Note every address the text cites, and hand the text back untouched.
 
@@ -197,12 +245,30 @@ def collect(
     suddenly handing over an object. Annotation must never change a value's shape. So the
     resolutions accumulate in one list that the surface attaches beside the payload, and
     the payload itself is exactly what it always was.
+
+    When `follow` is given, a citation of a dead row is resolved through its supersession
+    chain (`successor_lookup`, owner's F17 ruling): the resolution gains a `successor`
+    address and a `successor_name` when the chain reaches a live row, or `successor: None`
+    when it is closed. The successor's address and name go in *separate keys* for the same
+    reason the payload's do — a bare address inside a value the reader must parse is the
+    failure this module exists to stop. Callers without a row service (the door's own tests
+    with a bare lambda resolver) omit `follow` and get the plain resolution as before.
     """
     for token in dict.fromkeys(ADDRESS.findall(text)):
         if any(r["address"] == token for r in into):
             continue
-        name, state = resolve(RowRef.parse(token))
-        into.append(Resolution(address=token, name=name or NO_LIVE_ROW, state=state))
+        ref = RowRef.parse(token)
+        name, state = resolve(ref)
+        cite = Resolution(address=token, name=name or NO_LIVE_ROW, state=state)
+        if follow is not None and state in DEAD_STATES:
+            successor = follow(ref)
+            if successor is None:
+                cite["successor"] = None  # chain closed: no live successor to point at
+            else:
+                succ_ref, succ_name = successor
+                cite["successor"] = str(succ_ref)
+                cite["successor_name"] = succ_name
+        into.append(cite)
     return Verbatim(text)
 
 
@@ -210,6 +276,7 @@ def render(
     value: Any,
     resolve: Callable[[RowRef], tuple[str | None, str]],
     cites: list[Resolution] | None = None,
+    follow: Callable[[RowRef], tuple[RowRef, str] | None] | None = None,
 ) -> Any:
     """Turn an engine value into a payload, resolving every address on the way out.
 
@@ -233,15 +300,16 @@ def render(
     if isinstance(value, (int, float)):
         return value
     if isinstance(value, str):
-        return collect(value, resolve, cites)
+        return collect(value, resolve, cites, follow)
     if is_dataclass(value) and not isinstance(value, type):
         return {
-            f.name: render(getattr(value, f.name), resolve, cites) for f in fields(value)
+            f.name: render(getattr(value, f.name), resolve, cites, follow)
+            for f in fields(value)
         }
     if isinstance(value, dict):
-        return {str(k): render(v, resolve, cites) for k, v in value.items()}
+        return {str(k): render(v, resolve, cites, follow) for k, v in value.items()}
     if isinstance(value, (list, tuple, set, frozenset)):
-        return [render(v, resolve, cites) for v in value]
+        return [render(v, resolve, cites, follow) for v in value]
     raise TypeError(
         f"{type(value).__name__} has no rendering; add one rather than letting "
         f"str() decide, which is how a bare address escapes"

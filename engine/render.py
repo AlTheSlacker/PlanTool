@@ -28,8 +28,9 @@ to the owner in those words.
 **Addresses are annotated, not rewritten** — the same rule as the door (DEVIATIONS D19). A
 row's stored prose citing `contracts:52` is the owner's text and is served as written; the
 resolution goes in a *cites* line beneath it. That is also where F17 becomes something the
-owner can see: a citation whose row was superseded resolves to a name and a state, and one
-pointing at nothing at all says so, in the one artefact he actually reads end to end.
+owner can see: a citation whose row was superseded resolves to its live successor (owner's
+ruling, 2026-07-23), one whose chain is closed says *no live successor*, and one pointing at
+nothing at all says so — in the one artefact he actually reads end to end.
 """
 
 from __future__ import annotations
@@ -39,7 +40,13 @@ from pathlib import Path
 from typing import Any
 
 from engine.clock import now
-from engine.door import Resolution, collect, label, resolver_from
+from engine.door import (
+    Resolution,
+    collect,
+    label,
+    resolver_from,
+    successor_lookup,
+)
 from engine.errors import PlanToolError
 from engine.models import PlanRow, RowRef, RowSelector
 
@@ -52,6 +59,45 @@ RENDER_FILENAME = "plan.md"
 #: live row, so it pages rather than asking for an unbounded set — `read_rows` is paginated
 #: on purpose and a caller that works around that has re-introduced what it forbids.
 PAGE = 200
+
+
+def _cite_line(c: Resolution) -> str:
+    """One citation, as the owner reads it under a row.
+
+    A live citation is its name and state. A citation the door followed through
+    supersession (F17, owner's ruling) says where the lineage stands now: *now
+    successor — name* when it reaches a live row, *no live successor* when the chain is
+    closed. The successor's address leads its own name, the one display order the whole
+    engine keeps, so a reader who wants to fetch it can.
+    """
+    base = f"{c['address']} — {c['name']} ({c['state']})"
+    if "successor" not in c:
+        return base
+    if c["successor"] is None:
+        return f"{base}, no live successor"
+    return f"{base}, now {c['successor']} — {c['successor_name']}"
+
+
+def _is_dead(c: Resolution) -> bool:
+    """Whether a citation fails to reach any live row — the receipt's subject.
+
+    Absent (nothing at the address at all) and chain-closed (superseded or retired with no
+    live successor) are the two dead cases. A citation the door repaired to a live
+    successor is *not* dead: it now leads somewhere the reader can go, which is the whole
+    point of following the chain.
+    """
+    return c["state"] == "absent" or ("successor" in c and c["successor"] is None)
+
+
+def _dead_label(c: Resolution) -> str:
+    """A dead citation, named for the receipt the planner reads.
+
+    Absent keeps its long-standing wording; a closed chain says so beside the row it
+    could not carry forward, so the planner is not left to infer *superseded, and then?*
+    """
+    if c["state"] == "absent":
+        return label(None, c["address"])
+    return f"{label(c['name'], c['address'])} — no live successor"
 
 
 class RenderFailed(PlanToolError):
@@ -116,10 +162,11 @@ class PlanRender:
         """Write `plan.md` from the live rows and report what went into it."""
         handle = self.storage.plan_handle()
         resolve = resolver_from(self.rows, self.findings)
+        follow = successor_lookup(self.rows, self.findings)
         live = self._live_rows()
 
         cites: list[Resolution] = []
-        body = self._document(handle, live, resolve, cites)
+        body = self._document(handle, live, resolve, follow, cites)
 
         path = Path(self.storage.workspace) / RENDER_FILENAME
         try:
@@ -142,7 +189,7 @@ class PlanRender:
             tables=tables,
             written_at=now(),
             dead_citations=tuple(
-                label(None, c["address"]) for c in cites if c["state"] == "absent"
+                _dead_label(c) for c in cites if _is_dead(c)
             ),
         )
 
@@ -167,7 +214,7 @@ class PlanRender:
 
     # --- writing ---
 
-    def _document(self, handle, live, resolve, cites) -> str:
+    def _document(self, handle, live, resolve, follow, cites) -> str:
         lines = [
             f"# {handle['name']}",
             "",
@@ -184,7 +231,7 @@ class PlanRender:
             lines.append("")
             for row in live:
                 if row.ref.table == table:
-                    lines.extend(self._row(row, resolve, cites))
+                    lines.extend(self._row(row, resolve, follow, cites))
         return "\n".join(lines).rstrip() + "\n"
 
     @staticmethod
@@ -195,7 +242,7 @@ class PlanRender:
                 seen.append(row.ref.table)
         return seen
 
-    def _row(self, row: PlanRow, resolve, cites) -> list[str]:
+    def _row(self, row: PlanRow, resolve, follow, cites) -> list[str]:
         """One row: its name and address, what it says, and what it rests on."""
         lines = [f"### {label(row.name, row.ref)}", ""]
 
@@ -211,7 +258,7 @@ class PlanRender:
 
         mine: list[Resolution] = []
         for key, value in row.content.items():
-            lines.append(f"- **{key}**: {self._value(value, resolve, mine)}")
+            lines.append(f"- **{key}**: {self._value(value, resolve, follow, mine)}")
         if row.links:
             targets = [
                 f"{spec.edge_type} → {self._display(spec.target, resolve)}"
@@ -224,9 +271,7 @@ class PlanRender:
         if mine:
             lines.append("")
             lines.append(
-                "*cites: "
-                + "; ".join(f"{c['address']} — {c['name']} ({c['state']})" for c in mine)
-                + "*"
+                "*cites: " + "; ".join(_cite_line(c) for c in mine) + "*"
             )
             cites.extend(mine)
         lines.append("")
@@ -238,7 +283,7 @@ class PlanRender:
         name, _state = resolve(ref)
         return label(name, ref)
 
-    def _value(self, value: Any, resolve, mine: list[Resolution]) -> str:
+    def _value(self, value: Any, resolve, follow, mine: list[Resolution]) -> str:
         """Stored content, flattened for reading and never reworded.
 
         `collect` is the door's own annotator: it notes every address the text cites and
@@ -246,11 +291,12 @@ class PlanRender:
         owner wrote reaches him exactly as he wrote it.
         """
         if isinstance(value, str):
-            return str(collect(value, resolve, mine))
+            return str(collect(value, resolve, mine, follow))
         if isinstance(value, dict):
             return "; ".join(
-                f"{k}: {self._value(v, resolve, mine)}" for k, v in value.items()
+                f"{k}: {self._value(v, resolve, follow, mine)}"
+                for k, v in value.items()
             )
         if isinstance(value, (list, tuple)):
-            return "; ".join(self._value(v, resolve, mine) for v in value)
+            return "; ".join(self._value(v, resolve, follow, mine) for v in value)
         return str(value)

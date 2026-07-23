@@ -59,7 +59,14 @@ from engine.attachments import AttachmentService
 from engine.briefs import BriefComposer, BriefSelection
 from engine.clock import now
 from engine.conflicts import ConflictService
-from engine.door import Resolution, collect, render, resolver_from, scan
+from engine.door import (
+    Resolution,
+    collect,
+    render,
+    resolver_from,
+    scan,
+    successor_lookup,
+)
 from engine.errors import PlanToolError
 from engine.findings import FindingService
 from engine.gaps import GapEngine
@@ -912,6 +919,10 @@ class Surface:
         )
         self.log = ObservabilityLog(storage.workspace)
         self._resolve = resolver_from(self.rows, self.findings)
+        # Follows a dead citation to its live successor (F17, owner's ruling): a brief is
+        # read by a code engine that cannot go and look, so a superseded address that names
+        # its successor is the difference between a lead and a dead end.
+        self._follow = successor_lookup(self.rows, self.findings)
 
     # --- contracts:50 ---
 
@@ -967,7 +978,7 @@ class Surface:
             )
 
         cites: list[Resolution] = []
-        payload: Any = render(value, self._resolve, cites)
+        payload: Any = render(value, self._resolve, cites, self._follow)
         digest = getattr(value, "present", None)
         if callable(digest):
             # The presented digest is the one string on this path the surface assembles
@@ -1057,7 +1068,7 @@ class Surface:
         self, tool_name: str, started: str, exc: PlanToolError, mode: str
     ) -> ToolResult:
         cites: list[Resolution] = []
-        problem = str(collect(str(exc), self._resolve, cites))
+        problem = str(collect(str(exc), self._resolve, cites, self._follow))
         self.log.append_log(
             LogEvent(
                 tool=tool_name, started_at=started, finished_at=now(),
