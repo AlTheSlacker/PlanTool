@@ -308,3 +308,141 @@ class Closure:
     reached: tuple[RowRef, ...]
     depth_of: dict[str, int]
 
+
+# --- revision-service (components:13), state_machines:10 ---
+#
+# The frozen plan names these types in the revision contracts but does not give their fields;
+# the shapes are settled here and in M7_PLAN.md. Two owner decisions (2026-07-23) shape them,
+# both logged as deviations: changes apply live once conflict-checked rather than being held to
+# a single deferred apply (D25), and abandon is a confirmed rewind to the opening snapshot (D26).
+
+
+class Disposition(StrEnum):
+    """contracts:57 — how the owner adjudicates a repercussion."""
+
+    ACCEPT = "accept"
+    MODIFY = "modify"
+    DEFER = "defer"
+
+
+@dataclass(frozen=True, slots=True)
+class ChangeRequest:
+    """contracts:42 — what the owner wants changed and why.
+
+    `targets` are the live rows the change touches; they seed the link-graph impact walk.
+    `intent` is the owner's own words, recorded verbatim against the revision.
+    """
+
+    targets: tuple[RowRef, ...]
+    intent: str
+
+
+@dataclass(frozen=True, slots=True)
+class OwnerDecision:
+    """contracts:57 — accept | modify | defer, with the owner's words.
+
+    A `modify` carries the full `replacement` row the owner wants the affected row superseded
+    by (a real `RowSubmission`, so the existing supersession and validation machinery applies).
+    The tool never writes the wording — it checks the affected row for an open conflict and, if
+    none is shown, supersedes the row live (D25). `words` is the owner's rationale, recorded
+    against the repercussion whatever the disposition.
+    """
+
+    disposition: Disposition
+    words: str
+    replacement: RowSubmission | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class Repercussion:
+    """contracts:43 — one ripple the owner must decide on.
+
+    Enumerated once at open time and never recomputed (the frozen denominator, F26). `kind`
+    distinguishes a directly-targeted row, a transitively-affected row, and a resurfaced
+    accepted-risk or suppressed warning (requirements:55).
+    """
+
+    id: int
+    position: int
+    kind: str
+    advice: str
+    row: RowRef | None = None
+    finding: RowRef | None = None
+    warning_id: int | None = None
+    disposition: Disposition | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class WalkthroughComplete:
+    """contracts:43 — the walkthrough has no more repercussions to present."""
+
+    revision_id: int
+    total: int
+
+
+@dataclass(frozen=True, slots=True)
+class Revision:
+    """entities:10 — an owner-initiated change to a finalized plan.
+
+    Born in `walkthrough` because impact analysis is synchronous (D27); `proposed`
+    and `analyzing` are passed through inside `open_revision` and never persisted.
+    """
+
+    id: int
+    intent: str
+    from_version: int
+    to_version: int
+    state: str
+    repercussion_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class StagedChange:
+    """contracts:57 — the recorded adjudication.
+
+    Named `StagedChange` after the frozen contract, but under D25 an accepted `modify` is
+    already live: `applied` names the superseding row it produced. A `modify` whose wording
+    conflicts is not applied — `held_conflict` names the conflict blocking it, and the
+    repercussion stays unadjudicated until the owner resolves it.
+    """
+
+    repercussion_id: int
+    disposition: Disposition
+    applied: RowRef | None = None
+    held_conflict: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class RevisionResult:
+    """contracts:45 — revision applied and closed; the plan's new version is live."""
+
+    revision_id: int
+    version: int
+    applied: tuple[RowRef, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class RewindPreview:
+    """abandon_revision, unconfirmed (D26) — what a confirmed rewind would revert.
+
+    A pure read: it mutates nothing. The owner confirms to rewind or steps back to keep the
+    revision open.
+    """
+
+    revision_id: int
+    reverts: tuple[RowRef, ...]
+    restores_version: int
+
+
+@dataclass(frozen=True, slots=True)
+class RollbackReport:
+    """contracts:46 — plan rewound cleanly to its pre-change version.
+
+    The analysis record (the revision and its repercussions) survives the rewind because it
+    lives outside the plan-row snapshot (requirements:72).
+    """
+
+    revision_id: int
+    restored_version: int
+    reverted: tuple[RowRef, ...]
+

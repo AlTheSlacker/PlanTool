@@ -22,7 +22,7 @@ database". Every other module reaches persistence through storage.py's typed ope
 #: only gate that blocked on an open finding was finalization (requirements:32), so every
 #: finding was *implicitly* "resolve by finalization". The 4 -> 5 step makes that implicit
 #: allocation explicit rather than inventing one — the same test the glossary passed.
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 DDL = """
 PRAGMA journal_mode = WAL;
@@ -741,6 +741,60 @@ CREATE INDEX IF NOT EXISTS idx_reallocations_finding
 """
 
 DDL += REALLOCATIONS_DDL
+
+
+# revision-service (components:13), state_machines:10. A revision is an owner-initiated change
+# to a finalized plan. At `open_revision` the plan is snapshotted and its version bumped; the
+# owner then walks every affected row, and each `modify` is conflict-checked and superseded on
+# the live plan the moment it clears (owner's decision, M7_PLAN.md D25). The revision closes
+# with `apply_revision`, or `abandon_revision` rewinds the plan to `snapshot_id`. The revision
+# and its repercussions live here, OUTSIDE the plan-row snapshot, so a rewind preserves the
+# analysis record (requirements:72). Born in `walkthrough` (D27): impact analysis is
+# synchronous, so `proposed`/`analyzing` are never persisted.
+REVISIONS_DDL = """
+CREATE TABLE IF NOT EXISTS revisions (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    intent       TEXT    NOT NULL,
+    snapshot_id  INTEGER NOT NULL,
+    from_version INTEGER NOT NULL,
+    to_version   INTEGER NOT NULL,
+    state        TEXT    NOT NULL,
+    cursor       INTEGER NOT NULL DEFAULT 0,
+    created_at   TEXT    NOT NULL,
+    resolved_at  TEXT
+);
+
+-- One row per repercussion, enumerated once at open time (the frozen denominator, F26) and
+-- never recomputed. `kind` is target | affected | accepted_risk | suppressed_warning. The
+-- adjudication is recorded in place: `disposition` stays null until the owner decides, and a
+-- `modify` that clears the conflict check records the superseding row in `applied_ref`.
+CREATE TABLE IF NOT EXISTS repercussions (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    revision_id    INTEGER NOT NULL,
+    position       INTEGER NOT NULL,
+    kind           TEXT    NOT NULL,
+    row_ref        TEXT,
+    finding_ref    TEXT,
+    warning_id     INTEGER,
+    advice         TEXT    NOT NULL,
+    disposition    TEXT,
+    owner_words    TEXT,
+    applied_ref    TEXT,
+    created_at     TEXT    NOT NULL,
+    resolved_at    TEXT,
+    UNIQUE (revision_id, position)
+);
+
+CREATE INDEX IF NOT EXISTS idx_repercussions_revision
+    ON repercussions (revision_id, position);
+
+-- At most one revision may be open (not applied/abandoned) at a time (contracts:42). A partial
+-- unique index enforces it in the store, not only in the service.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_one_open_revision
+    ON revisions (state) WHERE state = 'walkthrough';
+"""
+
+DDL += REVISIONS_DDL
 
 
 def statements(ddl: str) -> list[str]:

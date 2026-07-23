@@ -722,7 +722,15 @@ class TaskGraphService:
         briefed, and marking it in-progress here would put sub-tasks into `in_progress`
         that nobody is working on. `serve_brief` fires at handover — see `serve_brief`.
         """
-        if not self.is_finalized():
+        state = self.storage.plan_handle()["state"]
+        finalized = state == "finalized"
+        revising = state == "revising"
+
+        if not finalized and not revising:
+            # A draft plan — one that never finalized — has no task graph at all, because
+            # sub-tasks are derived at finalization (crud_grid:33). The allow_draft escape
+            # hatch is genuinely unreachable here, so it fails with the real reason rather
+            # than an empty result (F21, resolved: the flag's only live meaning is below).
             if not allow_draft:
                 raise PlanNotFinalized(
                     "the plan is not finalized; pass allow_draft with recorded owner "
@@ -732,16 +740,28 @@ class TaskGraphService:
                 raise PlanNotFinalized(
                     "allow_draft requires recorded owner consent (requirements:40)"
                 )
-            if not self._all():
-                raise PlanNotFinalized(
-                    "there is no task graph to serve from: sub-tasks are derived at "
-                    "finalization (crud_grid:33), so a plan that has never been "
-                    "finalized has no sub-tasks for allow_draft to serve. It is only "
-                    "reachable for a plan that left `finalized` afterwards, such as "
-                    "one under revision."
-                )
+            raise PlanNotFinalized(
+                "there is no task graph to serve from: sub-tasks are derived at "
+                "finalization (crud_grid:33), so a plan that has never been finalized has "
+                "no sub-tasks. allow_draft is reachable only for a plan that left "
+                "`finalized`, i.e. one under revision — where it serves an affected "
+                "sub-task, watermarked, past the freeze."
+            )
 
-        candidates = [s for s in self._all() if self.readiness_of(s) == READY]
+        # F21 / decisions:62 — the affected-only freeze. While a revision is open the plan
+        # sits in `revising`; sub-tasks whose contract the revision touches are frozen, and
+        # every other sub-task keeps flowing. allow_draft + recorded consent is the override
+        # that serves a frozen sub-task anyway, watermarked as a draft of the coming change —
+        # the one reading under which the flag is reachable, and what F21 was waiting for.
+        frozen = self._revision_frozen_refs() if revising else frozenset()
+        serve_frozen = bool(allow_draft and consent.strip())
+
+        ready = [s for s in self._all() if self.readiness_of(s) == READY]
+        if revising and not serve_frozen:
+            candidates = [s for s in ready if str(s.contract_ref) not in frozen]
+        else:
+            candidates = ready
+
         if not candidates:
             unfinished = [
                 s for s in self._all()
@@ -755,8 +775,23 @@ class TaskGraphService:
         return SubTaskCandidates(
             subtask=chosen,
             closure=self.closure_for(chosen),
-            is_draft=not self.is_finalized(),
+            is_draft=revising and str(chosen.contract_ref) in frozen,
         )
+
+    def _revision_frozen_refs(self) -> frozenset[str]:
+        """The plan-row refs an open revision has frozen — its repercussion targets and
+        affected rows (F21 / decisions:62).
+
+        Read straight from the revision store rather than passed in, so what the freeze
+        checks and what the revision service enumerated cannot drift apart. Empty when no
+        revision is open.
+        """
+        rows = self.storage.query(
+            "SELECT r.row_ref FROM repercussions r JOIN revisions v "
+            "ON r.revision_id = v.id "
+            "WHERE v.state = 'walkthrough' AND r.row_ref IS NOT NULL"
+        )
+        return frozenset(row["row_ref"] for row in rows)
 
     def closure_for(self, subtask: SubTask) -> tuple[RowRef, ...]:
         """requirements:36 — every row reachable from the sub-task's contract."""

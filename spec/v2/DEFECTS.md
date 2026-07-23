@@ -784,9 +784,18 @@ re-checked** — the same shape as F6's rule about identity changes, one level u
 
 ## F21 — `allow_draft` cannot serve anything, because the graph is derived at finalization
 
-**Status: OPEN. Resolve-by gate: M7 (`revision-service`).** Bound there because the only
-reading under which the flag becomes reachable is the revision case, which is M7's subject.
-M5a ships the honest error instead of a silent empty result.
+**Status: RESOLVED at M7 (2026-07-23).** The reading that made the flag reachable is exactly
+the affected-only freeze (`decisions:62`): while a revision is open the plan sits in `revising`
+and has a graph, so `next_subtask` serves every sub-task *outside* the revision's frozen impact
+set with no flag at all, and `allow_draft` + recorded consent becomes the override that serves a
+*frozen* (affected) sub-task anyway, watermarked as a draft of the coming change — its `is_draft`
+is true only in that case. The draft-plan branch still raises the honest `PlanNotFinalized`,
+because a plan that never finalized genuinely has no graph. Built in `next_subtask`
+(`_revision_frozen_refs` reads the open revision's repercussion rows straight from the store, so
+the freeze and the enumeration cannot drift). See DEVIATIONS.md D25–D27.
+
+**Was (M5a–M6): OPEN, resolve-by gate M7 (`revision-service`).** M5a shipped the honest error
+instead of a silent empty result; M7 makes the flag do its real job.
 
 **Rows:** `contracts:55` (`next_subtask`, error `PlanNotFinalized`), `requirements:40`,
 `crud_grid:33`, `entities:9`, `findings:6` and its fix `decisions:62`/`sm_cells:186`/`187`.
@@ -1952,3 +1961,41 @@ have the same paired regression: two distinct filings on one row-set both land, 
 re-file replays. Owner's call (2026-07-23) was to fold them into this fix rather than leave two
 known-identical latent defects standing — the DRY reflex the engine exists to enforce, applied
 to the engine itself.
+
+---
+
+## F45 — The frozen plan never says what a staged/applied revision change concretely does to a row
+
+**Status: RESOLVED at M7 (2026-07-23) by owner decision — recorded here because the build had to
+stop and ask, which is exactly what this ledger counts.**
+
+**Rows:** `contracts:57` (`adjudicate_repercussion` → `StagedChange`), `contracts:45`
+(`apply_revision`), `requirements:52` ("update the affected rows with provenance"),
+`OwnerDecision (accept|modify|defer, with the owner's words)`.
+
+**Insufficient.** The revision contracts specify the *process* in detail — snapshot, walk the
+repercussions, adjudicate each, apply or abandon — but never pin down the concrete mutation an
+adjudication produces. `requirements:52` says "update the affected rows with provenance"; the
+tool's only provenance-preserving update is supersession (`contracts:12`, `requirements:61`). But
+three things are left unstated: (1) where the *new content* of a changed row comes from — an
+`OwnerDecision` is described only as "accept|modify|defer, with the owner's words," which is prose,
+not a row; (2) what "accept" and "defer" do to a row concretely; and (3) what "checked for
+conflict" means for a tool that records judgment and never exercises it, so cannot semantically
+detect a contradiction. None of the three pre-build checks can see this — every contract is
+well-formed and every state-machine event has a firing contract; the gap is in what the write
+*means*, one level below the contract surface.
+
+**Resolved (owner's decision, 2026-07-23), as built.** A `modify` carries a full replacement
+`RowSubmission` (so the existing supersession machinery applies); the tool checks the affected
+row for an **open conflict** and, if none is shown, supersedes it on the live plan immediately
+(D25); `accept` and `defer` change no rows (a recorded judgment); "checked for conflict" is the
+structural open-conflict gate, not a semantic check. Abandon rewinds to the opening snapshot
+(D26). Full reasoning in DEVIATIONS.md D25/D26.
+
+**Class.** New: **a contract that specifies a process in full while leaving the semantics of its
+central write unstated.** Unlike F30's "which contract writes this field?" (a missing writer) or
+F23's missing denominator, here the writer exists and is named — `apply_revision` "commits the
+staged change-set" — but what committing *does* to a row was never decided, and could not be
+inferred from the contracts alone. Worth an audit question for any state-changing contract: **when
+it says it "updates" or "applies", is the concrete effect on the stored record specified, or only
+the fact that an effect happens?**
