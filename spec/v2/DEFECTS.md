@@ -1999,3 +1999,36 @@ staged change-set" — but what committing *does* to a row was never decided, an
 inferred from the contracts alone. Worth an audit question for any state-changing contract: **when
 it says it "updates" or "applies", is the concrete effect on the stored record specified, or only
 the fact that an effect happens?**
+
+## F46 — The MCP surface could not advertise M7's own tools; `tools/list` crashed the server
+
+**Status: RESOLVED at M8 setup (2026-07-24). Found by the GUI dogfood on first contact with the
+shipped surface — the first thing M8 caught, before any GUI work.**
+
+**Rows / code:** `engine/mcp.py` `SCHEMA_OF` (the argument-kind → JSON-schema advertisement) vs
+`engine/surface.py` `DECODERS` (the argument-kind → validator). `contracts:42/57` (`open_revision`,
+`adjudicate_repercussion`) introduced the argument kinds `change_request` and `owner_decision`.
+
+**The defect.** M7 added two new argument kinds to the surface registry and its `DECODERS`, but
+never extended `mcp.py`'s parallel `SCHEMA_OF` map. `input_schema` does `SCHEMA_OF[p.kind]`, so
+`tool_list()` raised `KeyError: 'change_request'` on the first revision tool. `tool_list()` is
+called by the `tools/list` MCP method, which **every** client issues at startup, and `serve()`
+wraps `handle()` in no try/except — so the unhandled `KeyError` killed the whole server before a
+single tool could be called. Net effect: the v2 MCP surface was unreachable via its own protocol.
+518 tests passed because `engine/mcp.py` had **no test at all** — the advertise side of the surface
+was entirely uncovered, so nothing listed the toolset with the revision tools present.
+
+**Resolved.** Added `change_request` and `owner_decision` to `SCHEMA_OF` (bare `{"type": "object"}`,
+matching the equally-structured `spike`/`selection`/`selector` siblings; the module's own note says
+the schema is the advertisement, not the check, so loose is deliberate). New `tests/test_mcp.py`
+carries the **mechanism** against a repeat: `set(SCHEMA_OF) == set(DECODERS)` (the two hand-kept maps
+of the same kind vocabulary must stay in lockstep), every registry kind must be advertised, and two
+reproductions — `tool_list()` over the full registry and an `initialize`+`tools/list` handshake
+through the real stdio `Server`. All four shown to FAIL against the buggy code first.
+
+**Class.** The F30/F31 hand-kept-parallel-lists drift, in a new place: two maps keyed by the same
+vocabulary where one side (the check, `DECODERS`) is exercised by every call and the other (the
+advertisement, `SCHEMA_OF`) was never exercised by a test, so it fell behind silently. Audit
+question, now with a concrete site: **when two structures must agree by construction, which test
+asserts they agree — and is the quieter of the two covered at all?** Also a plain observability
+lesson: the transport that every client hits first had zero tests.
