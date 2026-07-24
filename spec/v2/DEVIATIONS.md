@@ -1263,3 +1263,45 @@ reached from `walkthrough` (which the state machine makes mandatory before apply
 so it needs no error for "you have not walked the repercussions yet" — an error its frozen
 contract does not offer. Opening a revision and immediately abandoning it remains possible
 (abandon from `walkthrough`), so no capability is lost.
+
+## D28 — `change_log`, the GUI's polling feed (a net-new addition)
+
+**The frozen text.** The plan is silent. It describes a tool driven through an MCP surface by
+one planning session and says nothing about a second process watching the store; nothing in it
+asks for a change feed.
+
+**What we built, and why.** The M8 dogfood stood up a companion GUI that renders a live plan
+(owner, 2026-07-24). To keep its display current a reader must know *what changed* since it last
+looked, and the only alternatives are both bad: re-read every table on a timer, or scan every
+row's timestamps each poll. So a single append-only table, `change_log`, records one row per
+mutation with a monotonic `seq`; the GUI polls `WHERE seq > :last` and re-fetches exactly the
+rows named. This is an addition the frozen plan neither anticipated nor forbids — recorded here
+because plan and build must never silently disagree, the same reason D13 (the glossary) and D23
+(`terms`) are logged as additions rather than departures.
+
+**Fed at the write choke point, by inference.** Every service write already funnels through
+`storage.write_atomic`'s apply loop, so the feed is populated there and nowhere else — no
+cooperation from the call sites scattered across a dozen modules, which is what makes it a
+mechanism and not a convention the next new mutation forgets (rules need mechanisms). The
+`op_type` — create · supersede · retire · state_change · update — is **inferred** from the
+columns each write touches, because those column names (`superseded_by`/`superseded_at`,
+`retired_at`, `state`) are already this schema's universal lifecycle vocabulary. The GUI
+re-fetches the row the entry names, so the op-type is a hint it confirms against ground truth
+and never a load-bearing claim: an inference that is merely coarse — a `terms` retirement, which
+this schema records in `ban_scope` rather than `retired_at`, reads as `update` — is therefore
+never a lie. Only those four universal columns are read; chasing each table's idiosyncratic
+column would trade a clean rule for a pile of special cases.
+
+**Out of every snapshot; a rewind emits one `resync`.** The feed records what *happened*, like
+`gate_runs`, so a plan rewind must not rewrite it: `change_log` is absent from
+`snapshot_version`'s table set and untouched by `_restore_payload`, and its history survives a
+restore. The wholesale-rewrite paths (`restore`, `recover`, a failed migration's rollback)
+bypass the choke point, so rather than synthesise a per-row flood for a replace nobody drove,
+each appends a single `resync` marker — the honest signal that a watching GUI's cursor is void
+and it must full-reload.
+
+**The GUI's cursor is the GUI's, not ours.** A client's last-seen `seq` is per-client viewer
+state and has no place in the shared plan file, which is snapshotted, copied and versioned —
+storing it there is the same concern-mixing the owner rejected when he refused to route
+conversation input through the GUI (2026-07-24). Cold start is a full load pinned to the current
+head (`MAX(seq)`); thereafter the GUI polls forward, and a `resync` sends it back to a full load.

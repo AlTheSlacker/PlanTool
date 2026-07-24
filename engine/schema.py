@@ -22,7 +22,15 @@ database". Every other module reaches persistence through storage.py's typed ope
 #: only gate that blocked on an open finding was finalization (requirements:32), so every
 #: finding was *implicitly* "resolve by finalization". The 4 -> 5 step makes that implicit
 #: allocation explicit rather than inventing one — the same test the glossary passed.
-SCHEMA_VERSION = 6
+#:
+#: Bumped to 6 on 2026-07-23 for the revision tables (M7). They start empty; a plan that
+#: predates revision-service genuinely has no revisions, so the 5 -> 6 step invents nothing.
+#:
+#: Bumped to 7 on 2026-07-24 for `change_log` (DEVIATIONS.md D28), the GUI's polling feed. The
+#: 6 -> 7 step creates an empty table: a plan written before the feed existed has no change
+#: history to backfill, and an empty feed is the truthful answer — a watching GUI cold-loads
+#: the current state and polls forward from there.
+SCHEMA_VERSION = 7
 
 DDL = """
 PRAGMA journal_mode = WAL;
@@ -795,6 +803,57 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_one_open_revision
 """
 
 DDL += REVISIONS_DDL
+
+
+# change-log (DEVIATIONS.md D28) — the companion GUI's polling feed. A GUI that renders a live
+# plan must learn *what changed* without re-scanning every table on a timer, so this is the one
+# append-only cursor it reads: one monotonic `seq`, one row per mutation, polled `WHERE seq >
+# :last`.
+#
+# Fed at the single write choke point — storage.write_atomic's apply loop — so every service
+# write is recorded with no cooperation from the call sites scattered across a dozen modules.
+# That is what keeps it a *mechanism* and not a convention the next new mutation forgets, which
+# is the failure this codebase keeps relearning (rules need mechanisms).
+#
+# `op_type` is **inferred** from the columns a write touches, because those names are already
+# this schema's universal vocabulary: `superseded_by`/`superseded_at` -> supersede, `retired_at`
+# -> retire, `state` -> state_change, an insert -> create, anything else -> update. The GUI
+# re-fetches the row `ref` names, so op_type is a reliable *hint* and the row stays the ground
+# truth. An inference that is merely coarse is therefore never a lie: a term's retirement, which
+# this schema records in `ban_scope` rather than `retired_at`, reads here as `update`, and the
+# GUI reading the term sees the ban regardless. Only the four universal columns are inferred
+# from; chasing each table's idiosyncratic column would trade a clean rule for a pile of
+# special cases.
+#
+# `ref` is `table:key` — `requirements:32` for a plan row, `findings:5`, `subtasks:5` for the
+# rest — self-describing and carrying **no row contents**: the payload is always fetched fresh,
+# so a stale copy can never live here. `replaced_by` carries the new ref on a supersession that
+# has a pointer (plan_rows, briefs, subtasks); the tables that supersede by stamping
+# `superseded_at` alone have no back-pointer to the replacement, so it is null there and the GUI
+# re-queries the live row.
+#
+# **Absent from every snapshot, deliberately.** It records what *happened*, like `gate_runs` — a
+# plan rewind must not rewrite that history, so it is outside snapshot_version's table set and
+# untouched by _restore_payload. A wholesale rewrite (restore/recover) instead appends a single
+# `resync` marker (`ref` null): the honest signal that a watching GUI's cursor is void and it
+# must full-reload, rather than a flood of synthetic per-row events for a bulk replace it never
+# drove.
+#
+# The GUI's own last-seen `seq` is the GUI's to persist, not ours. It is per-client viewer state,
+# and one client's cursor has no place in the shared plan file, which is snapshotted, copied and
+# versioned. Cold start is a full load pinned to the current head; thereafter the GUI polls
+# forward.
+CHANGE_LOG_DDL = """
+CREATE TABLE IF NOT EXISTS change_log (
+    seq         INTEGER PRIMARY KEY AUTOINCREMENT,
+    op_type     TEXT    NOT NULL,   -- create|supersede|retire|state_change|update|resync
+    ref         TEXT,               -- table:key of the changed row; null for a resync marker
+    replaced_by TEXT,               -- the new ref on a pointer-carrying supersede; else null
+    created_at  TEXT    NOT NULL
+);
+"""
+
+DDL += CHANGE_LOG_DDL
 
 
 def statements(ddl: str) -> list[str]:
