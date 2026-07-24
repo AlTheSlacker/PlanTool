@@ -234,6 +234,7 @@ class Storage:
             with self._immediate():
                 for op in batch:
                     self._apply(op, batch)
+                self._record_changes(batch)
                 receipt = {
                     "idempotency_key": idempotency_key,
                     "written_at": now(),
@@ -347,6 +348,117 @@ class Storage:
             op.result = {"rows": cur.rowcount}
         else:
             raise ValueError(f"unknown op kind {op.kind!r}")
+
+    # --- change_log (DEVIATIONS.md D28): the GUI's polling feed ---
+
+    def _record_changes(self, batch: list[Op]) -> None:
+        """Append one change_log row per mutation, for the GUI's polling feed (D28).
+
+        Called inside write_atomic's transaction, after every op has applied — so it commits
+        atomically with the writes, a rolled-back batch records nothing, and an idempotent
+        replay (which returns before the transaction opens) records nothing either. `op_type`
+        is inferred from the columns each op touched; schema.CHANGE_LOG_DDL explains why that
+        is a hint the GUI confirms against the row, never a lie. Deduped by (ref, op_type)
+        within the batch, because a plan_rows supersession stamps the old row twice — state
+        first (no pointer yet), pointer second — and that is one change to announce, not two.
+        The two are merged rather than first-wins, so the pointer op's `replaced_by` is the one
+        kept: dropping it would strip a supersession of the very ref that names its replacement.
+        """
+        replaced: dict[tuple[str, str], str | None] = {}
+        order: list[tuple[str, str]] = []
+        for op in batch:
+            change = self._classify_change(op, batch)
+            if change is None:
+                continue
+            ref, op_type, replaced_by = change
+            key = (ref, op_type)
+            if key not in replaced:
+                order.append(key)
+                replaced[key] = replaced_by
+            elif replaced_by is not None:
+                replaced[key] = replaced_by  # a later op carries the pointer the first lacked
+        for ref, op_type in order:
+            self.conn.execute(
+                "INSERT INTO change_log (op_type, ref, replaced_by, created_at) "
+                "VALUES (?, ?, ?, ?)",
+                (op_type, ref, replaced[(ref, op_type)], now()),
+            )
+
+    def _classify_change(
+        self, op: Op, batch: list[Op]
+    ) -> tuple[str, str, str | None] | None:
+        """(ref, op_type, replaced_by) for one op, or None if it announces nothing.
+
+        The op-type is read off the columns the write touches — the four that make up this
+        schema's universal lifecycle vocabulary — in priority order: a supersession pointer
+        wins over a retirement stamp, which wins over a bare state move, and a write touching
+        none of them is a plain in-place update.
+        """
+        if op.kind == "insert_row":
+            return (op.result["ref"], "create", None)
+        if op.kind == "insert":
+            return (f"{op.table}:{op.result['id']}", "create", None)
+        if op.kind == "update":
+            # An update that matched no row changed nothing: no phantom change is announced.
+            if not op.result or op.result.get("rows", 0) == 0:
+                return None
+            values = self._resolve(op.values, batch)
+            ref = self._ref_of_update(op)
+            if "superseded_by" in values or "superseded_at" in values:
+                return (ref, "supersede",
+                        self._as_ref(op.table, values.get("superseded_by")))
+            if "retired_at" in values:
+                return (ref, "retire", None)
+            if "state" in values:
+                return (ref, "state_change", None)
+            return (ref, "update", None)
+        return None
+
+    @staticmethod
+    def _as_ref(table: str, pointer: Any) -> str | None:
+        """A supersession pointer rendered as a `table:key` ref, matching change_log.ref.
+
+        `plan_rows` already stores it as `table:ordinal`; the same-table id pointers
+        (`subtasks`, `briefs`) store a bare id naming a row in the op's own table.
+        """
+        if pointer is None:
+            return None
+        text = str(pointer)
+        return text if ":" in text else f"{table}:{text}"
+
+    @staticmethod
+    def _ref_of_update(op: Op) -> str:
+        """The `table:key` ref an update addresses, derived from its where clause.
+
+        Covers every shape the services use: plan_rows' (table_name, ordinal), the common
+        single `id`, the `plan` singleton's `guard`, `gap_key`, and the two compound keys
+        (subtask_deps, claim_tracks) — the last joined, having no single-column id.
+        """
+        where = op.where or {}
+        if "table_name" in where and "ordinal" in where:
+            return f"{where['table_name']}:{where['ordinal']}"
+        if "id" in where:
+            return f"{op.table}:{where['id']}"
+        if where:
+            return f"{op.table}:" + ":".join(str(v) for v in where.values())
+        return op.table
+
+    def _emit_resync(self) -> None:
+        """Append a single `resync` marker: the GUI's cursor is void, full-reload (D28).
+
+        The honest signal after a wholesale rewrite that bypasses the write choke point —
+        restore, recover, a failed migration's rollback. Guarded, because a store older than
+        schema 7 has no change_log, and rewinding one must not fail for lack of a feed it never
+        had.
+        """
+        try:
+            self.conn.execute(
+                "INSERT INTO change_log (op_type, ref, replaced_by, created_at) "
+                "VALUES ('resync', NULL, NULL, ?)",
+                (now(),),
+            )
+        except sqlite3.Error:
+            pass
 
     def _immediate(self):
         """A BEGIN IMMEDIATE transaction: the write lock is taken up front, so lease
@@ -466,6 +578,7 @@ class Storage:
                         "DELETE FROM plan_rows WHERE table_name = ? AND ordinal = ?",
                         (table, int(ordinal)),
                     )
+                self._emit_resync()  # rows vanished outside _apply; GUI must reload (D28)
             return RecoveryReport(
                 "salvage",
                 salvaged=report.readable,
@@ -481,6 +594,7 @@ class Storage:
                 for t in ("plan_rows", "links", "source_texts", "source_sections",
                           "gap_overlay", "conflicts", "conflict_refs", "warnings"):
                     self.conn.execute(f"DELETE FROM {t}")  # noqa: S608
+                self._emit_resync()  # everything cleared outside _apply; GUI must reload (D28)
             return RecoveryReport("restart", lost=report.readable + report.unreadable)
 
         raise ValueError(f"unknown strategy {strategy!r}")
@@ -496,6 +610,11 @@ class Storage:
                         f"INSERT INTO {table} ({cols}) VALUES ({marks})",  # noqa: S608
                         tuple(row.values()),
                     )
+            # A wholesale rewrite bypasses _apply, so nothing above fed the change_log. One
+            # resync marker tells a watching GUI to full-reload, instead of a per-row flood
+            # for a replace it never drove (D28). change_log is not a payload table, so the
+            # feed's own history survives the rewind.
+            self._emit_resync()
 
     # --- contracts:8 ---
 
@@ -553,6 +672,10 @@ class Storage:
           **5 -> 6** adds the revision tables (M7). They start empty; a plan that predates
           revision-service genuinely has no revisions, so nothing is invented.
 
+          **6 -> 7** adds the GUI's `change_log` (D28). Same shape: a plan written before the
+          feed existed has no change history, the table starts empty, and a watching GUI
+          cold-loads the current state rather than being handed a backfilled past.
+
         Anything else is an error and never a silent no-op (decisions:45) — including a
         downgrade, which would have to drop rows to succeed.
         """
@@ -567,6 +690,11 @@ class Storage:
             # M7 adds the revision tables. A plan that predates them genuinely has no
             # revisions — the new tables start empty, inventing nothing (M7_PLAN.md).
             return schema.statements(schema.REVISIONS_DDL)
+        if (current, target) == (6, 7):
+            # D28 adds the GUI's change_log. A plan written before the feed existed has no
+            # change history — the table starts empty and a watching GUI cold-loads, so
+            # nothing is invented.
+            return schema.statements(schema.CHANGE_LOG_DDL)
         raise ValueError(
             f"no migration path from schema version {current} to {target}"
         )
