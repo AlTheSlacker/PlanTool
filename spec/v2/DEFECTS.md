@@ -2138,3 +2138,84 @@ that cover it*. Worth marking that it took three separate surfacings (M3 gap rul
 F20, M8 script/manifest) across two years' worth of build calendar before the check that would have
 caught all three in one pass was actually written. A predicted recurrence is not a mechanism; only
 the check is.
+
+## F49 — `plan_status` crashes when its digest quotes owner prose containing a ref-shaped token
+
+**Status: RESOLVED at M8 (2026-07-26) by owner decision — option 1 (carry provenance through
+`present`). Found by the GUI dogfood at M8, on the plan whose glossary the dogfood itself
+authored.**
+
+**Rows / code:** `resume.PlanStatus.present()` (the digest summary), `surface.dispatch`
+(surface.py — `payload = {"summary": digest(), "detail": ...}`, then `scan`), `door.scan` /
+`door.Verbatim` / `door.collect`. `contracts:64` (plan_status), DEVIATIONS.md D17 (compact
+digest), D18 (the door's naming invariants); DEFECTS.md F17 (the sibling — prose citations),
+F34/F46 (a resume/transport surface that crashes).
+
+**The defect.** The door carries provenance *by type*: a string read off stored data leaves as
+`Verbatim` and is annotated (its addresses resolved beside the payload, prose untouched), while a
+string the surface *assembles* is plain and is held to the strict rule — no bare `table:ordinal`
+address may leave without a name beside it. `dispatch` renders the engine value (all `Verbatim`)
+into `detail`, then calls `value.present()` and puts that **hand-assembled digest** into `summary`,
+which `scan` reads strictly. That is deliberate — the digest is exactly where the strict half was
+aimed (F34's "1 engineer's mandate — get_mandate()" nonsense).
+
+But `present()` builds the digest partly *from stored prose*: it lists each active warning in full,
+and each this-package journal note in full. An `unsettled_term` gap's warning text quotes the whole
+glossary definition — and a planner's definition of *reference* contained the illustrative example
+`'contracts:12'`. Flattened into one plain string, that owner-authored token is indistinguishable
+from an address the tool composed, so `scan` raises `BareAddress` and the call is **refused**. The
+one call a cold planner must make to resume dies whenever any active warning or journal note it
+inlines happens to contain a `table:ordinal`-shaped token — including a *real live* one
+(`requirements:7` in the same plan's *spotlight* definition would crash it identically; the
+illustrative `contracts:12` merely trips first).
+
+The same definitions served through `next_gaps` and `glossary` succeed, because those go through
+`render` → `Verbatim` → the token is annotated as a citation (`no live row at this address`) rather
+than rejected. Only the digest crashes, because `present()` erases the provenance the door depends
+on.
+
+**The teachability observation underneath it (the dogfood's framing).** A `table:ordinal` token is
+syntactically a citation whether the author meant it as one or wrote it as an *example*. Even where
+it does not crash (next_gaps/glossary), an illustrative `contracts:12` is annotated "no live row at
+this address" — technically true, subtly wrong in spirit: it was never a citation. The addressing
+scheme cannot tell the two apart, and prose that *teaches by example* (a glossary is nothing but
+that) is exactly where authors write ref-shaped tokens they do not mean as live jumps.
+
+**The fork (owner chose option 1, 2026-07-26).** `present()` is not a pure prose-quote and not a
+pure tool-composition — it is both, joined into one string, which is the whole problem. The three
+directions weighed were: (1) carry provenance through `present`, type-faithful; (2) make warnings
+and journal count+call like everything else; (3) exempt the summary from the bare-address check.
+The owner took **(1) — do it properly**: keep the strict check live for genuine tool-composed
+addresses while treating owner prose as the input it is.
+
+**Resolved (option 1, as built).** A digest that can carry mixed provenance now exposes
+`present_lines(display)` returning provenance-typed segments: every line the tool composes is a
+plain `str` (still held to the door's strict rule), every line that quotes stored prose — an active
+warning, a journal note, the recorded/derived next action — is `Verbatim`. `dispatch` scans the
+*segments* (granular: `Verbatim` skipped, plain lines strict) but joins them for the payload, so
+`summary` stays the same string a consumer reads and the payload contract is unchanged; only the
+*scan* got provenance-aware. `PlanStatus`, `JournalNote` and `Warning` — the three summarised
+returns that embed prose — carry `present_lines`; the composed-only digests (`render_plan`,
+`export_glossary`) keep the plain `present` path and its strict scan, which they rely on
+(`render.py`'s own docstring). Two sibling exposures found while doing it were fixed at the source
+rather than hidden: `JournalNote`'s bare `[decisions:11]` task ref is now rendered `name (ref)`
+through `display`, and the network-mount advisory's tool-composed `(requirements:69)` — a genuine
+tool-emitted bare address, exactly what the strict scan should catch — was removed from the
+planner-facing text (the id stays in the docstring, which is ours). Regression: a journal note that
+names a row no longer crashes `journal_note` or `plan_status`; the address is annotated in `cites`;
+and a unit check pins that the journal line is `Verbatim` while the tool's own `Plan '…'` line is
+not. 541 tests pass.
+
+**Discovered by:** the GUI dogfood — the first plan whose own glossary carried a by-example ref
+inside a definition, resumed cold through the real surface. The suite missed it because no test
+plan had an active warning or journal note whose text contained a `table:ordinal` token, so the
+digest's strict scan had never met quoted prose — `next_gaps`/`glossary` were tested with such
+prose and pass, which is precisely why the gap hid in the one path that flattens provenance.
+
+**Class:** F17's family — a ref-shaped token in prose the tool did not author — but the mirror of
+it. F17 was a *real* citation going stale and reading as absent; this is a *non*-citation (or an
+innocent live one) inside owner prose being treated as a tool-composed address and **failing the
+call** rather than being annotated. The unifying lesson: the door's provenance-by-type model is
+correct and load-bearing, and any path that flattens a value to a plain string (here `present()`)
+silently opts that text out of the model. Audit question: **does any surface path assemble a string
+out of stored prose after `render` has run — and therefore strict-scan the owner's own words?**

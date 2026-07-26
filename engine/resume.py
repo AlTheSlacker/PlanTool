@@ -40,8 +40,10 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from typing import Callable
 
 from engine.clock import now
+from engine.door import Verbatim
 from engine.errors import PlanToolError
 from engine.fingerprint import DriftFlag, capture, compare
 from engine.idempotency import key
@@ -98,9 +100,21 @@ class JournalNote:
     created_at: str
     task_ref: RowRef | None = None
 
-    def present(self) -> str:
-        where = f" [{self.task_ref}]" if self.task_ref else ""
+    def line(self, display: Callable[[RowRef], str] = str) -> str:
+        where = f" [{display(self.task_ref)}]" if self.task_ref else ""
         return f"{self.created_at}{where} {self.note}"
+
+    def present(self) -> str:
+        return self.line()
+
+    def present_lines(
+        self, display: Callable[[RowRef], str] = str
+    ) -> list[str | Verbatim]:
+        # One line, and it is stored prose: the note is the planner's own words and may name
+        # a row. Verbatim so the door annotates any address instead of failing the call over
+        # it (DEFECTS.md F49); the composed task ref is rendered through `display` so it still
+        # reads as a name even inside the exempt line.
+        return [Verbatim(self.line(display))]
 
 
 @dataclass(frozen=True, slots=True)
@@ -197,13 +211,29 @@ class PlanStatus:
     terms_awaiting_approval: int = 0
 
     def present(self) -> str:
-        """The digest as text, which is what an agent surface actually serves.
+        """The digest as text — the string a human or a plain caller reads.
 
-        Rendering lives with the data rather than in the caller so that the closing
-        next-action line cannot be dropped by a surface that renders its own view — it is
-        part of the digest, not decoration around it.
+        Assembled from `present_lines` so the two cannot drift: the surface scans the typed
+        parts (owner prose exempt, composed lines strict) while this joins them for display.
+        The closing next-action line lives here rather than in the caller so a surface that
+        renders its own view cannot drop it — it is part of the digest, not decoration.
         """
-        lines = [
+        return "\n".join(self.present_lines())
+
+    def present_lines(
+        self, display: Callable[[RowRef], str] = str
+    ) -> list[str | Verbatim]:
+        """The digest as provenance-typed parts (DEFECTS.md F49).
+
+        Every line the tool composes itself is a plain `str` and stays subject to the door's
+        strict rule — no bare address, no unreachable call, no internal-document citation.
+        Every line that quotes stored prose (an active warning, a journal note) is `Verbatim`,
+        because an address the owner wrote into his own words is input, and failing the resume
+        call over it would be the tool editing his prose. Before F49 this was one flat string,
+        which erased the distinction and let a by-example `contracts:12` inside a glossary
+        definition crash `plan_status` — the one call a cold planner must make.
+        """
+        lines: list[str | Verbatim] = [
             f"Plan '{self.name}' ({self.tier}), {self.state}, version {self.version}",
             f"Package {self.package} — {self.package_name} "
             f"(methodology {self.methodology_revision})",
@@ -222,7 +252,9 @@ class PlanStatus:
         if self.warnings:
             noun = "warning" if len(self.warnings) == 1 else "warnings"
             lines.append(f"{len(self.warnings)} active {noun}:")
-            lines.extend(f"  - {w}" for w in self.warnings)
+            # Re-presented stored prose (a warning is often a gap ask quoting a definition):
+            # Verbatim, so an address the owner wrote is annotated, never rejected (F49).
+            lines.extend(Verbatim(f"  - {w}") for w in self.warnings)
         else:
             lines.append("No active warnings")
         lines.append(self.gaps.present())
@@ -249,13 +281,21 @@ class PlanStatus:
             )
         if self.journal:
             lines.append(f"Journal, this package ({len(self.journal)}):")
-            lines.extend(f"  - {n.present()}" for n in self.journal)
+            # The planner's own words, Verbatim for the same reason, with the composed task
+            # ref named through `display` (F49).
+            lines.extend(Verbatim(f"  - {n.line(display)}") for n in self.journal)
         if self.earlier_journal.count:
             lines.append(self.earlier_journal.present())
         lines.append(self.drift.present())
         lines.extend(self.advisories)
-        lines.append(f"Next action ({self.next_action_source}): {self.next_action}")
-        return "\n".join(lines)
+        # Verbatim: the next action is planner prose — a recorded intent typed into
+        # set_next_action, or the derived fallback that quotes the last journal note — either
+        # of which may name a row. Its instruction words name only hardcoded, exposed calls,
+        # so exempting it from the call check costs no runtime backstop (F49).
+        lines.append(
+            Verbatim(f"Next action ({self.next_action_source}): {self.next_action}")
+        )
+        return lines
 
 
 class ResumeService:
@@ -477,10 +517,14 @@ class ResumeService:
         """
         path = str(self.storage.workspace)
         if path.startswith(UNC_PREFIXES):
+            # No bare `requirements:69` in the returned text: this line is tool-composed and
+            # goes into the digest as a plain (strictly-scanned) part, so an address here is
+            # the tool's own bare-address failure, not the owner's prose. The requirement id
+            # stays in the docstring, which is ours to read (DEFECTS.md F49).
             return (
                 "advisory: this workspace is on a network mount. Machine-crash durability "
                 "is untested there — spike 1 found synchronous=FULL absorbed by client and "
-                "NAS caching, with commit p50 near 0 ms (requirements:69).",
+                "NAS caching, with commit p50 near 0 ms.",
             )
         return ()
 

@@ -480,6 +480,25 @@ class TestTheDoorInPractice:
                 surface.tool_names,
             )
 
+    def test_a_digest_quoting_a_ref_shaped_token_in_owner_prose_does_not_crash(self, surface):
+        """DEFECTS.md F49 — `plan_status` crashed when its hand-assembled summary quoted
+        stored prose containing a `table:ordinal` token: a by-example `contracts:12` inside a
+        glossary definition, surfaced as a warning, tripped the strict bare-address guard and
+        refused the one call a cold planner must make. A journal note is the same class — the
+        planner's own words, which may name a row. The digest must annotate the address, never
+        fail the call over it, while the tool's own composed lines stay strictly checked."""
+        a_row(surface)
+        note = surface.dispatch(ToolCall("journal_note", {
+            "note": "the resolver pattern to reuse lives in contracts:12",
+        }))
+        # journal_note is summarised too, so pre-F49 this write also crashed on the token.
+        assert note.ok, note.problem
+
+        result = surface.dispatch(ToolCall("plan_status", {}))
+        assert result.ok, result.problem
+        assert "contracts:12" in result.payload["summary"], "the owner's words were dropped"
+        assert any(c["address"] == "contracts:12" for c in result.cites), "not annotated"
+
 
 class TestTheLog:
     def test_a_successful_call_is_logged(self, surface):
