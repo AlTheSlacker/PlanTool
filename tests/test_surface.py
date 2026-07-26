@@ -681,6 +681,30 @@ class TestSettlingADefinition:
         )
         assert written["terms"][0]["approved"] is False
 
+    def test_plan_status_drops_a_term_s_warning_the_moment_the_owner_settles_it(
+        self, surface
+    ):
+        """DEFECTS.md F50 — the digest may not nag about a condition it has already dropped.
+
+        Warnings are persisted rows the gate raises and settles; gaps are recomputed live.
+        A gate raises an `unsettled_term` warning, the owner runs `approve_term`, and the
+        term stops being an open gap — but the warning row stays `active` until the *next*
+        gate runs the settle sweep. Between the two, `plan_status` headlined a gap count
+        that had dropped the term while its warnings list still nagged about it: one digest
+        contradicting itself. The fix reconciles the settleable warnings against live state
+        at read time, so no second gate is needed. Asserted on what the resuming planner
+        sees (the digest text), not on the ledger row (F22)."""
+        surface.dispatch(ToolCall("define_term", {
+            "term": "widget", "definition": "a unit under test",
+        }))
+        surface.dispatch(ToolCall("run_gate", {"package": 1}))
+        raised = surface.dispatch(ToolCall("plan_status", {})).payload["summary"]
+        assert "unsettled_term" in raised  # the gate put it in front of the planner
+
+        surface.dispatch(ToolCall("approve_term", {"term": "widget"}))
+        settled = surface.dispatch(ToolCall("plan_status", {})).payload["summary"]
+        assert "unsettled_term" not in settled  # ...and settling it clears it, no re-gate
+
     def test_an_unsettled_definition_reaches_the_planner_as_a_gap(self, surface):
         """The gap text quotes the proposed definition and names the call that settles it,
         so it has to survive the door like anything else the tool composes."""

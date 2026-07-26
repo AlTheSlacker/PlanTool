@@ -973,6 +973,12 @@ class Surface:
         self.conflicts = ConflictService(storage, self.rows)
         self.warns = WarningService(storage)
         self.gaps = GapEngine(storage, self.rows)
+        # The warning ledger mirrors conditions the gap-engine computes (open gaps, open
+        # assumptions, retired-word uses). Late-bound here — the gap-engine is built after
+        # the warning service — so `active_warnings` reconciles those against live state and
+        # never reports one a mutation has already cleared (DEFECTS.md F50). Same late-bind
+        # shape as `terms.rows = rows` above.
+        self.warns.live_warning_keys = self.gaps.live_warning_keys
         # Findings are built before the gate that reads them: the package-7 criteria go
         # through the finding service now, not through plan_rows (D22).
         self.findings = FindingService(storage, self.rows)

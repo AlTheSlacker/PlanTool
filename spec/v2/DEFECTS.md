@@ -2219,3 +2219,73 @@ call** rather than being annotated. The unifying lesson: the door's provenance-b
 correct and load-bearing, and any path that flattens a value to a plain string (here `present()`)
 silently opts that text out of the model. Audit question: **does any surface path assemble a string
 out of stored prose after `render` has run — and therefore strict-scan the owner's own words?**
+
+## F50 — `plan_status` kept nagging about a term the owner had just settled
+
+**Status: RESOLVED at M8 (2026-07-26) by owner decision — Fix A (reconcile at the read). Found by
+the GUI dogfood at M8, on the plan whose glossary the dogfood itself authored.**
+
+**Rows / code:** `resume.plan_status` (its `warnings=` line, fed by `warnings.active_warnings()`) vs
+`gaps.next_gaps` / `gaps.open_gaps` (recomputed live); `gates._raise_warnings` /
+`gates._clear_settled_warnings` (the raise-and-settle sweep, run only inside `run_gate`).
+`contracts:64` (plan_status), `contracts:23` (active_warnings), `contracts:19` (next_gaps),
+`decisions:31` (warnings keep pushing until resolved or suppressed); DEVIATIONS.md D17 (every count
+names the call that fetches it). Sibling: DEFECTS.md **F47** (the same digest contradicting itself
+across a count and the call it points at).
+
+**The defect.** Gaps are computed fresh from plan state on every call and stored nowhere; warnings
+are the opposite — persisted rows that the gate *raises*, and *settles* when their condition clears.
+Three warning kinds (`open_gap`, `unresolved_assumption`, `retired_term`) are nothing but a stored
+snapshot of a condition the gap-engine computes. That snapshot is refreshed only inside `run_gate`.
+So the sequence the dogfood hit — run a gate (which raises an `unsettled_term` warning), then
+`approve_term` (which settles the term, so `next_gaps` drops it) — leaves the warning row `active`
+until the *next* gate. `plan_status` read the live gap count and the stale warning ledger in the
+same breath and produced a digest that contradicted itself: **`1 open gap — next_gaps()`** on one
+line and two `open gap (unsettled_term): …` warnings the gap list had already dropped on the next.
+Every reader of `active_warnings()` saw the same staleness — not only the digest, but the revision
+re-adjudication check and the `active_warnings` tool the GUI calls directly. `_clear_settled_warnings`'
+own docstring claimed the mirror "cannot drift out of step with the conditions it mirrors"; it
+could, because the sweep was tied to the gate rather than to the moment the ledger is *read*.
+
+**The fork.** The mirror is a cache of a computed condition, and this codebase has a standing lesson
+that a cache of computed state is the thing that should not exist (gaps store nothing for exactly
+this reason). Two fixes were weighed to implementation depth: **(A)** reconcile at the read — keep
+the ledger, but have `active_warnings` filter the settleable kinds against the live derivation so no
+reader ever sees a stale one, the durable gate-time settle unchanged; **(B)** the root fix — stop
+persisting the mirror's active state at all, derive it live and persist only the owner's
+suppress/resolve overlay, exactly as gaps do. B kills the class in both directions at every reader
+but redesigns the warning lifecycle (the id-based `suppress_warning`/`resolve_warning` contract
+becomes key-based, the table becomes an overlay, message composition moves into the derivation) and
+rewrites much of `test_warnings.py`. The owner took **A**: proportionate to a single finding, no
+contract or schema change, and it fixes every reader at once.
+
+**Resolved (Fix A, as built).** One derivation now owns "which mirrored conditions are live":
+`GapEngine.live_warning_keys()` (the gap-engine already holds gaps, rows and terms). `active_warnings`
+takes an optional `live_warning_keys` callable — late-bound in `surface.py` the same way
+`terms.rows = rows` is, bound to that method — and, when wired, drops any settleable-kind warning
+whose key is not live before returning. It is
+**read-only**: it filters what the call returns and never writes, so a status read stays a read; the
+DB row stays `active` until the next gate settles it for real, and no audit value is lost (the settle
+note is generic and a gate must run before freeze anyway). Crucially, `gates._clear_settled_warnings`
+now derives its live set from the *same* `live_warning_keys()`, so the durable settle and the
+read-time filter cannot disagree about what a settled term or a superseded row has retired. Built
+without a provider (the `WarningService` unit tests), nothing is filtered — there is no plan state to
+mirror — so `test_warnings.py` is untouched. Regression asserts the observable consequence through
+the real surface (F22/F47's lesson, not the ledger row): after a gate raises the warning and
+`approve_term` settles the term, the very next `plan_status` digest no longer carries it — no second
+gate required. 542 tests pass.
+
+**Discovered by:** the GUI dogfood, resuming cold right after settling a glossary term. Every prior
+drive either never raised a term warning or ran a gate between settling and reading, so the ledger
+was always refreshed before anyone looked. The suite missed it because `active_warnings` was only
+ever tested in isolation (no plan state to go stale against) and `plan_status` tests never raised a
+warning and then cleared its condition without re-gating.
+
+**Class:** F47's — a digest whose two halves are computed against different freshness (there, a count
+and the call it names; here, a live gap set and a stale warning ledger) and so can contradict each
+other. The deeper class is the cache-of-computed-state the repo keeps landing on: a persisted mirror
+of a derived condition is correct only at the instant it is refreshed, and every *other* instant is a
+reader seeing it stale. Fix A enforces coherence at the read; Fix B (recorded here as the direction
+if warnings are ever redesigned) removes the mirror. Audit question: **does any surface read a
+persisted value that mirrors a computed condition — and is that value reconciled where it is read, or
+only where it is written?**

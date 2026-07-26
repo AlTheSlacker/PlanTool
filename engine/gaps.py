@@ -302,6 +302,36 @@ class GapEngine:
             for term in self.terms.awaiting_approval()
         ]
 
+    # --- the live conditions the warning ledger mirrors (DEFECTS.md F50) ---
+
+    def _all_live_rows(self) -> list[PlanRow]:
+        return list(
+            self.rows.read_rows(RowSelector(live_only=True, limit=1000)).rows
+        )
+
+    def live_warning_keys(self) -> set[str]:
+        """Every warning key whose mirrored condition is still derivable from plan state.
+
+        The gate raises a warning per open gap, per open assumption, and per live row using
+        a retired word, and settles the ones whose condition has cleared. Both the settling
+        (gate-engine) and the read-time reconciliation (`WarningService.active_warnings`)
+        ask this one method which conditions are live, so the two cannot drift into
+        disagreeing about what a settled term or a superseded row has retired. The keys are
+        spelt exactly as `gate-engine` raises them — a mismatch here would settle nothing.
+
+        Assumption *gaps* are keyed under `gap:` too though the gate raises assumptions
+        under `assumption:` instead; the extra keys match no stored warning and are
+        harmless, and mirroring the gate's own scan keeps this the single owner of the set.
+        """
+        keys = {f"gap:{gap.key}" for gap in self.open_gaps()}
+        for row in self._all_live_rows():
+            root = self.lineage_root(row.ref)
+            if row.state == "assumed":
+                keys.add(f"assumption:{root}")
+            for usage in self.terms.violations(row.content):
+                keys.add(f"term:{root}:{usage.term}")
+        return keys
+
     # --- overlay ---
 
     def _overlay(self) -> dict[str, dict[str, Any]]:
