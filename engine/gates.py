@@ -44,14 +44,15 @@ from engine.methodology import Criterion, Methodology, load
 from engine.models import PlanRow, RowRef, RowSelector, RowState
 from engine.rows import RowService
 from engine.terms import TermService, Usage
-from engine.warnings import Warning, WarningService
+from engine.warnings import (
+    OPEN_GAP,
+    RETIRED_TERM,
+    SETTLEABLE_KINDS,
+    UNRESOLVED_ASSUMPTION,
+    Warning,
+    WarningService,
+)
 
-
-#: The warning kind for a live row using a retired word. A kind of its own, not folded into
-#: `open_gap`: this one is settled by the glossary changing or the row being superseded, so
-#: it has a different lifecycle, and a shared kind would have one settling rule guessing at
-#: two conditions.
-RETIRED_TERM = "retired_term"
 
 #: D15 — the criterion_id the gate hard-lock reports its holes under. It is a word, not a
 #: `gate_criteria.yaml` id, and deliberately so: the lock applies to every gate of every
@@ -319,7 +320,7 @@ class GateEngine:
                 continue
             self.warnings.raise_warning(
                 warning_key=f"gap:{gap.key}",
-                kind="open_gap",
+                kind=OPEN_GAP,
                 message=f"open gap ({gap.rule_key}): {gap.ask}",
                 source_ref=gap.target,
             )
@@ -328,7 +329,7 @@ class GateEngine:
             kind = row.assumption_kind or "unclassified"
             self.warnings.raise_warning(
                 warning_key=f"assumption:{root}",
-                kind="unresolved_assumption",
+                kind=UNRESOLVED_ASSUMPTION,
                 # `label` and not an f-string of our own: the surface accepts one shape
                 # for an address in composed text and rejects every other, so a second
                 # spelling here would fail the digest that carries this warning — which
@@ -358,17 +359,17 @@ class GateEngine:
         state; an assumption warning when the row is no longer a live assumption. Both
         are recomputed, never remembered, so this cannot drift out of step with the
         conditions it mirrors.
+
+        The set of live conditions comes from `gaps.live_warning_keys()` — the same call
+        `active_warnings` reconciles against between gates — so the durable settle here and
+        the read-time filter there can never disagree about what a cleared condition has
+        retired (DEFECTS.md F50).
         """
-        live_keys = {f"gap:{gap.key}" for gap in self.gaps.open_gaps()}
-        live_keys |= {
-            f"assumption:{self.gaps.lineage_root(row.ref)}"
-            for row in self._open_assumptions()
-        }
-        live_keys |= {warning_key for warning_key, _, _ in self._retired_words()}
+        live_keys = self.gaps.live_warning_keys()
         for warning in self.warnings.all_warnings():
             if warning.state == "resolved" or warning.warning_key in live_keys:
                 continue
-            if warning.kind not in ("open_gap", "unresolved_assumption", RETIRED_TERM):
+            if warning.kind not in SETTLEABLE_KINDS:
                 continue  # not ours to settle; another component owns its lifecycle
             self.warnings.settle_warning(
                 warning.id,

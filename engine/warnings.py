@@ -29,6 +29,21 @@ ACTIVE = "active"
 SUPPRESSED = "suppressed"
 RESOLVED = "resolved"
 
+OPEN_GAP = "open_gap"
+UNRESOLVED_ASSUMPTION = "unresolved_assumption"
+#: A live row using a retired word. Its own kind, not folded into open_gap: it settles when
+#: the glossary changes or the row is superseded — a different lifecycle — and a shared kind
+#: would leave one settling rule guessing at two conditions.
+RETIRED_TERM = "retired_term"
+
+#: The warning kinds whose active/settled state mirrors a condition the gap-engine computes,
+#: rather than being owned here: an open gap, an unresolved assumption, a retired-word use.
+#: Their state must never be read stale, so `active_warnings` reconciles them against the
+#: live derivation (`GapEngine.live_warning_keys`) before returning, and the gate settles
+#: them for real from the *same* derivation, so read and gate cannot disagree (DEFECTS.md
+#: F50). Every other kind owns its own lifecycle and is passed through untouched.
+SETTLEABLE_KINDS = frozenset({OPEN_GAP, UNRESOLVED_ASSUMPTION, RETIRED_TERM})
+
 
 class CriticalPoint(StrEnum):
     """contracts:23 / requirements:23 — where a suppressed warning still resurfaces.
@@ -87,8 +102,17 @@ class Warning:
 
 
 class WarningService:
-    def __init__(self, storage: Storage):
+    def __init__(self, storage: Storage, live_warning_keys=None):
         self.storage = storage
+        #: Optional callable returning the set of warning keys whose mirrored condition is
+        #: still live — the gap-engine owns that derivation and this is bound to its
+        #: `live_warning_keys`. When set, `active_warnings` reconciles the settleable kinds
+        #: against it so a reader never sees a warning whose condition cleared between gates
+        #: (DEFECTS.md F50). Left None in isolation (the unit tests), where there is no plan
+        #: state to mirror and the raw ledger is exactly what is under test. Late-bound in
+        #: the surface, because the gap-engine is built after this service; matches
+        #: `terms.rows = rows` there.
+        self.live_warning_keys = live_warning_keys
 
     # --- raising (invented; DEFECTS.md F9) ---
 
@@ -156,7 +180,7 @@ class WarningService:
             )
         ]
         if context is None:
-            return warnings
+            return self._reconcile(warnings)
 
         CriticalPoint(context)  # rejects an unknown point rather than silently
         resurfaced = [
@@ -165,7 +189,26 @@ class WarningService:
                 "SELECT * FROM warnings WHERE state = ? ORDER BY id", (SUPPRESSED,)
             )
         ]
-        return warnings + resurfaced
+        return self._reconcile(warnings + resurfaced)
+
+    def _reconcile(self, warnings: list[Warning]) -> list[Warning]:
+        """Drop any settleable warning whose mirrored condition no longer holds.
+
+        The gate settles these for real (writing the audit note and retiring the row); this
+        keeps a reader between gates from seeing one the condition has already cleared —
+        the F50 defect, where `plan_status` still nagged about terms the owner had just
+        settled while its own gap count had dropped them. Read-only: it filters what is
+        returned, never writes, so a status read stays a read. A warning of any other kind,
+        or one whose condition is still live, passes straight through. With no provider
+        wired (the unit tests) nothing is filtered — there is no plan state to mirror.
+        """
+        if self.live_warning_keys is None:
+            return warnings
+        live = self.live_warning_keys()
+        return [
+            w for w in warnings
+            if w.kind not in SETTLEABLE_KINDS or w.warning_key in live
+        ]
 
     # --- contracts:24 ---
 
