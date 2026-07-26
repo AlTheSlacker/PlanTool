@@ -18,6 +18,7 @@ from engine.gaps import GapEngine
 from engine.gates import GateEngine
 from engine.guidance import Guidance
 from engine.idempotency import key
+from engine.models import RowSubmission
 from engine.resume import Fetch, NoPlanFound, PlanCorrupt, ResumeService
 from engine.rows import RowService
 from engine.storage import Op, Storage
@@ -154,6 +155,28 @@ def test_every_count_names_the_call_that_fetches_it(services):
         assert isinstance(fetch, Fetch)
         assert fetch.call.endswith(")"), fetch
         assert fetch.call in fetch.present()
+
+
+def test_the_gap_count_matches_what_its_named_call_returns(services):
+    """DEFECTS.md F47 — the count must equal what the call it names actually serves, not
+    just name a call. plan_status counted every package's gaps and labelled it next_gaps(),
+    which reports only the current package: on this part-built plan the digest headlined a
+    number the reader could not reach by following the pointer.
+
+    F47's own root is F22's: the pre-existing pairing test asserted a call was *named*, never
+    that the number matched it. This asserts the observable consequence."""
+    storage, _, resume = services
+    # A row in package 4 (entities) so the current package is 1 but later packages carry
+    # their own not-started gaps: all-package and current-package counts genuinely differ.
+    rows = RowService(storage)
+    rows.submit_rows(
+        [RowSubmission("entities", {"title": "Widget"}, name="Widget")], "k"
+    )
+    status = resume.plan_status()
+    assert status.package == 1
+    assert status.gaps.count == resume.gaps.next_gaps().total_open
+    # And it is genuinely the scoped number, not an accident of an empty later plan.
+    assert status.gaps.count < len(resume.gaps.open_gaps())
 
 
 def test_the_digest_ends_by_naming_the_next_action(services):

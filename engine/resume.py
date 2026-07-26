@@ -352,7 +352,11 @@ class ResumeService:
 
         package = self.gaps.current_package()
         script = self.guidance.get_package_script(package)
-        open_gaps = self.gaps.open_gaps()
+        # Scoped to the current package, not every package (DEFECTS.md F47). The count is
+        # labelled `open gap — next_gaps()`, and next_gaps() reports the *current* package's
+        # total; counting all eight here made the headline number irreconcilable with the
+        # call the digest sends the reader to (D17: a count names the call that fetches it).
+        open_gaps = self.gaps.open_gaps(package=package)
         notes, earlier = self._journal(package)
         latest_gates, earlier_gates = self._gate_history()
         next_action, source = self._next_action(open_gaps)

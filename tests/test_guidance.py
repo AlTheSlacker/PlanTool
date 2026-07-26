@@ -131,3 +131,38 @@ def test_missing_revision_is_unreadable():
 
 def test_redteam_brief_is_available(guidance):
     assert "red" in guidance.get_auxiliary("redteam").lower()
+
+
+def test_a_packages_core_content_checks_name_tables_the_manifest_declares():
+    """DEFECTS.md F48 (and F11 before it) — every table a package's own core-content checks
+    read must be a table that package declares it fills.
+
+    F11 migrated package 1's checks off v1's `decisions`-with-a-`Goal:`-prefix shape onto
+    first-class `goals`/`non_goals`/`stack` tables, but left the script and the manifest
+    naming the old ones. A planner who followed the script filed where the gate could not
+    look, so the "nothing recorded yet" gap never cleared. This is the mechanical check F11
+    asked for and nobody wrote until F48: a package-scoped `empty_table`/`missing_field` gap
+    rule, or a `non_empty` gate criterion, names the table that package fills — and it must be
+    one the manifest lists for that package.
+
+    Cross-checks (`traced`/`untraced`) are excluded on purpose: they read *other* packages'
+    tables by design — a package-2 gate reads package-1 `goals` to check coverage — so a
+    superset rule over them would be wrong, not stricter."""
+    m = load()
+    core_gap_types = {"empty_table", "missing_field"}
+    for package in m.packages:
+        declared = set(package.tables)
+        read = {
+            rule.spec["table"]
+            for rule in m.rules
+            if rule.package == package.number and rule.type in core_gap_types
+        } | {
+            criterion.spec["table"]
+            for criterion in m.criteria_for(package.number)
+            if criterion.type == "non_empty"
+        }
+        missing = read - declared
+        assert not missing, (
+            f"package {package.number} core checks read {sorted(missing)} "
+            f"but its manifest tables are {sorted(declared)}"
+        )
