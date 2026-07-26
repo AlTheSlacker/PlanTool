@@ -38,7 +38,11 @@
 # it is how `finalize_plan` came to refuse every plan authored through the surface (F39).
 
 revision: 3
-revision_stamp: "plantool-rev3-2026-07-23a"
+# Suffix bumped 2026-07-26 for the F48 fix (package-1 script/manifest aligned to the tables
+# the checks already read). Content changed, so the stamp changes (F31); the revision does
+# not, because the data model is unchanged — the script was corrected to match rev 3's own
+# checks, so no plan is owed a migration.
+revision_stamp: "plantool-rev3-2026-07-26a"
 vendored_from: "PlanTool v1 (archive/v1/server/prompts/)"
 mandate: mandate.md
 
@@ -55,7 +59,12 @@ packages:
     name: "Context & goals"
     mode: elicit
     script: package1_context.md
-    tables: [decisions, requirements, entities]
+    # goals/non_goals/stack/actors — the tables the package-1 gate and gap rules actually
+    # read (DEFECTS.md F48). This list said [decisions, requirements, entities] until
+    # 2026-07-26: the vendored v1 shape (goals-as-"Goal:"-prefixed-decisions) that F11
+    # migrated the *checks* off but left in the script and here, so a planner following the
+    # script filed where the gate could not see. F11's third and last act.
+    tables: [goals, non_goals, stack, actors]
   - number: 2
     name: "Use cases"
     mode: elicit

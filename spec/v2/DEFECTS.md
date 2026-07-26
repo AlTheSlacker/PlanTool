@@ -2032,3 +2032,109 @@ advertisement, `SCHEMA_OF`) was never exercised by a test, so it fell behind sil
 question, now with a concrete site: **when two structures must agree by construction, which test
 asserts they agree — and is the quieter of the two covered at all?** Also a plain observability
 lesson: the transport that every client hits first had zero tests.
+
+## F47 — `plan_status` counts every package's gaps but names the call that shows one
+
+**Status: RESOLVED at M8 (2026-07-26). Found by the GUI dogfood — the headline count and the
+call it points at could not be reconciled from the client.**
+
+**Rows / code:** `resume.plan_status` (its `gaps=Fetch("open gap", "next_gaps()", …)` line, fed
+by `gaps.open_gaps()` with no package) vs `gaps.next_gaps` → `gaps.open_gaps(package=current)`.
+`contracts:64` (plan_status), `contracts:19` (next_gaps); DEVIATIONS.md **D17** (every count names
+the call that fetches what it counts).
+
+**The defect.** `plan_status` builds its gap count from `open_gaps()` with **no package argument —
+every package, all eight** — and labels it `open gap — next_gaps()`. But `next_gaps()` scopes to
+`current_package()` and reports only that package's gaps as `total_open`. The digest therefore
+presents the larger, all-package number under the name of the call that serves the smaller,
+current-package one. A client that reads "7 open gaps", calls `next_gaps()` to see them, and gets
+`total_open: 3` has followed the pointer exactly as instructed and cannot reconcile the result —
+`limit` never closes the distance, because `limit` sizes the returned cluster, not the total. The
+all-package 7 is inflated on top of that by downstream not-started tables (`no_use_cases`,
+`no_requirements`, `no_entities`, …) that all fire `empty_table` because those packages have not
+been reached yet — noise a resume digest should not headline, and none of it actionable from the
+current package.
+
+This is a direct breach of the D17 rule `resume.py`'s own docstring is built on: *every count
+names the call that fetches what it counts.* Here the count and its named call scope differently,
+so the pairing lies in exactly the way D17 exists to prevent — a reader who trusts it and fetches
+lands somewhere the number cannot be found.
+
+**Resolved.** `plan_status` scopes its gap count to the current package —
+`open_gaps(package=current_package())`, the same set `next_gaps()` totals — so the headline number
+and the call that fetches it agree by construction. `_next_action`'s "N gaps are open" narrows with
+it, which also makes its "no gaps — run the gate" fallback reachable per package instead of only
+when the entire plan is clean.
+
+**Discovered by:** the GUI dogfood, first cold resume against a part-built plan. The suite could
+not catch it: `test_every_count_names_the_call_that_fetches_it` asserted the Fetch *pairing* — that
+a call is named and appears in the rendered line — and never that the count equals what the call
+returns. New coverage asserts `status.gaps.count == next_gaps().total_open`, the observable
+consequence rather than the structure.
+
+**Class:** F22's — a test that checks the record an operation wrote rather than the behaviour the
+design asked for — sitting on top of a D17 count/call pairing. The countermeasure is the one
+already in the book: assert the observable consequence (the two numbers match), not the structure
+(a call is named). Audit question for any digest that pairs a count with a fetching call: **does a
+test call the fetch and assert the count it returns equals the count displayed, or only that a call
+is named?**
+
+## F48 — Package 1's script still teaches the table shape its own gate abandoned (F11, act three)
+
+**Status: RESOLVED at M8 (2026-07-26). Found by the GUI dogfood — 24 rows filed into package 1 and
+the "nothing recorded yet" gap would not clear.**
+
+**Rows / code:** `rev3/package1_context.md` (the script) and `rev3/manifest.yaml` package-1
+`tables:` vs `rev3/gap_rules.yaml` (`package1_not_started`, `goal_without_success_criteria`) and
+`rev3/gate_criteria.yaml` (package-1 criteria). `requirements:71`, `decisions:61` (content
+revisions); DEFECTS.md **F11**, **F20** (both prior halves of this same migration).
+
+**The defect.** A three-way disagreement inside a single methodology revision about where
+package-1 facts live. The **checks** — the gap rules and the gate criteria — read first-class
+`goals` / `non_goals` / `stack` / `actors` tables. The **script** a planner follows still teaches
+v1's shape: file each goal, non-goal and stack line as a `decisions` row distinguished by a text
+prefix (`Goal:` / `Non-goal:` / `Stack:`). The **manifest** sides with the script — package 1's
+`tables:` is `[decisions, requirements, entities]` — and with no one who matters, because the gate
+does not read those tables. A planner who follows the script files into `decisions`;
+`package1_not_started` runs `empty_table` on `goals`, which is empty and stays empty, so it fires
+"Nothing recorded yet. Open the package-1 interview." forever, and the package-1 gate fails
+`goals_recorded` / `non_goals_recorded` / `stack_recorded` for the same reason. No amount of
+correct package-1 work satisfies both sides, because they describe two different data models. The
+user's own read was right and the mechanism worse than a stale cache: gaps recompute on every call
+(`gaps.py` derives them live and stores none), so the check was not stale — it was looking at a
+table the rows never went into.
+
+**This is F11, act three, exactly as F11 predicted.** F11 recorded this disagreement at M3 and
+"fixed" it by migrating `package1_not_started` from `decisions` to `goals`, closing with:
+*"a methodology revision that changes how content is encoded has to be applied to every asset at
+once, and nothing checks that. M5 introduces rev 3 and will hit this again."* It did. The migration
+reached the gap rule, the gate criteria and the tests; it never reached the **script** or the
+**manifest**. The tests could not catch the omission because they were rewritten to the `goals`
+shape in the same pass (`tests/test_gaps.py` submits `goals` rows) — blind-spot inheritance again,
+the F5/F11 lesson. It took the first client to actually *follow the script* to surface the half the
+migration missed. F20's methodology half fixed a script that named a dead *tool*; this is the same
+class one rank over — a script that names dead *tables*.
+
+**Resolved.** The script and manifest are brought into line with rev 3's own checks:
+`package1_context.md`'s recording section now files goals as `goals` rows (carrying the measurable
+success criterion), non-goals as `non_goals` rows, the target stack as `stack` rows, and actors as
+`actors` rows; the manifest's package-1 `tables:` becomes `[goals, non_goals, stack, actors]` — the
+tables the gate reads and the list `get_package_script` hands a client. The `revision_stamp` suffix
+is bumped to record that the content changed (F31's convention), **without** a `revision` bump: the
+model is not changing — rev 3's checks already used these tables — the script is being corrected to
+match the model it always had, so nothing is owed a migration path. New coverage makes the F11
+countermeasure mechanical at last: for every package, each table named by its own core-content
+checks (the package-scoped `empty_table`/`missing_field` gap rules and `non_empty` gate criteria)
+must appear in that package's manifest `tables`. It fails on package 1 against the old manifest and
+passes after the fix, so the fourth asset can no longer fall behind the other three unseen.
+
+**Discovered by:** the GUI dogfood, the first caller ever to build package-1 content by following
+the script and then resume cold. Every prior drive filed `goals` rows directly (the tests do), so
+no drive had ever exercised the path the script actually prescribes.
+
+**Class:** F11's cross-asset consistency hole, now closed with the mechanical check F11 itself
+proposed — *every table named in one methodology asset covering a package is named in the others
+that cover it*. Worth marking that it took three separate surfacings (M3 gap rule, M6 tool-name via
+F20, M8 script/manifest) across two years' worth of build calendar before the check that would have
+caught all three in one pass was actually written. A predicted recurrence is not a mechanism; only
+the check is.
