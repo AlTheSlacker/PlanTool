@@ -157,6 +157,26 @@ def test_every_count_names_the_call_that_fetches_it(services):
         assert fetch.call in fetch.present()
 
 
+def test_the_digest_marks_quoted_prose_verbatim_and_composed_lines_plain(services):
+    """DEFECTS.md F49 — provenance by type through the digest. A journal note is the
+    planner's own words, so its line is `Verbatim` (the door annotates any address in it
+    rather than failing the call); the tool's own composed lines stay plain and strictly
+    scanned. Before F49 `present()` was one flat string that erased the distinction, so an
+    address the owner wrote crashed the resume call."""
+    from engine.door import Verbatim
+
+    _, _, resume = services
+    resume.journal_note("reuse the resolver in contracts:12")
+    segments = resume.plan_status().present_lines()
+
+    journal_line = next(p for p in segments if "contracts:12" in p)
+    assert isinstance(journal_line, Verbatim), "owner prose must be exempt"
+    plan_line = next(p for p in segments if p.startswith("Plan '"))
+    assert not isinstance(plan_line, Verbatim), "the tool's own line must stay strict"
+    # present() still joins to the same readable string a human or plain caller reads.
+    assert "contracts:12" in resume.plan_status().present()
+
+
 def test_the_gap_count_matches_what_its_named_call_returns(services):
     """DEFECTS.md F47 — the count must equal what the call it names actually serves, not
     just name a call. plan_status counted every package's gaps and labelled it next_gaps(),

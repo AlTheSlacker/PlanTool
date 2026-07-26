@@ -18,6 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
+from engine.door import Verbatim
 from engine.errors import PlanToolError
 from engine.models import RowRef
 from engine.clock import now
@@ -77,6 +78,12 @@ class Warning:
                 f"(suppressed because: {self.reason})"
             )
         return self.message
+
+    def present_lines(self, display=str) -> list:
+        # The message is re-presented stored prose — most warnings carry a gap ask that
+        # quotes a row or a definition — so it is Verbatim, annotated rather than rejected
+        # when it names an address (DEFECTS.md F49). No composed ref of its own to display.
+        return [Verbatim(self.present())]
 
 
 class WarningService:

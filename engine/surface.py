@@ -62,6 +62,7 @@ from engine.conflicts import ConflictService
 from engine.door import (
     Resolution,
     collect,
+    display,
     render,
     resolver_from,
     scan,
@@ -1064,16 +1065,30 @@ class Surface:
             )
 
         cites: list[Resolution] = []
-        payload: Any = render(value, self._resolve, cites, self._follow)
-        digest = getattr(value, "present", None)
-        if callable(digest):
-            # The presented digest is the one string on this path the surface assembles
-            # rather than reads, so it is the one the strict half of the door applies to.
-            # That is not incidental: hand-assembled presentation text is exactly where
-            # both invariants were broken before they were checks.
-            payload = {"summary": digest(), "detail": payload}
+        detail: Any = render(value, self._resolve, cites, self._follow)
+
+        # The presented digest is the one string on this path the surface assembles rather
+        # than reads, so it is the one the strict half of the door applies to — hand-assembled
+        # presentation text is exactly where both invariants were broken before they were
+        # checks. But a digest is not uniformly the tool's own words: it quotes stored prose
+        # (a warning, a journal note, a recorded next action) whose addresses are the owner's
+        # input, not the tool's failure. A digest that can carry that mix exposes
+        # `present_lines`, returning provenance-typed parts — plain lines held strictly,
+        # `Verbatim` lines exempt. We scan the parts (granular) but serve the joined string,
+        # so the payload contract is unchanged and owner prose no longer crashes the call
+        # (DEFECTS.md F49). A composed-only digest keeps the plain `present` path and its
+        # strict scan.
+        present_segments = getattr(value, "present_lines", None)
+        if callable(present_segments):
+            segments = present_segments(lambda ref: display(ref, self._resolve))
+            payload: Any = {"summary": "\n".join(segments), "detail": detail}
+            to_scan: Any = {"summary": segments, "detail": detail}
+        else:
+            digest = getattr(value, "present", None)
+            payload = {"summary": digest(), "detail": detail} if callable(digest) else detail
+            to_scan = payload
         try:
-            scan(payload, self.tool_names)
+            scan(to_scan, self.tool_names)
         except PlanToolError as exc:
             return self._refuse(tool.name, started, exc, "malformed")
 
