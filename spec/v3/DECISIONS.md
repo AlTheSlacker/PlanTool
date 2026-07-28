@@ -193,7 +193,7 @@ gate — a gate needs a set with a definite boundary.
 **Reasoning.** This is the spine of the fix and the answer to the density finding in D1. If
 detailed planning produces pseudocode per task, the plan contains a pseudocode-level design of
 the whole system before any real code is written. Three things fall out of it at once: the
-specification reaches the depth a builder needs; the register (D10) is populated naturally,
+specification reaches the depth a builder needs; the catalogue (D10) is populated naturally,
 because every name the pseudocode uses is a name the plan has committed to; and duplication is
 caught at the only point where it is cheap to catch.
 
@@ -207,17 +207,17 @@ specified. Too shallow and it decides nothing; too deep and it is code written t
 
 ---
 
-## D10 — A register of every object, method and function the plan intends to exist
+## D10 — A catalogue of every object, method and function the plan intends to exist
 
 **Decided.** Each entry has one owning task and a statement of the concept it owns. Before a new
-entry is accepted, near matches already registered are each dismissed **with a written reason**.
+entry is accepted, near matches already catalogued are each dismissed **with a written reason**.
 
 **Reasoning.** Duplicated and hard-to-maintain code arises because the plan does not track what
 it has already decided should exist. Written dismissal is the mechanism: a rule that merely says
 "check for duplicates" is an intention, and this project's repeated lesson is that a rule in a
 document is not a mechanism.
 
-**Timing is the load-bearing part:** the register is populated **at the detailed planning stage,
+**Timing is the load-bearing part:** the catalogue is populated **at the detailed planning stage,
 from the pseudocode** (D9), so that code never has to be rewritten in the build phase.
 
 **Open — the exact shape.** The owner is flexible on mechanism and stated the goal as avoiding
@@ -303,7 +303,7 @@ failed silently in v2.
 ## D14 — The cold read proves a specification sufficient, before any code exists
 
 **Decided** during v3 planning and carried forward. When a task's specification is declared
-finished, a session holding **only** that specification, the register entries it may call, and
+finished, a session holding **only** that specification, the catalogue entries it may call, and
 the glossary — with no access to the conversation that produced it — lists **every** decision it
 would have to make to implement the task, including the obvious ones, and cites against each the
 row that answers it. **An uncited decision is a hole.**
@@ -320,7 +320,7 @@ reconstruct the specification that preceded a sample of them, run the cold read 
 it catches. That gives a hit rate rather than an assurance.
 
 **Accepted limitations.** It is non-deterministic, so run it more than once and take the union.
-It depends on the register existing (D10). It is weaker than actually building; the residue is
+It depends on the catalogue existing (D10). It is weaker than actually building; the residue is
 caught by the loop that returns a builder's invention to the plan.
 
 **Staleness:** a result is stamped against the rows it read and marked stale when one is
@@ -369,7 +369,7 @@ Carried forward so nothing is lost. Each is scheduled, not merely noted.
   rather than a query interface.** If that is right, this is largely a redesign of the tool
   surface and of what a task hands over, and it is the same work as the interview design, because
   you cannot serve density you never elicited. *Next document.*
-- **The register's exact shape** (D10). *Next document but one.*
+- **The catalogue's exact shape** (D10). *Next document but one.*
 - **The interview design** — how the tool elicits a specification deep enough to build from.
   Nothing has been written on it, and it is where the density problem is won or lost.
 - **How deep the pseudocode goes** before a task counts as specified (D9).

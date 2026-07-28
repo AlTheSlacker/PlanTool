@@ -149,13 +149,13 @@ tool proposes a label, the owner settles it, and a near-duplicate is refused exa
 near-duplicate term is. That is the guard against a hundred nearly-identical labels, which is
 the failure mode the owner named.
 
-### Register entry
+### Catalogue entry
 One object, method or function the plan intends to exist, with **one owning task** and a
 statement of the concept it owns.
 
 Populated from the pseudocode as the detailed specification is written, so duplication is
 caught at the point it is designed rather than the point it is coded. Before a new entry is
-accepted, near matches already registered must each be dismissed **with a written reason**.
+accepted, near matches already catalogued must each be dismissed **with a written reason**.
 
 ### Decision context
 A separate field on a row recording **why** — the reasoning that produced the decision, what
