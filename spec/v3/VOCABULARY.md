@@ -149,6 +149,19 @@ tool proposes a label, the owner settles it, and a near-duplicate is refused exa
 near-duplicate term is. That is the guard against a hundred nearly-identical labels, which is
 the failure mode the owner named.
 
+**The starter list — ten, deliberately.** Every one names a *place in the system* rather than a
+kind of work, because "refactor", "bugfix" and "cleanup" describe an activity that is over once
+it is done, and a label has to stay true for the life of the row.
+
+`engine` · `surface` · `storage` · `schema` · `methodology` · `interview` · `execution` ·
+`tests` · `docs` · `gui`
+
+Ten because the failure mode is too many, not too few, and the tool adds one only when nothing
+fits — which is a proposal the glossary can refuse. The list is deliberately coarse: a label's
+job is to shrink a review list from everything to something a person can read, not to classify.
+If a filter on `engine` returns too much, the answer is a dependency query or a search, not a
+finer label.
+
 ### Catalogue entry
 One object, method or function the plan intends to exist, with **one owning task** and a
 statement of the concept it owns.

@@ -176,27 +176,77 @@ Small and worth listing so the fix stays targeted.
 - **Stage 11** gains the derived end-to-end checkpoint (D8) as something it validates is
   computable, rather than the package gates it replaces.
 
-## 8. Open
+## 8. How deep the pseudocode goes, and how a hole is promoted
 
-**The calibration has been run** — `COLD_READ_CALIBRATION.md`, 2026-07-28. It answers the third
-question below and kills the proposal in the first. Read it before reopening either.
+The calibration killed the proposal that a task is specified when the cold read finds no holes:
+the reader leaves a mean of 35 uncited decisions per task, so that rule never terminates. This
+replaces it. Both parts are sorting rules, not thresholds — there is no number to invent.
 
-- **How deep the pseudocode goes** before a task counts as specified. Too shallow and it decides
-  nothing; too deep and it is code written twice. ~~The pseudocode is deep enough when the cold
-  read finds no holes.~~ **That proposal is dead**: a cold read leaves a mean of 35 uncited
-  decisions per task, most of them trivia like logging and connection handling, so a
-  no-holes rule would never terminate. Still open, with a replacement candidate in the
-  calibration §6 — deep enough when every remaining uncited decision is one whose answer could
-  not change the shape of another task.
-- **Eleven stages may be too many.** Each has a distinct job and mode, and I have not found two
-  that fold together without losing a mechanism, but the owner should see the count and say.
-- **Whether the cold read runs per task or per component. Settled: per task.** Not by argument
-  but by evidence — four of the twelve calibrated holes were cross-contract (nothing fires this
-  event, nothing writes this link, nothing says which component owns this contract) and all four
-  were caught from a single task's specification, because the packet carried the component's
-  responsibility line and the state machine the task drives. The unit is the task; what matters
-  is that the packet includes the neighbours the task touches.
-- **New, from the calibration: stage 10 needs a triage pass.** The reader produces a list of
-  around sixty decisions of which half are uncited; the holes are legible on sight but they do
-  not promote themselves. Whoever designs the stage has to design that pass, or the stage
-  outputs noise.
+### The sort
+
+Every uncited decision a cold read returns is exactly one of three things.
+
+1. **A convention** — it recurs across tasks and every task gets the same answer. It is settled
+   once in `CONVENTIONS.md` and cited from there. Roughly half the volume.
+2. **Task-local** — no other task's specification changes whichever way it goes. The order of two
+   checks nobody can observe, the wording inside the naming discipline, which file it lives in.
+   The implementer's, and the plan should not spend a line on it.
+3. **A hole** — answering it differently would change another task's specification. Something
+   else must fire this event, write this link, read this store, agree this type, or assume this
+   is atomic. **This is the class the plan owes an answer to.**
+
+### The depth rule
+
+**Pseudocode is deep enough when every uncited decision left is a convention or task-local.**
+
+Not "when there are no uncited decisions" — there always are, and most of them do not matter.
+
+### Why the third category is the right line, tested rather than asserted
+
+All twelve holes the calibration recovered are cross-task, and every one of them fails the
+"would another task have to agree?" test:
+
+| the hole | who else must agree |
+|---|---|
+| how the current stage is determined | every stage-scoped read |
+| what a row is called | everything that displays one |
+| digest by value or by reference | the mandate and script calls |
+| nothing fires a spike's `start` | whatever task fires it must exist |
+| whose dependents get contested | the rows contested |
+| closure recomputed or frozen | brief composition |
+| supersession as one transaction | every reader deciding liveness |
+| the unreachable `withdrawn` outcome | the rest of the transition table |
+| nothing writes the backing link | the gate that reads it |
+| which store `findings` means | the gate reading the other one |
+| what the idempotency key covers | every caller replaying |
+| which component owns a contract | graph derivation |
+
+And the noise falls out cleanly on the same test: logging, connection handling and concurrency
+are conventions, message wording and internal check order are task-local. On the ten calibrated
+readings this sorts a mean of 35 uncited decisions into roughly 16 conventions, 12 task-local and
+**5 to 8 real holes** — a list a person can actually work through.
+
+### What this makes stage 10
+
+The sort **is** the triage pass, and it is largely mechanical: subtract the conventions register,
+then apply one question to each survivor. The reader produces the list; the sort promotes the
+holes to findings against the specification. That is why stage 10 is a stage with an adjudicated
+output rather than a gate criterion — and why its output is a worklist, never a verdict.
+
+**The honest residue.** "Would another task have to agree?" is a judgment, and this project's
+standing rule is that a threshold written as arithmetic hides an opinion. This one is not
+arithmetic and is not hidden: it is asked out loud, per decision, at planning time, in front of
+the owner — which is where the design already puts judgment. What it replaces is the same
+judgment made silently during coding by whoever was standing there.
+
+## 9. Still open
+
+- **The eleven stages stand.** Checked properly rather than asserted. Stages 9 and 10 both attack
+  the detailed design but ask different questions — the red team asks whether it is *right*, the
+  cold read whether it is *complete* — and the cold read must be blind, which the red team is
+  not. Stages 1 to 3 are all elicitation but carry different denominators and so different gap
+  rules; folding them loses the rules. The conventions register needs no stage of its own: it is
+  a table opened at stage 6 and grown from stage 10's output.
+- **Whether the owner wants tool-proposed labels under glossary rules** at all (D12). His call,
+  and the starter list is in `VOCABULARY.md`.
+- **Whether `component` stays un-retired** (D16). Currently my call.
