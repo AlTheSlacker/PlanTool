@@ -100,9 +100,18 @@ both.
    split, the returning-invention loop. Depends on 3, 5 and 6.
 8. **The cold read** as a stage, with whatever the calibration taught.
 9. **The derived end-to-end checkpoint** (D8), replacing the package gates removed in 1.
-10. **Methodology revision 4** — all eleven stage scripts, the mandate, and a forward-only
-    migration from revision 3. Threads through most of the above; landed last so it is written
-    once against what was actually built, rather than rewritten after every change.
+10. **Methodology revision 5** — all eleven stage scripts, the mandate, and a forward-only
+    migration. Threads through most of the above; landed last so it is written once against what
+    was actually built, rather than rewritten after every change.
+
+    **Revision 4 moved into change 1**, and the reason is a mechanism rather than a preference.
+    The stage-6 script tells the planner to call `declare_package()`, `assign_task()` and
+    `packaging()`; every tool response passes through the door, which raises on a call name the
+    registry cannot resolve. The moment change 1 removes those tools, serving that script raises
+    and the interview stops at stage 6. So revision 4 is the existing eight stages with the
+    vocabulary corrected and the dead calls removed — the smallest thing that keeps the tool
+    working — and this item is the eleven-stage rewrite, which really is a function of what gets
+    built and really does belong last.
 
 **Drive the system end to end after every one of these.** That practice caught something every
 time it was used in v2, and it is the reason several defects in this repo were found at all.
