@@ -315,9 +315,12 @@ self-assessment, which is what makes it resistant to a reader that bluffs.
 **Rejected: asking the reader to "name the holes".** It rewards silence — a reader that notices
 nothing scores perfectly.
 
-**Calibrate before it gates anything.** The 79 recorded inventions are a labelled test set:
-reconstruct the specification that preceded a sample of them, run the cold read blind, count what
-it catches. That gives a hit rate rather than an assurance.
+**Calibrated 2026-07-28 — `COLD_READ_CALIBRATION.md`.** It caught 11 of 12 sampled inventions
+outright and 7 more incidentally, so the mechanism is kept. Two things it changed: the test set
+is **37** pre-freeze specification holes, not 79 — the rest are build-time bugs, owner rulings
+and duplicates — and the raw output is far too noisy to gate on, at a mean of 35 uncited
+decisions per task. Stage 10 is therefore a triage surface, not a verdict. Do not quote the hit
+rate as an assurance; the sample is twelve.
 
 **Accepted limitations.** It is non-deterministic, so run it more than once and take the union.
 It depends on the catalogue existing (D10). It is weaker than actually building; the residue is

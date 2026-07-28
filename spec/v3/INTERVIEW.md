@@ -165,13 +165,25 @@ Small and worth listing so the fix stays targeted.
 
 ## 8. Open
 
+**The calibration has been run** — `COLD_READ_CALIBRATION.md`, 2026-07-28. It answers the third
+question below and kills the proposal in the first. Read it before reopening either.
+
 - **How deep the pseudocode goes** before a task counts as specified. Too shallow and it decides
-  nothing; too deep and it is code written twice. My instinct is that the test is behavioural
-  rather than a length rule — the pseudocode is deep enough when the cold read finds no holes —
-  which makes stage 10 the arbiter and avoids inventing a threshold. That needs the calibration
-  to be run before it can be trusted.
+  nothing; too deep and it is code written twice. ~~The pseudocode is deep enough when the cold
+  read finds no holes.~~ **That proposal is dead**: a cold read leaves a mean of 35 uncited
+  decisions per task, most of them trivia like logging and connection handling, so a
+  no-holes rule would never terminate. Still open, with a replacement candidate in the
+  calibration §6 — deep enough when every remaining uncited decision is one whose answer could
+  not change the shape of another task.
 - **Eleven stages may be too many.** Each has a distinct job and mode, and I have not found two
   that fold together without losing a mechanism, but the owner should see the count and say.
-- **Whether the cold read runs per task or per component.** Per task is the honest unit and is
-  what the design says; per component is cheaper and may be enough. This is measurable during
-  calibration rather than arguable now.
+- **Whether the cold read runs per task or per component. Settled: per task.** Not by argument
+  but by evidence — four of the twelve calibrated holes were cross-contract (nothing fires this
+  event, nothing writes this link, nothing says which component owns this contract) and all four
+  were caught from a single task's specification, because the packet carried the component's
+  responsibility line and the state machine the task drives. The unit is the task; what matters
+  is that the packet includes the neighbours the task touches.
+- **New, from the calibration: stage 10 needs a triage pass.** The reader produces a list of
+  around sixty decisions of which half are uncited; the holes are legible on sight but they do
+  not promote themselves. Whoever designs the stage has to design that pass, or the stage
+  outputs noise.
