@@ -131,6 +131,19 @@ which already exist and need extending rather than inventing:
   pseudocode call with no catalogue entry, a use case with no scenario.
 - **Divergence rounds** — already mandatory in elicit stages, where the tool must offer readings
   the owner has not proposed rather than transcribing what it is told.
+- **No uncosted fork** — the owner's standing requirement, and the complement of the divergence
+  round: having offered options, the tool may not ask the owner to choose between branches nobody
+  has investigated to implementation depth. Each branch states what was **verified** and what is
+  **assumed**. The reason it is a requirement and not a courtesy is that an uncosted fork *is*
+  the tool's own core anti-pattern — it hands the owner a world-assumption to adjudicate, which
+  is the thing every other mechanism here exists to prevent.
+
+  **The mechanism already exists, which is why this is enforceable.** A branch's cost is a claim
+  about behaviour we do not control, so it falls under the technical-claims rule (D4): it
+  survives only on cited documentation, a probe that was run, or the owner's recorded acceptance
+  of the risk. Presenting a fork therefore has a denominator — one backed claim per branch — and
+  an unbacked branch is a gap like any other. A rule saying "investigate first" would be an
+  intention; this is countable.
 - **The technical-claims rule (D4)** — no statement about anything we do not control survives
   without cited documentation, a probe that was run, or the owner's recorded acceptance of the
   risk. The tables exist in v2 and are unused; what is missing is the rule making it non-optional.
