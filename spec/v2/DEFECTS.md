@@ -2289,3 +2289,24 @@ reader seeing it stale. Fix A enforces coherence at the read; Fix B (recorded he
 if warnings are ever redesigned) removes the mirror. Audit question: **does any surface read a
 persisted value that mirrors a computed condition — and is that value reconciled where it is read, or
 only where it is written?**
+
+---
+
+## F51 — A decision is stored without the reasoning that produced it, so a cold session inherits the answer and not the argument
+
+**Status: OPEN — logged 2026-07-27 from the GUI dogfood, not yet analysed or designed. Owner
+asked for it on the list; no resolve-by gate set yet.**
+
+**What happened.** A GUI planning session ended mid pre-use-case discussion. The next session
+resumed cold and read back the decisions the previous one had filed — including that references
+would be dragged between panels. What it could not read back was *why*: nothing recorded the
+reasoning behind that shape, and nothing recorded that the alternative (one panel driving the
+others) had been considered and rejected, let alone on what grounds. The resuming session knew
+the conclusion and had no access to the argument, so it could neither defend the decision nor
+avoid re-opening a settled question.
+
+**Owner's statement of the need:** decisions need to carry their context.
+
+**Not yet done:** what "context" must contain (rationale, rejected alternatives and why they were
+rejected, the constraints in force at the time), where it lives, whether it is required at write
+time or prompted for, and how it interacts with supersession. Deliberately not designed here.
