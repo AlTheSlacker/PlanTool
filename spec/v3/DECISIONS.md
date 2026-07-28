@@ -361,6 +361,42 @@ withdrawn — it still forbids carve-outs. What changed is the model underneath 
 
 ---
 
+## D17 — v2 is not used to plan v3
+
+**Decided by the owner, 2026-07-28**, in his words: it is unproven, and there is enough on
+without bug-hunting that too.
+
+**Reasoning.** Using v2 to plan v3 would put a mechanism that has never been driven for real onto
+the critical path of its own replacement. The execution half — finalization, task-graph
+derivation, brief composition, serving a builder — has tests but has never been run as a client
+runs it, and D13 records exactly what that is worth: v2 has 542 tests of which fewer than 80
+enter through the surface a real client uses, and the first real call to that surface crashed the
+server. Every hour spent on a defect in the planning tool is an hour not spent on v3.
+
+**Rejected: planning v3 with v2**, whose case was that it would exercise the execution half on
+real work for the first time. That is a real benefit and it is being given up deliberately.
+
+**One argument against it was found to be weaker than recorded, and is withdrawn.** The objection
+that v2's own plan lives in a v1-format database, so it could not serve briefs about itself
+without an unscheduled migration, is *true* — `spec/v2/plan.db` holds 22 typed row tables with no
+`plan_rows`, `subtasks` or `briefs` — but it does not bear on this decision. Planning v3 would
+have used a **fresh** database, needing no migration. The decision rests on the unproven-mechanism
+argument alone.
+
+**Two consequences, stated plainly because they are uncomfortable.**
+
+- **v3's own plan is written by hand, in documents — the method D1 identifies as the failure.**
+  This is the same vacuum: no task rows, no build plan the tool produced. It is tolerable only
+  because v3's build is ten changes rather than a system, and because the documents are written
+  and reviewed rather than improvised at build time. It is not a precedent, and if v3's own build
+  starts inventing, that is the finding repeating itself and should be logged as one.
+- **The execution half now goes into v3 having never been driven.** Work item 7 rebuilds brief
+  derivation and the build surface on top of machinery whose real behaviour is unknown. That item
+  should assume nothing about v2's brief composition working, and should be driven end to end
+  early rather than at the end.
+
+---
+
 ## Still open, and where
 
 Carried forward so nothing is lost. Each is scheduled, not merely noted.
@@ -378,13 +414,8 @@ Carried forward so nothing is lost. Each is scheduled, not merely noted.
 - **How deep the pseudocode goes** before a task counts as specified (D9).
 - **The starter label list** (D12), and whether tool-proposal under glossary rules is the right
   level of control.
-- **Whether v2 is used to plan v3.** Held for the end-of-planning checkpoint. For: it would
-  exercise the execution half on real work for the first time. Against: that half has never run,
-  it puts an unproven mechanism on the critical path of its own replacement, and v2's own plan
-  lives in a v1-format database so it cannot serve briefs about itself without an unscheduled
-  migration.
-- **The plan itself** — what v3 does, what it stores, what it exposes, and its build packages in
-  order.
+- **Whether the tool must cost a fork before putting it to the owner** — see `INTERVIEW.md` §6.
+  Written in 2026-07-28 as a standing owner requirement that had never reached these documents.
 
 **The written record is known to be incomplete.** The duplication requirement behind D10 appeared
 in neither the charter nor the analysis; the owner raised it as a standing request that had been

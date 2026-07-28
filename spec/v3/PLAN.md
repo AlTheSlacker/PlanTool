@@ -6,8 +6,10 @@ exposes, and the order the work lands in. Read `DECISIONS.md` first; this assume
 **A note on its own vocabulary.** v3 retires "package", so v3's own build has no packages. The
 order of work below is a list of **changes**, each landing as its own branch and pull request.
 This is a bootstrap: v3 is being planned before v3 exists to plan it, so its own build plan is
-necessarily written the old way. That is also the substance of the open question about whether v2
-is used to plan v3, which is held for the build-phase discussion.
+written the old way — by hand, in documents. The owner settled the alternative in D17: **v2 is
+not used to plan v3**, because it would put an unproven mechanism on the critical path of its own
+replacement. The cost of that, named in D17 so it is not forgotten, is that v3's own plan has the
+same shape as the failure D1 describes.
 
 ---
 
@@ -74,14 +76,11 @@ plus what the catalogue, labels, pseudocode, scenarios and cold read require.
 Each item is a branch and a pull request. Ordering is by dependency, and the reason is given where
 it is not obvious.
 
-**Before any of it — one experiment, needing the owner's approval (D4).**
-
-**Calibrate the cold read.** The 79 recorded inventions are a labelled test set. Reconstruct the
-specification that preceded a sample, run the cold read blind, count what it catches. This needs
-no built machinery — a prompt and the existing record — and it should happen **during planning,
-before the plan is frozen**, because a poor hit rate invalidates stage 10 and weakens the whole
-density argument. It is the single cheapest thing that could change the design, and doing it after
-building it is the wrong order.
+**Before any of it — one experiment. Done: `COLD_READ_CALIBRATION.md`, 2026-07-28.** The cold read
+caught 11 of 12 sampled inventions, so stage 10 stands and the density argument holds. It also
+changed two things carried below: the labelled test set is **37** pre-freeze specification holes
+rather than 79, and stage 10's output is a triage surface rather than a gate. Item 8 inherits
+both.
 
 1. **Vocabulary and levels.** The rename and the removal, with the schema migration: drop
    packages, move `tasks` down, rename obligations to behaviours, update the enforcement test's
@@ -114,8 +113,10 @@ Stated now, while it is cheap to be honest, and testable at the first real use:
 
 - **Specification density does not move.** If a task's brief still averages a handful of bytes per
   line of code produced, the pseudocode is too shallow and stage 8 is theatre.
-- **Builders still invent.** The returning-invention loop is the instrument: if inventions per
-  task do not fall against v2's baseline of 79 across the build, the brief is not complete.
+- **Builders still invent.** The returning-invention loop is the instrument. The baseline to beat
+  is the **37** pre-freeze specification holes v2's build hit, not the 79 recorded items — the
+  other 43 are build-time bugs, owner rulings and duplicates, and a brief cannot prevent those.
+  Counting against 79 would flatter v3 for fixing things it never addressed.
 - **Planning does not terminate.** Eleven stages and 255 tasks of detailed design is a large body
   of work, and if the interview cannot be driven to a freeze in a reasonable time then the trade
   in D9 was wrong, whatever its logic.
@@ -126,10 +127,17 @@ The fallback if any of these hold is a checkout of `v2-final`, which is why it i
 
 ## 6. What is still open, and who owns it
 
-Mine to design and bring back: how deep the pseudocode goes (`INTERVIEW.md` §8); the starter label
-list; whether eleven stages fold to fewer.
+**Closed.** The cold-read calibration ran and is written up. Whether v2 plans v3 is settled: it
+does not (D17).
 
-The owner's, at the build-phase discussion: whether the cold-read calibration runs now as an
-approved experiment; whether v2 is used to plan v3; whether tool-proposed labels under glossary
-rules is the right level of control; and whether `component` should be un-retired, which is
-currently my call.
+Mine to design and bring back: how deep the pseudocode goes (`INTERVIEW.md` §8, where the
+calibration killed the proposed test and left a candidate); the starter label list; whether
+eleven stages fold to fewer; and how stage 10 promotes a real hole out of a list of sixty
+decisions, which the calibration added.
+
+The owner's, at the build-phase discussion: whether tool-proposed labels under glossary rules is
+the right level of control, and whether `component` should be un-retired, which is currently my
+call.
+
+Item 7 carries a standing caution from D17: it rebuilds brief derivation on machinery that has
+never been driven, so it should be driven end to end early rather than at the end.
