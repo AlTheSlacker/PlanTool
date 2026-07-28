@@ -214,10 +214,16 @@ word pollutes reasoning later no matter how narrowly its scope is documented.
 - The eight methodology assets are renamed `stage1_context.md` … `stage8_finalization.md`,
   which is a methodology content change and therefore owes a **new revision stamp**.
 - The enforcement test's banned list loses `stage`, and gains `package`, `subtask`,
-  `sub_task`, `obligation`, `slice`.
-- The two standing vocabulary exceptions in the current codebase (`PartsDontCover` in the brief
-  composer, and a local `parts` variable in the gap engine) disappear with the code that holds
-  them, so the exception block should empty.
+  `obligation`, `slice`. **Not `sub_task`** — the check tokenises identifiers, so `sub_task`
+  splits to `sub` and `task` and the string itself is never a token. A banned word that can never
+  match is a rule that runs and means nothing, which is the disease this list exists to treat.
+  `subtask` covers `subtask_id`, `SubTask` and `subtasks`; the hyphenated form is prose.
+- The two standing vocabulary exceptions should empty — but only one of them is what it appears
+  to be. `parts` in the gap engine is a real identifier and disappears with the code that holds
+  it. **`PartsDontCover` is not an identifier at all**: `briefs.py` names that class
+  `ObligationsNotCovered` and mentions `PartsDontCover` only inside a docstring, quoting what the
+  frozen plan called the error. The exception has been protecting a symbol that does not exist,
+  so the recorded count of live exceptions has been wrong for as long as it has been recorded.
 - Retired words survive **only** as quotations inside `spec/v2/` and `engine/methodology/rev2/`,
   both read-only.
 

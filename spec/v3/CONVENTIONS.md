@@ -43,18 +43,35 @@ Drawn from the decisions that recurred across the ten calibrated readings with a
 Each entry is a plan row with the usual provenance and decision context; several are recording
 what v2 already does rather than deciding anything new.
 
+**Entries 3, 5, 6 and 7 were wrong when first written, and the way they were wrong is the
+lesson.** They were drafted from the calibration's *reconstructions* rather than from the
+codebase, so each described a plausible design instead of the one that exists: an injected
+clock (`engine/clock.py` exposes a module-level `now()`), a surface that only ever cites a
+contract (the registry has a whole deviation category), one transaction per call
+(`finalize_plan` makes two), and one id mechanism where there are two. Corrected 2026-07-28
+against the source, after the cold reads of packets 1B to 1E caught three of the four.
+
+This is the guard in §4 failing in its first week, and it failed in the worst direction — a
+cited decision stops being reported, so each wrong entry would have silently settled the same
+question wrongly across every task that cited it. **An entry must quote the code or the schema
+it records.** A convention drawn from anywhere else is a proposal, not a record.
+
 | # | The recurring decision | Answer |
 |---|---|---|
 | 1 | How does a named error reach the caller? | Raised, as a typed exception per the contract's named errors. Never a status field in a success payload. |
 | 2 | Does a call log or emit telemetry? | No. The plan database and the change feed are the record; there is no separate log. |
-| 3 | Where does the database connection come from, and who commits? | Injected by the caller; the service never opens its own. One call is one transaction unless the contract says otherwise. |
+| 3 | Where does the database connection come from, and who commits? | The `Storage` handle is passed to the service's constructor; the service never opens its own. **A call is one transaction per `write_atomic`, and a call may make more than one** — `finalize_plan` writes nodes, then edges and the plan-state flip. A call needing two must say in its own specification where the seam is and what is true between them. |
 | 4 | What happens under two concurrent callers? | Nothing special. One session plans; the writer lock was deliberately removed. Concurrency is not designed for and not defended against. |
-| 5 | Is the function on a tool surface, and under what name? | Only if a contract row says so. A planning session and a building session see different surfaces and never both. |
-| 6 | What is a timestamp's source, format and zone? | The injected clock, ISO-8601, UTC. Never `datetime.now()`, and never used for control flow. |
-| 7 | How is a new row's identifier allocated? | Per-table ordinal, allocated at write inside the writing transaction; never reused, and gaps left by rejects are normal. |
+| 5 | Is the function on a tool surface, and under what name? | Only if a registry row says so. Most cite a contract; a **deviation** tool cites none and carries a written reason instead. A call that is deliberately *not* exposed carries an absence entry with its reason. A planning session and a building session see different surfaces and never both. |
+| 6 | What is a timestamp's source, format and zone? | `engine/clock.py` — `now()` for writing, `parse()` for reading, and nothing outside that module constructs or interprets a stamp. ISO-8601, timezone-aware UTC, microsecond precision. Never `datetime.now()`, and never used for control flow. |
+| 7 | How is a new row's identifier allocated? | Two mechanisms, and which one applies is fixed by the table, not by the task. A **plan row** gets a per-table ordinal, `MAX(ordinal) + 1` inside the writing transaction. **Every other table** gets its `id` from `INTEGER PRIMARY KEY AUTOINCREMENT`. Neither is ever reused, and gaps left by rejects are normal. |
 | 8 | Is an entity's state stored or derived from its history? | Stored as a column, with the transition table as data rather than code. |
 | 9 | What does an error message contain? | The specific field or ref at fault, and never a bare address — every address carries the name of what it addresses. |
 | 10 | What does a call do with empty or absent input? | An empty collection is a valid no-op returning an empty result; absent required input is a validation rejection naming the field. |
+| 11 | A collaborator was not passed to the constructor. Now what? | Its guard is skipped and its effects are omitted; the call proceeds. A collaborator is optional only where the specification says so, and a task that must not proceed without one says that instead. |
+| 12 | A call is being **deleted**. What goes with it? | Its named errors; its registry row, and any payload parser existing only for its parameters; its absence entry if it has one; every model and helper left with no reader; every mention of its name in text the tool emits, because the door refuses a payload naming a call the registry cannot resolve; and its tests. |
+| 13 | A word is being **renamed**. How far does the rename reach? | Every identifier derived from it — parameters, private helpers, dataclass fields, dict keys, constants, idempotency-key literals, module and test-module filenames — plus prose in docstrings and emitted text. A rename that stops at the export surface is not finished. |
+| 14 | Which spelling, and what about plurals? | British. `behaviour`, not `behavior`. A banned word is banned in its plural and possessive forms too. The Python-packaging sense of `package` is exempt by path, recorded once. |
 
 ## 4. How it grows, and the guard on it
 
@@ -76,3 +93,17 @@ a cited decision stops being reported. Two things hold against that:
 
 **It is not a style guide.** Entries answer questions a cold read actually asked. Naming, layout
 and formatting belong to tooling, not here.
+
+## 5. What it does not cover, found by using it
+
+**The register is service-shaped.** Every entry answers a question about a call: how it errors,
+what it writes, where its connection comes from. The cold read of the enforcement packet — a
+task whose deliverable is a *test* — found that only three of the ten entries touched it at all,
+and none of them settled a decision that mattered. A test's questions are different ones: what
+it scans, what counts as a violation, where its list of rules comes from, what its own fixture
+asserts so that a silently-narrowing pattern fails loudly.
+
+That is a gap and not a defect in the entries: a convention earns its place by recurring, and
+there had been one test-shaped task. It is recorded here so the second and third are noticed,
+because the standing evidence is that a check can run green while measuring something narrower
+than its name, and that failure has no register entry to prevent it.
