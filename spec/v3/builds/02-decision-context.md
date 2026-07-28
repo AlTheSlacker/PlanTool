@@ -1,8 +1,8 @@
 # Change 2 — decision context
 
-**Specification. Packets 2A to 2C have been cold-read once and corrected; 2D and 2E have not.**
-Second of the ten changes in `PLAN.md` §4, and deliberately early: it improves the record of every
-change after it, so it earns its value across the rest of the work.
+**Specification. All five packets have been cold-read and corrected.** Second of the ten changes in
+`PLAN.md` §4, and deliberately early: it improves the record of every change after it, so it earns
+its value across the rest of the work.
 
 Depends on change 1 — schema version 8 is its starting point, `stage` is a legal identifier by
 then, and the methodology is at revision 4.
@@ -30,7 +30,11 @@ owner's attention on ground already covered.
 ## 2. Two roles, and the words for them
 
 **This is the finding that shaped the change, and it was not visible from D11.** The codebase
-already records justifications in nine places, under **three** different words:
+already records justifications at **eight call sites writing six columns**, under **three**
+different words. (After this change: nine columns under four words, because `grounds` and
+`alternatives` are new and `evidence` keeps its name. The first draft took its count of places
+from the end state and its count of words from the start state, which is how "nine places, three
+words" got written down.)
 
 | where | word | validated at the call? |
 |---|---|---|
@@ -225,14 +229,40 @@ rows — each needing a full replacement submission and, after 3.4, a `supersede
 an abandonment that never happened. The draft called the mass gap "the instrument's first reading"
 while providing no instrument that could be read down.
 
-**`record_grounds(ref, grounds, alternatives, idempotency_key)` closes it, and it is write-once.**
+**`record_grounds(ref, grounds, alternatives, idempotency_key)` closes it, and it is write-once
+per field.**
 
 Writing grounds for the first time is not an edit of the row's claim: the content is untouched,
 and the grounds were never recorded. But if grounds can be rewritten they become a place to revise
-history quietly, which is the one thing this store does not permit anywhere else. So: **a row
-whose grounds are already recorded refuses**, and changing an argument requires superseding the
-row — which is the existing mechanism for changing what a row says, with the existing audit trail.
-That is the same shape as `AlreadySuperseded` ("lineage is write-once") and needs no new concept.
+history quietly, which is the one thing this store does not permit anywhere else. So **a field
+already recorded refuses to be overwritten**, and changing an argument requires superseding the
+row — the existing mechanism for changing what a row says, with the existing audit trail. Same
+shape as `AlreadySuperseded` ("lineage is write-once"), no new concept.
+
+**Per *field*, and the first draft said per *row*, which was a dead end.** `submit_rows` makes both
+fields optional, so a row can arrive with grounds and no alternatives. Under a per-row rule that
+row could never acquire its alternatives: `record_grounds` would refuse because grounds are
+present, and the only remedy would be superseding a row that nothing is wrong with. Per-field
+fills what is missing and refuses to overwrite what is there, which is what write-once was
+supposed to mean.
+
+**Nothing new records *when* grounds were recorded, and nothing needs to.** `write_atomic` appends
+a `change_log` row per mutation carrying the ref and a timestamp, so the feed already answers it.
+Adding an `updated_at` to `plan_rows` would be a second answer to a question the feed answers, on
+a table whose immutability is the point — and the vocabulary check's own note says `updated_at` is
+"absent on immutable tables by design".
+
+## 3.6 How this change lands
+
+**One branch, one pull request, the packets as its commit order, the suite green at the end.**
+Same shape as change 1 and for the same reason: the packets cannot be made independently green.
+`supersede_row` gains a required parameter in 2B that every in-process caller and its registry row
+(2D.1) must answer; 2C.2's gap message names `record_grounds()`, which the door refuses until
+2D.1 registers it; and 2E asserts that all of it landed.
+
+**A consequence worth stating: the packet letters are not a landing order.** 2D.1 has to precede
+2C.2. Within one pull request that is a commit ordering, which costs nothing; as five pull
+requests it would have been a redesign.
 
 ## 4. Packet 2A — the schema
 
@@ -259,13 +289,18 @@ constraint — so the columns arrive NULL and the gap engine reports 112 live ro
 That is the instrument's first reading, not a defect, and §3.5 is what makes it possible to work
 down.
 
-**Behaviour 3 exists because of the single most likely build-time failure in this change.**
-`ALTER TABLE … ADD COLUMN` appends to the end of the column list. If 2A.2's DDL puts `grounds`
-next to `retire_reason`, where it reads naturally, a fresh database and a migrated one hold the
-same columns in different positions — and `PRAGMA table_info` returns a different `cid` for each.
-The three new columns therefore go **at the end of `plan_rows` in the DDL, in the ALTER order**,
-and 2E.2 compares by column *name* rather than by `cid`. Both halves are needed: matching order
-makes them agree, and comparing by name makes the check honest about what it is asserting.
+**Behaviour 3 exists because of the single most likely build-time failure in this change, and it
+is now probed rather than argued.** `ALTER TABLE … ADD COLUMN` appends to the end of the column
+list. If 2A.2's DDL puts `grounds` next to `retire_reason`, where it reads naturally, a fresh
+database and a migrated one hold the same columns in different positions and `PRAGMA table_info`
+returns a different `cid` for each. The three new columns therefore go **at the end of `plan_rows`
+in the DDL, in the ALTER order.**
+
+**Probed at SQLite 3.49.1 under Python 3.12.10:** with that rule held, `table_info`, `index_list`
+and `foreign_key_list` all return **byte-identical** output for the migrated and the fresh
+database. So the ordering rule is not a workaround for a weak parity check — it is what allows
+2E.2 to compare raw pragma output rather than hedging to a name-by-name comparison, which two of
+the three pragmas cannot support anyway.
 
 **The columns are nullable and that is deliberate**, not an oversight to tighten later.
 `NOT NULL DEFAULT ''` would make every row satisfy the column while satisfying nothing.
@@ -293,7 +328,7 @@ rows of one table at a time, and that read is served by the existing indexes.
 
 | | behaviour |
 |---|---|
-| 1 | A fresh database and a migrated one end structurally identical, compared by column name. |
+| 1 | A fresh database and a migrated one end structurally identical, byte-for-byte in pragma output. |
 | 2 | The three new columns sit at the end of `plan_rows`, in 2A.1's order. |
 | 3 | Each carries a comment naming its role, and `findings.reason`'s comment is rewritten. |
 | 4 | The version-8 DDL is retained as the fixture the parity check migrates from. |
@@ -359,38 +394,63 @@ idempotency_key: str) -> PlanRow`, on `RowService`.
 
 | | behaviour |
 |---|---|
-| 1 | Writes both columns on a live row that has neither. |
+| 1 | Writes each column that is currently unset, and returns the updated `PlanRow`. |
 | 2 | Refuses with `RowNotFound` when the ref is unknown, naming it. |
-| 3 | Refuses with `GroundsAlreadyRecorded` when either column is already set, naming the row and pointing at `supersede_row`. |
-| 4 | Refuses with `GroundsNeedBoth` when either argument is blank, naming which. |
-| 5 | Refuses on a superseded or retired row, naming its state. |
-| 6 | One transaction, one op. |
+| 3 | Refuses with `RowNotLive` on a superseded or retired row, naming its state. |
+| 4 | Refuses with `GroundsAlreadyRecorded` when an argument would overwrite a field already set, naming which field and pointing at `supersede_row`. |
+| 5 | Refuses with `GroundsNeedBoth` when, after the call, either field would still be unset. |
+| 6 | Refuses a `grounds` or `alternatives` containing a ref that does not resolve, naming it. |
+| 7 | Replaying the idempotency key returns the first result, as every other write does. |
+| 8 | One transaction, one op. |
 
-**Behaviour 3 is what makes this safe**, and §3.5 gives the argument: writing an argument that was
+**Behaviour 4 is what makes this safe**, and §3.5 gives the argument: writing an argument that was
 never recorded is not editing the row's claim, but *re-writing* one is revising history, and
-revising what a row says is what supersession is for. The error names the alternative rather than
-just refusing, because an error that does not say what to do instead is how a planner ends up
-inventing a workaround.
+revising what a row says is what supersession is for. It is per field, so a row that arrived with
+grounds and no alternatives can still be completed. The error names the alternative rather than
+just refusing, because an error that does not say what to do instead is how a planner invents a
+workaround.
 
-**Behaviour 5 exists because a superseded row is frozen history.** Recording grounds on it would
+**Behaviour 3 exists because a superseded row is frozen history.** Recording grounds on it would
 let a later session improve the argument for a decision that has already been replaced — the same
-objection as behaviour 3, one step further from the reader.
+objection as behaviour 4, one step further from the reader. It gets its own error rather than
+being folded into `GroundsAlreadyRecorded`, because "this row is not live" and "this field is
+already written" are different problems with different fixes.
 
-**Behaviour 4 requires both because §3.1's "no exemption" only works if the honest answer is
-written.** A row with no alternative writes "none — follows from use_cases:4"; permitting a blank
-`alternatives` would restore the exemption flag §3.1 declined, spelled as an empty string.
+**Behaviour 5 requires both fields to end up set, because §3.1's "no exemption" only works if the
+honest answer is written.** A row with no alternative writes "none — follows from `use_cases:4`";
+permitting a blank `alternatives` would restore the exemption flag §3.1 declined, spelled as an
+empty string.
+
+**Behaviour 6 is the cold read's sharpest catch and it exists because of a mechanism, not a
+preference.** `door.scan` runs over **every** tool response and raises `BareAddress` on any
+`table:ordinal` not accompanied by a name. `grounds` and `alternatives` are the first columns in
+this store designed to hold argumentative prose, and the natural way to write an argument is
+"rejected the flat store — see `entities:4`". Combined with write-once, an unresolvable ref
+written into grounds would make that row **permanently unreadable through the surface**: every
+render of it raises, and the only repair is superseding a row whose content is fine. Validating at
+the write is the one moment when it is still cheap.
+
+**Probed, because behaviour 6 is only worth its cost if the risk is real.** Against the door's
+`ADDRESS` pattern, eight realistic pieces of justification prose: "12 tables, 3 of them empty",
+"the owner's constraint at 09:30", "2:1 in favour", "about 1:20" — **no false positives**. Three
+genuine refs matched, as they must. **One false positive**: a URL with a port, `example.com:8080`,
+matches `com:8080`. So the risk of a ref-shaped token in grounds is real, the pattern is otherwise
+well-behaved on prose, and the one trap is worth naming to the planner in the refusal message.
 
 **Pseudocode**
 
 ```
-row = fetch(ref)                       # RowNotFound naming the ref
+row = fetch(ref)                                  # RowNotFound naming the ref
 if row.state in (SUPERSEDED, RETIRED):
-    raise GroundsAlreadyRecorded-family error naming the state
-if row.grounds or row.alternatives:
-    raise GroundsAlreadyRecorded naming the row, pointing at supersede_row
-if not grounds.strip() or not alternatives.strip():
-    raise GroundsNeedBoth naming which is blank
-write_atomic([update plan_rows set grounds, alternatives where table_name, ordinal],
+    raise RowNotLive naming the row and its state
+for field, value in (("grounds", grounds), ("alternatives", alternatives)):
+    if value.strip() and getattr(row, field):
+        raise GroundsAlreadyRecorded naming the field, pointing at supersede_row
+    if not value.strip() and not getattr(row, field):
+        raise GroundsNeedBoth naming the field
+    if any ref token in value that does not resolve:
+        raise UnresolvedReference naming the token
+write_atomic([update plan_rows set the unset fields where table_name, ordinal],
              idempotency_key)
 return self.get(ref)
 ```
@@ -549,7 +609,13 @@ to do:
 
 > `{name}` records no {missing}. A design decision nobody can defend is one a later session will
 > reopen. Write why this shape was chosen and what you considered instead — "none, it follows from
-> X" is a complete answer when it is true.
+> X" is a complete answer when it is true. Call `record_grounds()`.
+
+**The ask names the call, and that fixes the packet order.** Outgoing text naming a call is the
+design — `plan_status` does it, and the door resolves every such name against the registry. So an
+ask ending in `record_grounds()` raises `UnreachableCall` until 2D.1 has registered the tool,
+which means **2D.1 must land before 2C.2, not after**. The dependency ran the other way in the
+draft. §4.5 is why that costs nothing.
 
 **`priority: 2` is cited, not chosen.** The ladder at the head of `gap_rules.yaml` reads
 "2 holes in the current stage", and an unmet row-level obligation inside the stage that owns the
@@ -594,24 +660,47 @@ Depends on 2C. `surface.py`, `render.py`.
 
 | | behaviour |
 |---|---|
-| 1 | The `rows` payload note and parser accept `grounds` and `alternatives`, both optional. |
+| 1 | **Both** payload parsers — `rows` for `submit_rows`, `row` for `supersede_row`'s replacement — accept `grounds` and `alternatives`, optional, rejecting a non-string by name. |
 | 2 | `supersede_row` gains a required `reason` parameter, before `idempotency_key`. |
-| 3 | `record_grounds` is added as a `DEVIATION` tool with its reason. |
-| 4 | `resolve_finding`'s and `uphold_finding`'s `rationale` parameters become `reason`. |
-| 5 | The named errors of `contracts:12` and `contracts:13` gain the two new refusals. |
+| 3 | `record_grounds` is added as a `DEVIATION` tool with its reason, and appears in `ADDED`. |
+| 4 | `resolve_finding`'s `rationale` parameter becomes `reason`. |
+| 5 | Five contract rows are superseded: `contracts:9`, `:11`, `:12`, `:13` and `:34`. |
+
+**Behaviour 1 names both parsers because the first draft named one.** A `grounds` the `rows` parser
+accepts and the `row` parser drops means a replacement can never carry its argument — and since
+`record_grounds` refuses on a non-live row, supersession would be the one path that loses the very
+field this change adds.
 
 **Behaviour 3 is a new tool and §3.5 is why it has to be one.** Without it, the only way to give
 an existing row its grounds is through the surface's supersede path, which demands a full
 replacement submission and a `supersede_reason` for an abandonment that did not happen. It is a
 `DEVIATION` because no contract row describes it — the plan never anticipated the field, so it
-cannot have anticipated the call — and register 5 requires the written reason that goes with that.
+cannot have anticipated the call — and the surface's own rule is that "every tool with no contract
+behind it appears in `ADDED` with the reason it exists".
 
-**Behaviour 5 matters because register 1 ties a raised error to the contract's named-error list.**
-`SupersedeNeedsReason` and `RetireNeedsReason` are new refusals on contracted calls, and a contract
-whose error list omits an error the call raises is a contract that lies to its reader.
+**`uphold_finding` is not on the surface** and so is not in this task; its parameter renames in
+2B.4 with the rest of the service. The first draft listed it here, which would have sent a builder
+hunting a registry row that does not exist.
+
+**Behaviour 5 covers signatures, not just error lists, and that is the correction.** The draft
+named two contracts and only their errors. `SupersedeNeedsReason` and `RetireNeedsReason` are new
+refusals on `contracts:12` and `:13`; `resolve_assumption` gains one too, so `contracts:11` is in;
+`supersede_row`'s *signature* changes; `resolve_finding`'s parameter renames (`contracts:34`); and
+`submit_rows`' payload shape changes (`contracts:9`). A contract whose error list omits an error
+the call raises is a contract that lies to its reader — and so is one whose signature is stale.
+
+**How a contract row is amended, since contracts *are* plan rows and content is never edited.** By
+superseding each one, which is the ordinary mechanism and not the bind it first looks like:
+`supersede_row` now needs a reason, and here there is a real one — *"the call's signature changed
+in schema 9"*. That is what a supersession reason is for. Worth saying out loud, because the same
+question arises at every later change that alters a contracted call.
 
 **No `why(ref)` tool is added.** It would be a pleasant thing to have and a second route to data
-`read_rows` already returns. The build surface is six calls and its smallness is the design.
+`read_rows` already returns; the planning surface is 54 tools and each one is a thing to keep true.
+**The draft argued this from "the build surface is six calls", which is the wrong surface** — six
+is the *builder*-facing surface in `BUILD_SURFACE.md`, and `record_grounds` is a planning call. No
+`Absence` entry is filed either: an absence entry records a call that **exists** and is
+deliberately not exposed, and this one was never built.
 
 ### Task 2D.2 — rendering
 
@@ -644,24 +733,41 @@ Depends on all of the above.
 
 | | behaviour |
 |---|---|
-| 1 | `test_schema_vocabulary.py` gains a declared set of justification columns, by exact name, each with its role. |
-| 2 | It matches bare `reason`, `grounds` and `alternatives` as well as the `_reason` suffix. |
-| 3 | Fails if any schema column is named `rationale`, `justification`, `explanation` or `why`. |
-| 4 | Its own fixture asserts the count of justification columns it finds. |
+| 1 | `test_schema_vocabulary.py` gains `JUSTIFICATION_ROLES`, a declared set of justification columns by exact name, each with its role. |
+| 2 | A column whose name is `reason`, `grounds` or `alternatives`, or which ends in `_reason`, must be a declared member. |
+| 3 | Fails if any schema column is named `rationale`, `justification`, `explanation` or `why`, exactly or as a suffix. |
+| 4 | The declared set is **nine** members: `grounds`, `alternatives`, `supersede_reason`, `retire_reason`, three `reason` columns, `findings.reason`, and `technical_claims.evidence` as the declared non-justification. |
+| 5 | **`SHAPES` is made to drive the check that quotes it.** |
 
-**Behaviour 2 is a correction the cold read forced.** The draft added `_reason` to the existing
-`SHAPES` map, which is a *suffix* check — and it would not have matched `findings.reason`,
-`grounds` or `alternatives` at all. A mechanism that does not see the columns the change adds is
-not a mechanism.
+**Behaviour 2 is a correction the cold read forced, and the reason the draft was wrong is worse
+than the draft thought.** The draft added `_reason` to the existing `SHAPES` map and called it a
+suffix check that would miss bare `reason`. It would have missed everything: **`SHAPES` is
+decorative.** `test_id_and_ref_columns_keep_their_types` reads `SHAPES['_id']` and `SHAPES[suffix]`
+*for their message text only*, and hardcodes the suffixes it actually checks —
+`column.endswith("_id")` and `for suffix in ("_key", "_ref")`. `_by`, the fourth declared member,
+is checked **nowhere**. Adding `_reason` to that map would have added a docstring, not a check.
+
+**Behaviour 5 is that defect fixed, and it is in scope because this change is the one that noticed
+it.** The check iterates `SHAPES` rather than restating its keys, so a declared shape is enforced
+by being declared. This is the project's own standing lesson — a rule in a document is not a
+mechanism — sitting inside the file that exists to enforce vocabulary mechanically, and it has
+been decorative since it was written.
+
+**Behaviour 4 states the number because a fixture that asserts a count nobody wrote down cements
+whichever number the builder guessed.** `technical_claims.evidence` is a declared member with the
+role "what was found when a claim was tested — not a justification, and not to be renamed to
+`reason`", so that the next reader who notices it does not have to re-derive §2's argument.
 
 **Behaviour 3 is a deny-list and deny-lists are usually the wrong tool**, so the reason it is right
 here is specific: the failure being prevented is a *second spelling of a role that already has a
 word*, and the only way to catch that mechanically is to name the spellings. The general form — "a
-new concept given a name that duplicates an existing one while sharing no lexical structure" — is
-what this check's own docstring says nothing mechanical can catch.
+new concept given a name that duplicates an existing one in meaning while sharing no lexical
+structure" — is what this check's own docstring says nothing mechanical can catch **without
+judgment**. The draft dropped that qualifier, which is the second time in two changes a quotation
+here has lost the words that carried it.
 
-**Behaviour 4 is the guard against the check going blind**, against the standing evidence of a
-check that ran green while seeing four names where there were twenty-two.
+**The count in behaviour 4 is the guard against the check going blind**, against the standing
+evidence of a check that ran green while seeing four names where there were twenty-two.
 
 ### Task 2E.2 — schema parity and the new gap
 
@@ -669,19 +775,29 @@ check that ran green while seeing four names where there were twenty-two.
 
 | | behaviour |
 |---|---|
-| 1 | A version-8 database migrated to 9 is structurally identical to a fresh 9, compared **by column name** through `PRAGMA table_info` / `index_list` / `foreign_key_list`. |
+| 1 | A version-8 database migrated to 9 is structurally identical to a fresh 9 — raw `PRAGMA table_info`, `index_list` and `foreign_key_list` output, compared as-is. |
 | 2 | A live row of a rule-bearing table with no grounds produces exactly one gap, at the stage that owns its table. |
 | 3 | A row whose `grounds` is whitespace produces the same gap as one whose grounds are absent. |
-| 4 | `record_grounds` closes the gap; a second call on the same row refuses. |
+| 4 | `record_grounds` closes the gap; a second call refuses that field and a first call completes the other. |
 
-**Behaviour 1 reuses the mechanism change 1 built and must not reimplement it**, and "by column
-name" is the part that is easy to get wrong. Comparing the ordered `table_info` output would
-compare `cid` too, and 2A.1's `ADD COLUMN` appends while a DDL edit could put the column anywhere.
-2A.2 behaviour 2 makes them agree; this makes the check say what it means either way.
+**Behaviour 1 reuses the mechanism change 1 built, and the draft's instruction to "compare by
+column name" is withdrawn — it was both weaker than necessary and meaningless for two of the three
+pragmas.** `index_list` and `foreign_key_list` return no column names to compare by. And the
+hedge was unnecessary: probed at SQLite 3.49.1, with the new columns declared last in the DDL and
+appended by `ALTER TABLE ADD COLUMN`, **all three pragmas return byte-identical output** for a
+migrated and a fresh database — `cid` values included. So the check compares raw output, which is
+stricter than comparing by name, and 2A.2 behaviour 2 is what makes that legitimate. The ordering
+rule is not a workaround for a weak check; it is what lets the check be strong.
+
+**Behaviour 3 relies on 2B's store-side strip and that is a decision, not an oversight.** The gap
+rule reads the column raw. Nothing but `RowService` writes `plan_rows`, so stripping once at the
+write is the single point where a whitespace value can be caught; a second strip in the gap rule
+would be the same decision made twice, and the two would drift.
 
 **Behaviour 4 is the test that §3.5 is real.** It is the end-to-end path — a gap exists, a call
-closes it, the call is write-once — and it is the one a builder would skip, because each half looks
-covered by a unit test of its own.
+closes it, the call is write-once per field — and it is the one a builder would skip, because each
+half looks covered by a unit test of its own. The "completes the other" half is what would have
+caught the per-row dead end the cold read found.
 
 ## 9. What this change does not do
 
@@ -749,7 +865,51 @@ value is its own failure: it held that making the `ask` name the missing fields 
 changing the shared `_make` helper. `_make` already accepts `**fmt` and forwards it to
 `ask.format(...)`, so only the handler changes.
 
-**Packets 2D and 2E have not been cold-read.** They were rewritten after these findings — the
-naming changed under them, `record_grounds` is new, and the vocabulary check turned out not to
-match the columns it was meant to govern — so what exists now has never been read blind. That is
-the next job on this change, before any code.
+**Packets 2D and 2E were then rewritten under the new naming and read blind in their turn**, by a
+third reader, also with zero tool uses. It found:
+
+- **The vocabulary check I was extending is decorative.** `SHAPES` is read only for its message
+  text; the suffixes it appears to declare are hardcoded in the assertion, and `_by` is checked
+  nowhere. Adding `_reason` to it — which the previous draft did — would have added a docstring
+  and no check. 2E.1 behaviour 5 now fixes that, and it is the project's own standing lesson
+  sitting inside the file written to enforce vocabulary mechanically.
+- **Write-once per row was a dead end.** `submit_rows` makes both fields optional, so a row could
+  arrive with grounds and no alternatives and never be able to acquire them: `record_grounds`
+  would refuse, and the only remedy would be superseding a row nothing is wrong with. Write-once
+  is now per field.
+- **`record_grounds` had no stated return, no replay behaviour, and a vague refusal** on frozen
+  rows. It returns the updated row, replays like every other write, and refuses with a named
+  `RowNotLive`.
+- **Only one of the two payload parsers was named.** `supersede_row`'s replacement goes through the
+  singular `row` parser, so as drafted a replacement could never carry its grounds — on the one
+  path `record_grounds` deliberately refuses.
+- **Contract updates covered error lists and not signatures**, and named two contracts where five
+  change. It also raised the right follow-on question — contracts are plan rows and content is
+  never edited, so amending one means superseding it — which has an ordinary answer worth writing
+  down once.
+- **The argument against a `why(ref)` tool cited the wrong surface.** "The build surface is six
+  calls" is `BUILD_SURFACE.md`'s builder-facing surface; this is a planning call, and the planning
+  surface is 54 tools.
+- **`uphold_finding` is not on the surface at all**, so listing its parameter in the registry task
+  would have sent a builder hunting a row that does not exist.
+- **Two miscounts of my own text**: "nine places under three words" took its places from the end
+  state and its words from the start state — it is eight sites writing six columns under three
+  words today, nine columns under four words after. And a docstring quoted without the two words
+  that carried it ("without judgment"), which is the second lost qualifier in two changes.
+- **The packet letters were not a landing order.** 2C.2's gap message names `record_grounds()`,
+  which the door refuses until 2D.1 registers it. §3.6 answers it.
+
+**Two things it raised were probed rather than argued, and one refuted an instruction I had
+written.** I had told the parity check to compare "by column name" — which is meaningless for
+`index_list` and `foreign_key_list`, and unnecessary: with the new columns declared last and
+appended by `ALTER TABLE`, all three pragmas return byte-identical output. The check compares raw
+output, and the ordering rule in 2A.2 is what makes the strong form legitimate. And the door's
+`ADDRESS` pattern was run against eight pieces of realistic justification prose: no false
+positives on "12 tables, 3 of them empty", "at 09:30", "2:1", "1:20" — one on a URL with a port
+(`example.com:8080`). So the risk that made 2B.2 behaviour 6 worth its cost is real, and the one
+trap is now named in the refusal.
+
+**One of its findings was a bundle artefact, not a defect**: it reported `fence_claim(rationale)`
+as owned by no packet. It is 2B.4 behaviour 4; the reader was given a summary of 2B rather than
+its text. Worth recording, because a cold read taken entirely at face value is its own failure —
+as is one taken as adversarial noise.
