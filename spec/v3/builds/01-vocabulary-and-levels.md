@@ -627,7 +627,13 @@ Depends on 1C. `gates.py`, `gaps.py`, `resume.py`, `guidance.py`, `findings.py`,
 
 **Signature.** `Methodology.packages` → `stages`, `Package` → `Stage`, `criteria_for(package)`
 → `criteria_for(stage)`, `package(number)` → `stage(number)`, `package_range` → `stage_range`,
-`Criterion.package` → `Criterion.stage`.
+`Criterion.package` → `Criterion.stage`, **`Rule.package` → `Rule.stage`**.
+
+**`Rule.package` was missing from this list until the cold read of change 2 tripped over it.**
+`gaps.py` reads `rule.package` when it builds a gap, so a `Rule` renamed without its reader is an
+`AttributeError` on every gap the engine derives — and `Gap.package` (1D.2 behaviour 2) is the
+other half of the same pair. Two dataclass fields, one read apart, in two modules this packet
+already claims.
 
 **Behaviours**
 
@@ -653,7 +659,7 @@ result. This is a revert, and rev2 is a working example of the target shape.
 | | behaviour |
 |---|---|
 | 1 | Every parameter, column reference and message reading `package` in the *planning* sense reads `stage`. |
-| 2 | `UnknownPackage` becomes `UnknownStage`; `GateResult.package` and `next_package` become `stage` and `next_stage`. |
+| 2 | `UnknownPackage` becomes `UnknownStage`; `GateResult.package` and `next_package` become `stage` and `next_stage`; `Gap.package` becomes `Gap.stage`. |
 | 3 | `gaps.current_package()` becomes `current_stage()`; `guidance.get_package_script()` becomes `get_stage_script()`. |
 | 4 | `findings.resolve_by` keeps its name; only its comment changes. |
 | 5 | No behaviour changes. A gate that passed before passes now. |
