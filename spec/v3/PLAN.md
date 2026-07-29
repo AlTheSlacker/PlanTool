@@ -68,8 +68,12 @@ conflicts, claims, spikes, gates, gaps, journal, the change feed and the revisio
 The build surface is six calls and no row query — full specification in `BUILD_SURFACE.md`. Its
 smallness is the design: the tool call is the context boundary, not a query interface.
 
-The planning surface keeps most of v2's forty-eight, minus what dies with packages and sub-tasks,
-plus what the catalogue, labels, pseudocode, scenarios and cold read require.
+The planning surface keeps most of v2's **fifty-four**, minus what dies with packages and
+sub-tasks, plus what the catalogue, labels, pseudocode, scenarios and cold read require. (This line
+said forty-eight until 2026-07-29. Counted from `engine/surface.py`: `REGISTRY` holds 54, `ADDED`
+holds 12, and all 12 deviations appear in both. Changes 1 to 4 take it to **63** and `ADDED` to
+**22** — the arithmetic is in `builds/03-catalogue.md` task 3D.1 and `builds/04-labels.md` task
+4D.1.)
 
 ## 4. The order of work
 
@@ -100,7 +104,7 @@ both.
    split, the returning-invention loop. Depends on 3, 5 and 6.
 8. **The cold read** as a stage, with whatever the calibration taught.
 9. **The derived end-to-end checkpoint** (D8), replacing the package gates removed in 1.
-10. **Methodology revision 5** — all eleven stage scripts, the mandate, and a forward-only
+10. **Methodology revision 7** — all eleven stage scripts, the mandate, and a forward-only
     migration. Threads through most of the above; landed last so it is written once against what
     was actually built, rather than rewritten after every change.
 
@@ -112,6 +116,13 @@ both.
     vocabulary corrected and the dead calls removed — the smallest thing that keeps the tool
     working — and this item is the eleven-stage rewrite, which really is a function of what gets
     built and really does belong last.
+
+    **The number climbs once per change that edits a script, and this line kept saying 5 while it
+    did.** Change 2 minted revision 5 for the `record_grounds` asks, change 3 minted none, and
+    change 4 mints revision 6 for the stage-6 labelling round that replaces the deleted packaging
+    round. So this item is **revision 7**. The lesson is not about numbering: it is that nothing
+    cold-reads this document, so it went stale for two changes with nobody looking — the same way
+    D12 asserted a guard that had never existed.
 
 **Drive the system end to end after every one of these.** That practice caught something every
 time it was used in v2, and it is the reason several defects in this repo were found at all.
@@ -140,9 +151,13 @@ The fallback if any of these hold is a checkout of `v2-final`, which is why it i
 does not (D17).
 
 Mine to design and bring back: how deep the pseudocode goes (`INTERVIEW.md` §8, where the
-calibration killed the proposed test and left a candidate); the starter label list; whether
-eleven stages fold to fewer; and how stage 10 promotes a real hole out of a list of sixty
-decisions, which the calibration added.
+calibration killed the proposed test and left a candidate); whether eleven stages fold to fewer;
+and how stage 10 promotes a real hole out of a list of sixty decisions, which the calibration
+added.
+
+**The starter label list is settled** — the ten in `VOCABULARY.md`, unchanged. Change 4 designed a
+replacement and measured it away: 92% of a plan's rows have no path to a component, so a place-name
+is not the redundant filter the replacement assumed (`builds/04-labels.md` §3.2).
 
 **Settled by the owner, 2026-07-29:** tool-proposed labels under glossary rules **is** the right
 level of control — the tool proposes, he adds and assigns freely and overturns anything. Specifying

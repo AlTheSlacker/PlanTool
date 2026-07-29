@@ -1,7 +1,10 @@
 # Change 3 — the catalogue
 
 **Specification, complete. All five packets were cold-read and §11's corrections are applied
-below.** §11 stays as the record of what the four readers found — the numbers they re-measured, the
+below. Amended twice on 2026-07-29 by change 4** — the ranking and the tokeniser are a shared
+module, and stop words are settled here rather than left task-local; both are marked in place and
+listed in §9, and neither changes a number this document measured. §11 stays as the record of what
+the four readers found — the numbers they re-measured, the
 probes that settled the technical claims, and the two findings they got wrong — because that is
 evidence and it exists nowhere else. Third of the ten changes in `PLAN.md` §4. It
 is early because two later changes depend on it: brief composition serves the catalogue entries
@@ -367,15 +370,39 @@ here to borrow, only a docstring that says there is. Building one for the catalo
 different change with its own argument; borrowing the claim would be citing a row that says
 something else.
 
-**How stop words are handled is a task-local decision and this specification does not make it.**
-What is not task-local, and is stated: the ranking function must be one function, called by both
-the search and the registration, or the candidates a planner is shown and the candidate they are
-required to adjudicate come from two rankings that will drift.
+**The ranking must be one function, called by both the search and the registration**, or the
+candidates a planner is shown and the candidate they are required to adjudicate come from two
+rankings that will drift.
 
-**Which is why the ranking lives in packet 3B and not with the search.** The draft put it in 3C
-and had 3B's registrations call it, which is a packet naming a call a later packet builds — the
-landing-order inversion that has now appeared in all three changes. §3.10 says what the order
-actually is.
+**Amended 2026-07-29 by change 4: it is one function for more callers than this change has, so it
+is not private to this service.** The ranking and the tokeniser live in **`engine/lexical.py`**,
+built here and called by `CatalogueService`, by change 4's labels and by change 4's `define_term`
+guard — which is D12's own instruction, since the glossary's never-built near-duplicate refusal is
+this same mechanism. `04-labels.md` §11.1 carries the argument, and it is the shape
+`RowService.lineage_root` already settled in this engine: the second application is the reason a
+primitive lives in one place rather than on either caller.
+
+**The tokeniser is not written here either. `TermService._tokens` already exists** — lowercased,
+plurals folded on a trailing `s`, addresses stripped, with its reason quoted: *"the crudest possible
+rule … because anything cleverer starts guessing."* It moves to `engine/lexical.py` and
+`TermService._tokens` becomes a one-line delegation naming the canonical one, following
+`GapService.lineage_root`. **The draft of this change was about to write a second one**, in the
+change whose own subject is duplication.
+
+**And stop words are not a task-local decision, which is what the draft called them twice.**
+Change 4 measured what that leaves: ranking fourteen proposals against a ten-word candidate set,
+the word `the` accounts for **46% of every match**, and three of the fourteen top-ranked candidates
+— the one the registration makes mandatory to adjudicate — rest entirely on words most candidates
+share. **A shared word therefore contributes in inverse proportion to how many of the candidates
+contain it**, computed from the candidate set rather than from a maintained list of English. This
+is not a threshold: no cut-off decides whether a word counts, and the weight only orders a list
+whose top is taken regardless. **It changes no number in this document** — eligibility is
+untouched, so the 74 registrations shown nothing, the 561 adjudications and the mean of 3.90 all
+stand. `04-labels.md` §3.4 and §11.2 are the measurement.
+
+**The ranking lives in packet 3B and not with the search.** The draft put it in 3C and had 3B's
+registrations call it, which is a packet naming a call a later packet builds — the landing-order
+inversion that has now appeared in all three changes. §3.10 says what the order actually is.
 
 ### 3.8 The cross-container report
 
@@ -432,7 +459,7 @@ this has happened:
 |---|---|---|
 | 1 | **3A.0** — the `JUSTIFICATION_ROLES` entries | 2E.1's check refuses `catalogue.retire_reason` and `catalogue_comparisons.reason` the moment 3A.1's DDL exists. Declared last, the suite is red from 3A to 3E and the failure reads as a mistake rather than the sequencing it is. Exactly change 1's task 1A.0. |
 | 2 | **3D.1** — the registry rows | 3B.2's `ContainerNotCatalogued` message tells the planner to catalogue the object first. That is text naming a call, and `door.scan` raises `UnreachableCall` on a payload naming a call the registry cannot resolve. |
-| 3 | **the ranking**, inside 3B | 3B's registrations call it, so it cannot be specified by 3C and built after them. It is task 3B.1 here, not 3C.1. |
+| 3 | **`engine/lexical.py`**, inside 3B | 3B's registrations call the ranking, so it cannot be specified by 3C and built after them. It is task 3B.1 here, not 3C.1 — and by change 4's amendment it is a shared module rather than a private method, because two later callers need the same one (§3.7). |
 
 **So the order is 3A.0, 3A.1, 3A.2, 3D.1, 3B, 3C, 3D.2, 3E** — and the two rules behind it are
 worth stating in general, because they have now caught something in every change: *a packet that
@@ -737,10 +764,13 @@ alone is dismissed at a glance, and one that matched on `resolve supersession ch
 
 ### Task 3B.1 — the read path and the ranking
 
-**Signature.** Four private methods on `CatalogueService`: `_find(name: str, container: str | None,
-include_retired: bool = False) -> CatalogueEntry | None`, `_resolve_container(name: str) -> int |
-None`, `_live_within(container_id: int) -> tuple[CatalogueEntry, ...]`, and `_rank(name: str,
-purpose: str, limit: int = 5) -> tuple[Candidate, ...]`.
+**Signature.** A new module `engine/lexical.py` exporting `tokens(text: str, scope: str) ->
+set[str]`, `rank(name: str, text: str, candidates, limit: int = 5)` and the error
+`NearMatchesUnadjudicated`; plus four private methods on `CatalogueService`: `_find(name: str,
+container: str | None, include_retired: bool = False) -> CatalogueEntry | None`,
+`_resolve_container(name: str) -> int | None`, `_live_within(container_id: int) ->
+tuple[CatalogueEntry, ...]`, and `_rank(name: str, purpose: str, limit: int = 5) ->
+tuple[Candidate, ...]`, which reads the live entries and hands them to `lexical.rank`.
 
 **Behaviours**
 
@@ -755,6 +785,8 @@ purpose: str, limit: int = 5) -> tuple[Candidate, ...]`.
 | 7 | Ties break on the lower `id` first, so the ranking is stable across calls. |
 | 8 | Returns at most `limit`. |
 | 9 | A retired entry is never a candidate; `_find(include_retired=True)` is how the name check sees one. |
+| 10 | A shared word counts in inverse proportion to how many of the candidates contain it, so a word almost everything shares decides almost nothing. |
+| 11 | `tokens` and `rank` are `engine/lexical.py`'s, not this service's; `TermService._tokens` becomes a delegation to the first. |
 
 **Behaviours 1 to 3 are the read path the draft never specified**, and they are not three
 incidental helpers: the registrations need a lookup **four** times — the name check, the container
@@ -798,7 +830,15 @@ implemented as the opposite of the requirement.
 similar; `references.search` already carries `limit: int = 10` for the same job. 5 is chosen
 against the measurement in §3.5, where a page of five shows a mean of 3.90.
 
-**How stop words are handled is task-local and this specification does not make it** (§3.7).
+**Behaviours 10 and 11 are change 4's amendment and §3.7 carries the argument.** Behaviour 10 is
+what the draft left as "task-local": measured over a real candidate set, the commonest English word
+in it accounted for 46% of all matching and put noise at the top of the list, which is where this
+change makes adjudication mandatory. Behaviour 11 is where the function lives, and the reason is
+that three callers need it and none of them owns it.
+
+**Behaviour 10 changes no number in this document.** A shared word is still a shared word, so
+eligibility — and with it the 74 registrations shown nothing, the 561 adjudications and the mean of
+3.90 — is untouched. Only the order changes, and with it which candidate a planner must answer for.
 
 ### Task 3B.2 — `catalogue_object`
 
@@ -1346,6 +1386,12 @@ the stage-8 script step that reads the report; the prior-verdict field on a sear
 them and nothing else will notice:** change 2 must say that `JUSTIFICATION_ROLES` is keyed
 `table.column` (3A.0), and changes 1 and 2 must say that their retained DDL fixtures live outside
 `engine/schema.py` (3A.1 behaviour 7, §11.4).
+
+**And two amendments this change received from change 4, applied above on 2026-07-29 rather than
+left as a refactor**, because this change is merged and unbuilt: the ranking and the tokeniser are
+`engine/lexical.py` and not private to `CatalogueService` (§3.7, task 3B.1 behaviour 11), and stop
+words are answered by a rarity weight rather than left task-local (task 3B.1 behaviour 10). Neither
+changes a number measured here. `04-labels.md` §11 is the argument and the measurement.
 
 ## 10. Two conventions this change proposes
 
