@@ -254,15 +254,37 @@ generic starter list and adds to it when nothing fits; the owner changes them at
 review. Giving the tool proposal rights is safe **because** labels affect nothing in the build —
 the blast radius of a bad label is a slightly worse filter, and the owner can overturn it.
 
-**The guard, and it needs no new mechanism:** labels are governed by the glossary — the tool
-proposes, the owner settles, and a near-duplicate is refused exactly as a near-duplicate term
-is. The owner's stated risk is too many specific labels and near-duplicate names, which is the
-same failure the glossary already exists to prevent.
+**The guard:** labels are governed by the glossary — the tool proposes, the owner settles, and a
+near-duplicate is refused. The owner's stated risk is too many specific labels and near-duplicate
+names, which is the same failure the glossary exists to prevent.
+
+**Corrected 2026-07-29: that guard did not exist, and this decision said it needed no new
+mechanism.** `TermService.define_term` refuses only an **exact** match — it calls `find(word)`, a
+direct lookup — and nothing anywhere in the glossary detects a near-duplicate at proposal time or
+any other time. So the sentence *"a near-duplicate is refused exactly as a near-duplicate term is"*
+described a mechanism by pointing at another mechanism that was equally imaginary, and the only
+thing standing between the owner and a hundred nearly-identical labels was a rule in a document.
+That is this project's oldest recorded failure, made twice in one sentence.
+
+**It needs a new mechanism, and change 3 built it.** The catalogue refuses a registration until
+the highest-ranked near match has been adjudicated, over a lexical ranking of a name and a
+purpose line. A label is a word with a definition — the same shape with one field fewer. Change 4
+points both label proposal and `define_term` at that one ranking, which gives the glossary the
+guard it was described as having and gives labels theirs at no extra cost. Building a second
+near-match mechanism instead would be the duplication the catalogue exists to catch, in the change
+that inherits the catalogue.
+
+**Also added in change 4: a label usage report.** Near-duplication is not the only way a label set
+goes bad. A label on one row and a label on all of them are both useless for filtering, and both
+are invisible unless something counts them. The report counts and shows; no threshold decides what
+a bad label is, because a threshold is a judgment written as arithmetic so review cannot see it.
 
 **Rejected: labels as a free-text field.** A free-text grouping key is what "milestone" was in
 v2, and it silently yields nothing on a typo.
 
-**Open:** whether the tool proposing labels under glossary rules is the right level of control.
+**Settled 2026-07-29, by the owner:** the tool proposes labels under glossary rules, the owner
+adds and assigns freely and overturns anything. The control level stands as written; what was
+wrong was the guard beneath it, not the level.
 
 ---
 
