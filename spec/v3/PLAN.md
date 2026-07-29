@@ -144,9 +144,13 @@ calibration killed the proposed test and left a candidate); the starter label li
 eleven stages fold to fewer; and how stage 10 promotes a real hole out of a list of sixty
 decisions, which the calibration added.
 
-The owner's, at the build-phase discussion: whether tool-proposed labels under glossary rules is
-the right level of control, and whether `component` should be un-retired, which is currently my
-call.
+**Settled by the owner, 2026-07-29:** tool-proposed labels under glossary rules **is** the right
+level of control — the tool proposes, he adds and assigns freely and overturns anything. Specifying
+it against the code then found the guard underneath it was imaginary; see D12 and change 4.
+
+Still the owner's, at the build-phase discussion: whether `component` should be un-retired, which
+is currently my call. Change 3 is evidence for keeping it — it gives the word a job nothing else
+can do, as the owner of an object entry.
 
 Item 7 carries a standing caution from D17: it rebuilds brief derivation on machinery that has
 never been driven, so it should be driven end to end early rather than at the end.

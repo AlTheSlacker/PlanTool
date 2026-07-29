@@ -135,7 +135,28 @@ thing tasks are grouped *by* in the design rather than in the build.
 derived exactly one task per component, making them one entity with two spellings. Under the
 new sizing a component holds many tasks, so they are two different things and need two words.
 
-**Open — the owner has not ruled on this one.** It is my call, flagged for overturning.
+**Open — the owner has not ruled on this one.** It is my call, flagged for overturning. Change 3
+is evidence for keeping it: it gives `component` a job nothing else can do — an object's owner.
+
+### Object
+A class the plan intends to exist. It is a **catalogue entry** whose owner is a component, and it
+is the **container** the method entries belonging to it name.
+
+**This word was load-bearing before it was defined, which is how it got missed.** Change 3 made
+`object` half of the catalogue's `kind` column and rested a whole argument on it — v2's engine
+holds 204 objects, they collide 11 times where the 431 functions collide never, and the objects
+are therefore the half that catches anything. A word carrying a schema value and a measurement,
+with no entry here, is the exact failure this document exists to prevent. Added 2026-07-29.
+
+**Object and component are two words, and the test is whether each has a job the other cannot
+do.** A component carries contracts and exists from stage 6, before any catalogue; an object is a
+container that a method entry can name and a participant in name-collision refusal, from stage 8.
+Neither can stand in for the other. The counts agree: about 30 components against 204 objects.
+
+**They are often 1:1, and that is not the collapse that retired `component` in v2.** A component
+whose whole responsibility is one class gives one component and one object. So does a task and its
+externally-callable function, and nobody reads *that* as one thing with two names. The disease is
+two words with one job, not two words with one instance.
 
 ### Label
 A word attached to any row for filtering and review later — "GUI", "database", "engine".
@@ -163,12 +184,25 @@ If a filter on `engine` returns too much, the answer is a dependency query or a 
 finer label.
 
 ### Catalogue entry
-One object, method or function the plan intends to exist, with **one owning task** and a
-statement of the concept it owns.
+One object, method or function the plan intends to exist, with **one owner** and a statement of
+the concept it owns. A function's owner is a **task**; an object's owner is a **component**.
 
-Populated from the pseudocode as the detailed specification is written, so duplication is
-caught at the point it is designed rather than the point it is coded. Before a new entry is
-accepted, near matches already catalogued must each be dismissed **with a written reason**.
+Identified by name and container — never by location, because a row identified by location reads
+a file reorganisation as deletion plus addition and destroys the history the catalogue is
+accumulating.
+
+Populated from the pseudocode as the detailed specification is written, so duplication is caught
+at the point it is designed rather than the point it is coded. Before a new entry is accepted,
+**the highest-ranked near match must be adjudicated with a written reason**; the rest are shown
+and not required.
+
+**Both halves of that were different when this entry was first written, and change 3 measured its
+way out of them.** The design said every entry has one owning *task* — but a service class carries
+the entry points of twenty tasks, so no task owns it, which is what gives `component` its job. And
+it said near matches are **each** dismissed: applied to v2's 635 entries that is 2,475 written
+sentences, against 561 for the highest-ranked alone. The strict form is this project's own
+unaffordable-rule failure rebuilt one level down — a good rule whose cost means the cheapest path
+is always to skip it. Corrected 2026-07-29; the argument is in `builds/03-catalogue.md`.
 
 ### Decision context
 A separate field on a row recording **why** — the reasoning that produced the decision, what
