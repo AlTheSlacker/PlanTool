@@ -347,6 +347,14 @@ retains v8. The retained set grows by one text per schema change — the cost of
 check at all, and small: they are text, they diff, and they are never executed except by that
 check.
 
+**The retained texts live outside `engine/schema.py`, and neither this change nor change 1 said
+so.** Found by change 3's cold read, where the same omission appears a third time
+(`03-catalogue.md` §11.4). `_columns()` in `test_schema_vocabulary.py` parses the whole of
+`schema.py` for `CREATE TABLE IF NOT EXISTS`, so a retained DDL sitting there is phantom schema
+that every vocabulary check reads as real — including 2E.1's, which is this change's own new
+check counting justification columns against a fixed number. A retained v8 declaring `plan_rows`
+a second time would have it counting the same columns twice.
+
 ## 5. Packet 2B — the write path
 
 Depends on 2A. `models.py`, `rows.py`, `findings.py`, `validation.py`, `gates.py`, `surface.py`.
@@ -733,7 +741,7 @@ Depends on all of the above.
 
 | | behaviour |
 |---|---|
-| 1 | `test_schema_vocabulary.py` gains `JUSTIFICATION_ROLES`, a declared set of justification columns by exact name, each with its role. |
+| 1 | `test_schema_vocabulary.py` gains `JUSTIFICATION_ROLES`, a declared set of justification columns **keyed `table.column`**, each with its role. |
 | 2 | A column whose name is `reason`, `grounds` or `alternatives`, or which ends in `_reason`, must be a declared member. |
 | 3 | Fails if any schema column is named `rationale`, `justification`, `explanation` or `why`, exactly or as a suffix. |
 | 4 | The declared set is **nine** members: `grounds`, `alternatives`, `supersede_reason`, `retire_reason`, three `reason` columns, `findings.reason`, and `technical_claims.evidence` as the declared non-justification. |
@@ -752,6 +760,20 @@ it.** The check iterates `SHAPES` rather than restating its keys, so a declared 
 by being declared. This is the project's own standing lesson — a rule in a document is not a
 mechanism — sitting inside the file that exists to enforce vocabulary mechanically, and it has
 been decorative since it was written.
+
+**Behaviour 1's keying was left unstated in the draft, and it is not a detail — it decides whether
+the check does anything.** Found by change 3's cold read, which specified a task against it and
+discovered the task was a no-op. `TIMESTAMP_ROLES` sitting beside it is keyed by **bare column
+name**, so a builder copying the neighbour would key this one the same way — and then `reason` and
+`retire_reason` are declared **once, globally**, and every future table gets both for free without
+anyone declaring anything. Change 3 adds `catalogue.retire_reason` and
+`catalogue_comparisons.reason` and would have found them already covered.
+
+**And bare-column keying is wrong on its own terms, which is why this is the correction rather
+than a choice.** The register's entry *is* the role, and the role differs per table:
+`behaviour_amendments.reason` names amending, `scope_attachments.reason` names attaching. One key
+carrying three roles cannot record any of them. Keyed `table.column`, behaviour 4's nine enumerate
+exactly.
 
 **Behaviour 4 states the number because a fixture that asserts a count nobody wrote down cements
 whichever number the builder guessed.** `technical_claims.evidence` is a declared member with the
