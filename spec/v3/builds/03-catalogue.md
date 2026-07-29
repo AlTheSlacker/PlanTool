@@ -1,9 +1,9 @@
 # Change 3 — the catalogue
 
-**Specification, first draft. All five packets have been cold-read; the corrections are NOT yet
-applied.** §11 holds what the four readers found and the worklist that follows from it. **Read §11
-before §3–§8** — several numbers and at least four design decisions below are known wrong, and §11
-says which. Third of the ten changes in `PLAN.md` §4. It
+**Specification, complete. All five packets were cold-read and §11's corrections are applied
+below.** §11 stays as the record of what the four readers found — the numbers they re-measured, the
+probes that settled the technical claims, and the two findings they got wrong — because that is
+evidence and it exists nowhere else. Third of the ten changes in `PLAN.md` §4. It
 is early because two later changes depend on it: brief composition serves the catalogue entries
 a task may call, and the cold read cannot tell "this decision is unanswered" from "this decision
 is answered somewhere I cannot see" without being told what the task may call.
@@ -66,7 +66,23 @@ wrong or silent.
 | 4 | The death commit is the only field deciding liveness | `retired_at` decides it; the commit is evidence | 3.4 |
 | 5 | Near matches are **each** dismissed with a written reason | The highest-ranked one is; the rest are shown | 3.5 |
 | 6 | Four relationships | Five — the asymmetry argument demands the fifth | 3.6 |
-| 7 | 464 entries: 255 public, 209 private | **431**: 255 public, 176 private | 3.2 |
+| 7 | 464 entries: 255 public, 209 private | **635**: 204 objects and 431 functions — 255 public, 176 private | 3.2 |
+
+**Every count below was taken the same way, and the method is stated in full because a denominator
+produced by an unnamed method is not checkable.** An AST parse of **every `.py` file under
+`engine/`, recursively — 30 modules.** The recursion matters: `engine/*.py` matches 29 and misses
+`engine/methodology/__init__.py`. A class is an object entry, a method is a function entry whose
+container is that class, and a module-level `def` is a function entry with no container.
+
+**Two exclusions, and both are needed to reproduce the numbers.** Dunder methods go, under the
+trivial-member rule. **And a function defined inside another function does not count** — five of
+them exist, they have no identity `(name, container)` can address, and no other task can call one.
+Counting them gives 640 where this document says 635.
+
+**That second exclusion was unstated in the first attempt at this paragraph and the counts could
+not be reproduced from it** — 30 modules and 204 objects came out right, 255 public did not. It is
+recorded because it is this change's own subject: the method *is* the denominator, and a method
+that is 95% written produces a number that looks checkable and is not.
 
 ## 3. The design questions, answered
 
@@ -82,9 +98,10 @@ grouping, and (from change 5) the count of pseudocode calls with no entry. `cont
 `visibility` and `retired_at` all have to be columns something can query.
 
 **And the identity does not fit.** `plan_rows` enforces one live row per `(table_name, name)`.
-A catalogue identity is `(name, container)`: `_hydrate` is a legitimate method name on several
-services, and under `plan_rows`' index the second one would be refused as a duplicate. The index
-that makes naming a mechanism for plan rows is the wrong index for this table.
+A catalogue identity is `(name, container)`: `_hydrate` is a legitimate method name on **five
+service classes in this engine**, and under `plan_rows`' index the second one would be refused as
+a duplicate. The index that makes naming a mechanism for plan rows is the wrong index for this
+table.
 
 **Rejected: a qualified name** — `RowService._hydrate` as the plan row's `name` — which would
 make `plan_rows`' existing index give exactly the right uniqueness. It fails on the report:
@@ -114,14 +131,19 @@ distinctions and the second one silently ate the first.
   exactly: public is a task's entry point, exactly one per task, and the only thing another
   task's pseudocode may call. For an object it is the same question one level up.
 
-**Objects are the half that catches things, measured.** v2's engine holds **204 classes**, and
-**six class names are defined in two modules each**: `RefNotFound`, `PlanUnreadable`,
-`InvalidTransition`, `UnknownPackage`, `AlreadyResolved` and `Package`. Five of the six are
-error types, which are the names contracts cite, and a reader who imports the wrong
-`RefNotFound` writes an `except` clause that never fires. Catalogue objects and the sixth
-registration of each is refused at the moment of typing. Leave them out and the container is
-free text, which can be misspelt, and a misspelt container silently splits the search — the
-disease this table exists to treat.
+**Objects are the half that catches things, and this is the measurement that carries the whole
+section.** v2's engine holds **204 classes**, and **six names account for seventeen definitions**:
+`PlanUnreadable` in four modules, `AlreadyResolved`, `InvalidTransition` and `RefNotFound` in three
+each, `Package` and `UnknownPackage` in two. That is **eleven registrations the identity index
+refuses** — seventeen definitions minus the six first ones — every one of them an object, and
+**zero** among the 431 functions (§3.3). Five of the six are error types, which are the names
+contracts cite, and a reader who imports the wrong `RefNotFound` writes an `except` clause that
+never fires.
+
+**So the catalogue's whole collision-catching yield is in the half `CATALOGUE.md` dropped.** Leave
+objects out and eleven refusals become zero, and the container becomes free text, which can be
+misspelt — and a misspelt container silently splits the search, which is the disease this table
+exists to treat.
 
 **An object's owner is a component, not a task, and D10 is wrong about this too.** D10 says
 "each entry has one owning task". A service class carries the entry points of twenty tasks, so
@@ -134,22 +156,30 @@ explicit that location is not identity: *"if a row is identified by location, re
 reads as deletion plus addition and destroys the history the catalogue is accumulating."* So a
 module-level function has no container. §3.3 is what makes that safe.
 
-**The size check, recounted, because the figure in `CATALOGUE.md` is wrong.** It says 464
+**The size check, recounted, because the figure in `CATALOGUE.md` is wrong twice.** It says 464
 entries — 255 public, 209 private. Parsed from v2's engine: **464 is the total including 33
-dunder methods**, which the trivial-member exclusion removes before anything is registered.
-After the exclusion the catalogue is **431 function entries — 255 public, 176 private** — plus
-204 objects. 255 public is right and is the same 255 that sizes the whole of v3's detailed
-design, so the number everything else rests on survives; it was the private half that was
-counted before the rule was applied. 431 and 176 are upper bounds: the exclusion is broader than
-dunders and also removes accessors and one-line wrappers, which are not mechanically countable
-from a parse.
+dunder methods**, which the trivial-member exclusion removes before anything is registered. After
+the exclusion there are **431 function entries — 255 public, 176 private**. And it omits objects
+entirely, so the catalogue is **635 entries: 204 objects plus 431 functions.**
+
+255 public is right and is the same 255 that sizes the whole of v3's detailed design, so the
+number everything else rests on survives; it was the private half that was counted before the rule
+was applied, and the object half that was never counted at all. **635, 431 and 176 are upper
+bounds**: the exclusion is broader than dunders and also removes accessors and one-line wrappers,
+which are not mechanically countable from a parse.
 
 ### 3.3 Identity, and the index that silently does not work
 
 Identity is `(name, container)`, at most one live entry per pair, exactly as
-`FUNCTION_CATALOGUE.md` §8 specifies. **Measured against v2's engine: 431 entries, zero
-collisions** — including the 56 module-level functions, which share the empty container and
-still collide with nothing.
+`FUNCTION_CATALOGUE.md` §8 specifies.
+
+**Measured against v2's engine, over all 635 entries: the identity collides eleven times, and
+every one of them is a module-level object.** The 431 functions collide with nothing — including
+the 56 module-level ones, which share the empty container and still never meet. The eleven are
+§3.2's six class names, and the fact that all of them sit at module level is what makes the next
+paragraph the single most consequential line of DDL in this change: **every collision this
+catalogue would catch in a codebase the size of v2's is a collision between two entries whose
+`container_id` is NULL.**
 
 **The obvious index does not enforce it, and this is the single most likely build-time defect in
 this change.** With `container_id` nullable for a module-level function, the natural
@@ -163,7 +193,8 @@ accepts two live module-level entries with the same name, because SQL compares N
 distinct. **Probed at SQLite 3.49.1 under Python 3.12.10: the second insert is accepted.** The
 index would look correct, run green, and permit precisely the collision it was written to catch
 — the failure this project has recorded twice already, where a check ran green while measuring
-something narrower than its name.
+something narrower than its name. **And per the measurement above, that is not a corner: it is
+all eleven of them.** The naive index catches nothing this catalogue exists to catch.
 
 **The fix, probed in the same run:** index the expression, not the column.
 
@@ -210,17 +241,17 @@ catalogued are each dismissed with a written reason. A rule that merely says 'ch
 duplicates' is an intention."* The mechanism is right. **Applied to every near match, its cost
 is unaffordable, and this is measured rather than feared.**
 
-Simulating registration of v2's 431 entries in order, each against the catalogue as it stood
+Simulating registration of v2's 635 entries in order, each against the catalogue as it stood
 before it, with a ranked search returning a page of five:
 
 | | |
 |---|---|
-| mean candidates shown per registration | **3.3** |
-| registrations shown nothing at all | 91 of 431 (21%) |
-| registrations shown a full page | 235 of 431 (54%) |
-| **written dismissals the plan would owe** | **1,415** |
+| mean candidates shown per registration | **3.90** |
+| registrations shown nothing at all | 74 of 635 (12%) |
+| registrations shown a full page | 441 of 635 (69%) |
+| **written dismissals the plan would owe** | **2,475** |
 
-**1,415 written sentences is not a rule anyone will run, and this project already knows what
+**2,475 written sentences is not a rule anyone will run, and this project already knows what
 happens to a rule like that.** `BUILD_SURFACE.md` §1 diagnoses v2's brief composition in exactly
 these terms — *"every candidate row to be included or omitted with a written reason before a
 unit can be handed over. It is a good rule with an unbudgeted cost, and it is why the execution
@@ -229,9 +260,11 @@ candidate rebuilds that rule one level down, in the change whose own design docu
 it.
 
 **Settled: the registration refuses until the highest-ranked candidate has been adjudicated. The
-rest are shown and not required.** That is **~340 adjudications** across the whole plan — one
-per registration where the search returns anything at all, which is 79% of them — against 1,415
-for the strict form and none for the intention.
+rest are shown and not required.** That is **561 adjudications** across the whole plan — one per
+registration where the search returns anything at all, which is 88% of them — against 2,475 for
+the strict form and none for the intention. It is a quarter of the cost and it is still the
+largest single obligation this change creates, which is why §3.6's shape matters: 561 answers are
+worth having only if answering carelessly is harder than answering honestly.
 
 Three things make this the right cut rather than a compromise:
 
@@ -271,6 +304,15 @@ one direction of containment, and the case they omit — the new function contai
 | `partially_overlaps` | extract the shared middle as a third function | yes |
 | `unrelated` | record the negative | yes |
 
+**The middle column is an instruction to the planner and nothing in the engine performs it.** That
+is stated because it would otherwise read as a promise: `contained_by` does not fold the old entry
+in, and `partially_overlaps` does not extract anything. Both write the entry and record the
+judgment, and the follow-through is the planner's next call — a retirement, or two more
+registrations. Automating either would be the tool deciding that a function it has never seen
+should be restructured — the tool computes and shows, the planner decides, which is the same line
+§3.7 and §3.8 draw for the search and the report. The record is what makes the follow-through
+checkable later; it is not a work queue, and this change adds no gap that counts one.
+
 **The two refusing verdicts are what make the adjudication load-bearing.** The cheap way past a
 required field is to write whatever gets you through the door, and here the two answers a
 planner would reach for if the match is real are exactly the two that stop the write. The
@@ -302,6 +344,20 @@ only finds what someone thought to describe in those words, so two functions doi
 in different vocabulary never match, and the glossary is what constrains the vocabulary the
 purpose lines are written in. Without it the search is a lottery.
 
+**So the glossary is wired, not merely invoked — the draft asserted this dependency and connected
+it to nothing.** `TermService` is a constructor collaborator of `CatalogueService`, and every
+registration runs the purpose line past `terms.violations()` and **warns without rejecting**,
+returned alongside the entry. That is `RowService._vocabulary_note` applied to its second site,
+and its reason transfers whole: *"naming happens at the point of least attention, and the moment
+of typing is the only moment at which saying so changes anything."* A purpose line written in
+retired vocabulary is a search that will never match, and a warning three days later arrives after
+the line has been indexed against everything.
+
+**The collaborator is not optional and the specification says so out loud**, because convention 11
+makes an unpassed collaborator fail *silently* — its guard skipped, its effects omitted, the call
+proceeding. A catalogue whose glossary is absent is exactly the lottery the paragraph above
+describes, and it would look identical to a working one.
+
 **Rejected: FTS5, and the reason is a measurement.** `engine/schema.py` ships a `source_fts`
 virtual table and `references.py` writes to it. **Nothing reads it.** `ReferenceService.search`
 claims *"retrieval is FTS5/BM25, with a substring fallback when FTS5 is absent"* and its
@@ -315,6 +371,11 @@ something else.
 What is not task-local, and is stated: the ranking function must be one function, called by both
 the search and the registration, or the candidates a planner is shown and the candidate they are
 required to adjudicate come from two rankings that will drift.
+
+**Which is why the ranking lives in packet 3B and not with the search.** The draft put it in 3C
+and had 3B's registrations call it, which is a packet naming a call a later packet builds — the
+landing-order inversion that has now appeared in all three changes. §3.10 says what the order
+actually is.
 
 ### 3.8 The cross-container report
 
@@ -360,13 +421,23 @@ fields, and `FUNCTION_CATALOGUE.md` §11 exists specifically because of it.
 
 ### 3.10 How this change lands
 
-**One branch, one pull request, the packets as its commit order, the suite green at the end.**
-Same shape as changes 1 and 2 and for the same reason: the packets cannot be made independently
-green. 3B's registration calls the ranking function 3C specifies; 3D's registry rows name errors
-3B raises; and 3E asserts that all of it landed.
+**One branch, one pull request, the suite green at the end.** Same shape as changes 1 and 2 and
+for the same reason: the packets cannot be made independently green.
 
-**Unlike change 2, the packet letters *are* the landing order.** Nothing in this change emits
-text naming a call — see §9 — so there is no `UnreachableCall` inversion to schedule around.
+**The packet letters are not the landing order, and the draft's claim that they were is the
+correction the cold read is proudest of.** Three inversions, and the third change running in which
+this has happened:
+
+| # | lands | why it cannot land later |
+|---|---|---|
+| 1 | **3A.0** — the `JUSTIFICATION_ROLES` entries | 2E.1's check refuses `catalogue.retire_reason` and `catalogue_comparisons.reason` the moment 3A.1's DDL exists. Declared last, the suite is red from 3A to 3E and the failure reads as a mistake rather than the sequencing it is. Exactly change 1's task 1A.0. |
+| 2 | **3D.1** — the registry rows | 3B.2's `ContainerNotCatalogued` message tells the planner to catalogue the object first. That is text naming a call, and `door.scan` raises `UnreachableCall` on a payload naming a call the registry cannot resolve. |
+| 3 | **the ranking**, inside 3B | 3B's registrations call it, so it cannot be specified by 3C and built after them. It is task 3B.1 here, not 3C.1. |
+
+**So the order is 3A.0, 3A.1, 3A.2, 3D.1, 3B, 3C, 3D.2, 3E** — and the two rules behind it are
+worth stating in general, because they have now caught something in every change: *a packet that
+emits text naming a call lands after the registry row for that call*, and *a guard lands no later
+than the schema it must permit.*
 
 **This change touches no methodology asset and therefore mints no revision.** Nothing populates
 the catalogue until stage 8 exists, so a script step added now would instruct a planner to fill a
@@ -375,6 +446,53 @@ table nothing else in the interview reaches. `PLAN.md` item 10 stays **revision 
 ## 4. Packet 3A — the schema
 
 Schema version 9 → 10. Nothing else in this change can start until this lands.
+
+### Task 3A.0 — the justification vocabulary, extended
+
+**This lands before the DDL it describes, and that is the whole point of it being 3A.0.**
+
+**Behaviours**
+
+| | behaviour |
+|---|---|
+| 1 | `catalogue.retire_reason` and `catalogue_comparisons.reason` join `JUSTIFICATION_ROLES`. |
+| 2 | The declared set becomes **eleven** members. |
+| 3 | Both are role 1 — why an act was performed — and the declaration says which act. |
+| 4 | `JUSTIFICATION_ROLES` is keyed `table.column`, and 2E.1's check looks up the qualified name. |
+
+**This task exists because change 2 built a check that will refuse this change's schema.** 2E.1
+behaviour 2: a column named `reason`, `grounds` or `alternatives`, or ending in `_reason`, must be
+a declared member. `catalogue.retire_reason` and `catalogue_comparisons.reason` are both, so
+declared anywhere later than here the suite fails on 3A.1 and the failure looks like a mistake
+rather than the sequencing it is — the same shape as change 1's task 1A.0.
+
+**Behaviour 4 is a hole the cold read found in change 2, not in this change, and the count above
+depends on it.** `TIMESTAMP_ROLES` sitting beside it is keyed by bare column name, and change 2
+never said which `JUSTIFICATION_ROLES` was. Under bare-column keying `reason` and `retire_reason`
+are already declared, **this change adds nothing, behaviour 2 is false and behaviour 1 is a no-op**
+— a task specified against a check that would never have fired. Keyed `table.column`, change 2's
+nine enumerate exactly and eleven is right.
+
+**And bare-column keying is wrong on its own terms, which is why this is a correction and not a
+choice.** The role differs per table: `behaviour_amendments.reason` names amending,
+`scope_attachments.reason` names attaching, and `catalogue_comparisons.reason` names judging one
+candidate against one proposal. A register whose entry is the *role* cannot be keyed by a name
+that carries three roles. **Change 2's specification owes this same sentence** — the register it
+builds is under-specified there, not here.
+
+**Behaviour 3 applies change 2's own test rather than assuming the answer.** *A `reason` is
+attached to an act and names a transition; `grounds` are attached to content and name no
+transition.* `retire_reason` names retiring. `catalogue_comparisons.reason` names the comparison —
+the act of judging — which is why the column is `reason` and not `grounds`, even though it reads
+like an argument. The comparison row **is** the act; it has no content of its own to have grounds
+for.
+
+**No new `_at` role and no new suffix.** `retired_at`, `created_at` and `updated_at` are all
+declared. Probed against the DDL below: **the parser sees all 20 new columns across both tables,
+the only `_at` names are declared roles, `component_ref` is TEXT and all five `_id` columns are
+INTEGER, and the two justification columns are exactly `catalogue.retire_reason` and
+`catalogue_comparisons.reason`** — no third one hiding. The commit fields that would have needed a
+`_commit` shape are not in this change (§3.9), so `SHAPES` is untouched.
 
 ### Task 3A.1 — the DDL text
 
@@ -389,8 +507,9 @@ Schema version 9 → 10. Nothing else in this change can start until this lands.
 | 2 | Held in one named block appended to `DDL`, so a fresh store and a migrated one are created from the same text. |
 | 3 | Live-name uniqueness is enforced on `(name, COALESCE(container_id, 0))`. |
 | 4 | At most one live public function entry per task, as a partial unique index. |
-| 5 | Exactly one of `task_id` and `component_ref` is set, as a `CHECK`. |
-| 6 | The version-9 DDL is retained as the fixture the parity check migrates from. |
+| 5 | Exactly one of `task_id` and `component_ref` is set, as a `CHECK` — and which one is set is fixed by `kind`. |
+| 6 | `kind`, `visibility` and `relationship` are constrained to their value sets, as `CHECK`s. |
+| 7 | The version-9 DDL is retained as the fixture the parity check migrates from, **outside `engine/schema.py`**. |
 
 **Behaviour 2 is the pattern `TERMS_DDL` established and its reason is quoted rather than
 restated**: *"Two copies of a `CREATE TABLE` is a schema that drifts between the stores that
@@ -406,13 +525,47 @@ something a service remembers to check — the same move `idx_obligation_live_ow
 behaviour ownership, and the same reason. The "at least one" half is a gap and belongs to change
 5, where tasks and pseudocode arrive together.
 
-**Behaviour 5 is a `CHECK` and not a service guard**, because it is well-formedness and not
-judgment: an entry with two owners or none is meaningless, in the same way a row with no
-provenance is. `plan.guard` is the schema's precedent for a `CHECK` used this way.
+**Behaviours 5 and 6 are `CHECK`s, and the argument that got them there is not the one the draft
+made.** The draft said "well-formedness, not judgment", cited `plan.guard`, and stopped. That
+argument does not survive contact with the schema: **`subtasks.state` enumerates its values in a
+comment with no `CHECK`, and that is this schema's actual habit** — so "an enumeration should be
+constrained" is not a rule anyone here follows, and `plan.guard` is a single-column constant test
+that carries no cross-column exclusive-or. The precedent is withdrawn.
 
-**Behaviour 6 continues the pattern change 2 made a pattern.** The retained set grows by one text
-per schema change; they are text, they diff, and they are never executed except by the parity
-check.
+**The real argument is narrower and it is decisive: a value that appears in an index predicate must
+be constrained, because a typo there does not fail — it removes the row from the invariant.**
+`idx_catalogue_task_entry` is predicated on `kind = 'function' AND visibility = 'public'`. Write
+`'Public'` and the row is simply not in the index, the task quietly acquires a second entry point,
+and D6 is broken with nothing red. Same for `kind`. This is `COALESCE` again one index later: an
+index that looks correct, runs green, and does not cover the rows it was written for.
+
+**Which is also why behaviour 5 constrains *which* owner, not just that there is one.** The
+draft's `CHECK ((task_id IS NULL) != (component_ref IS NULL))` lets a `kind='function'` row carry
+a `component_ref` instead of a `task_id`, pass the check, and escape `idx_catalogue_task_entry`
+entirely — the same NULL escape, through the same door, a third time. `kind` decides the owner
+column and the schema says so.
+
+**`relationship` gets one for a different reason**: it is not in an index predicate, but it selects
+between the branch that writes the entry and the branch that refuses it (§3.6). A misspelt
+relationship takes the permissive branch and writes the entry the planner had just said not to
+write — a value whose typo silently inverts the change's central refusal.
+
+**Behaviour 4 makes "exactly one public entry per task" a database invariant** rather than
+something a service remembers to check — the same move `idx_obligation_live_owner` makes for
+behaviour ownership, and the same reason. The "at least one" half is a gap and belongs to change
+5, where tasks and pseudocode arrive together. **Probed: the index refuses a second live public
+function entry for one task, and admits a private entry for the same task and any number of object
+entries.** The `CHECK`s were probed in both directions too — two owners refused, no owner refused,
+one owner accepted.
+
+**Behaviour 7 continues the pattern change 2 made a pattern, with one sentence change 2 owes as
+much as this change does.** The retained set grows by one text per schema change; they are text,
+they diff, and they are never executed except by the parity check. **They must live outside
+`engine/schema.py`.** `_columns()` in `test_schema_vocabulary.py` reads that whole file and
+regexes every `CREATE TABLE IF NOT EXISTS` out of it, so a retained v9 DDL sitting there is phantom
+schema for all five vocabulary tests — declaring columns that no longer exist and, in change 1's
+case, resurrecting the very names the change renamed. §11.4 has the full argument; it is a
+cross-change hole and changes 1 and 2 owe the same sentence.
 
 **The DDL**
 
@@ -423,8 +576,8 @@ CREATE TABLE IF NOT EXISTS catalogue (
     container_id  INTEGER REFERENCES catalogue (id),  -- the object holding it; null at
                                                       -- module level. Not a path: location
                                                       -- is never identity.
-    kind          TEXT    NOT NULL,      -- object | function
-    visibility    TEXT    NOT NULL,      -- public | private
+    kind          TEXT    NOT NULL,
+    visibility    TEXT    NOT NULL,
     purpose       TEXT    NOT NULL,      -- verb, object, qualifier; the whole of the search
     task_id       INTEGER REFERENCES tasks (id),      -- a function's owner
     component_ref TEXT,                                -- an object's owner
@@ -432,7 +585,15 @@ CREATE TABLE IF NOT EXISTS catalogue (
     retire_reason TEXT,
     created_at    TEXT    NOT NULL,
     updated_at    TEXT    NOT NULL,
-    CHECK ((task_id IS NULL) != (component_ref IS NULL))
+    CHECK (kind IN ('object', 'function')),
+    CHECK (visibility IN ('public', 'private')),
+    -- Both value sets are constrained because both appear in idx_catalogue_task_entry's
+    -- predicate below, where a typo does not fail: it drops the row out of the invariant.
+    CHECK ((task_id IS NULL) != (component_ref IS NULL)),
+    CHECK (CASE kind WHEN 'function' THEN task_id IS NOT NULL
+                     ELSE component_ref IS NOT NULL END)
+    -- ...and a function owned by a component would pass the line above while escaping
+    -- idx_catalogue_task_entry entirely. Same NULL escape, one index later.
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_catalogue_live_name
@@ -442,6 +603,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_catalogue_task_entry
     ON catalogue (task_id)
     WHERE kind = 'function' AND visibility = 'public' AND retired_at IS NULL;
 
+-- Read by 3B.4's ContainerNotEmpty check and by every container name -> id resolution.
 CREATE INDEX IF NOT EXISTS idx_catalogue_container
     ON catalogue (container_id, retired_at);
 
@@ -453,12 +615,26 @@ CREATE TABLE IF NOT EXISTS catalogue_comparisons (
     entry_id     INTEGER REFERENCES catalogue (id),  -- the entry written, if one was
     relationship TEXT    NOT NULL,
     reason       TEXT    NOT NULL,
-    created_at   TEXT    NOT NULL
+    created_at   TEXT    NOT NULL,
+    CHECK (relationship IN ('same', 'contains', 'contained_by',
+                            'partially_overlaps', 'unrelated'))
+    -- Constrained because a misspelling takes the branch that writes the entry: the
+    -- typo does not fail, it inverts the refusal (§3.6).
 );
-
-CREATE INDEX IF NOT EXISTS idx_comparisons_matched
-    ON catalogue_comparisons (matched_id);
 ```
+
+**Five statements — two tables and three indexes — and the count is measured rather than
+reasoned.** `schema.statements` splits on semicolons, and **the split is safe only because
+comments are stripped first**: comment lines in this block contain semicolons. The 3E reader was
+right to ask. Probed on the drafted DDL, which then carried a sixth statement:
+`schema.statements(CATALOGUE_DDL)` yields exactly the statements written and nothing fragmented.
+3E.1 asserts the number so that a builder who drops one gets a failure rather than a smaller
+schema.
+
+**`idx_comparisons_matched` was in the draft and is dropped.** Nothing in this change reads a
+comparison back — 3D.1 says so explicitly — so the index has no query to serve. It belongs to the
+change that surfaces prior verdicts on a search result, which is the same change-5 item §9 lists.
+Shipping it now would be an unread index beside the unread fields §3.9 refuses to ship.
 
 **`proposed` is a name and not a ref, and that is deliberate.** A comparison whose verdict is
 `same` or `contains` produces no entry, so there is nothing to point at; the record has to carry
@@ -470,7 +646,7 @@ audit record, like `finding_reallocations` and `behaviour_amendments`; the vocab
 note says `updated_at` is *"absent on immutable tables by design"*.
 
 **`catalogue` has one because an entry is mutable in two ways**: its purpose can be restated
-(3B.4) and it can be retired.
+(3B.5) and it can be retired (3B.4).
 
 ### Task 3A.2 — `Storage._migration_steps`, the 9→10 branch
 
@@ -480,13 +656,19 @@ note says `updated_at` is *"absent on immutable tables by design"*.
 
 | | behaviour |
 |---|---|
-| 1 | Creates both tables and all four indexes, from `schema.CATALOGUE_DDL` via `schema.statements`. |
+| 1 | Creates both tables and all three indexes, from `schema.CATALOGUE_DDL` via `schema.statements`. |
 | 2 | Backfills nothing. |
 | 3 | Adds nothing to the snapshot table set. |
 
-**Behaviour 1 reuses `statements()` rather than restating the SQL**, which is what the 3→4 step
-did for `terms` and the 5→6 step for revisions. Restating it here would be the second copy
-behaviour 2 of 3A.1 exists to prevent.
+**Behaviour 1 reuses `statements()` rather than restating the SQL**, which is what **three of the
+four existing migration branches** do — 3→4 for `terms`, 5→6 for revisions, 6→7. Restating it here
+would be the second copy behaviour 2 of 3A.1 exists to prevent.
+
+**4→5 is the fourth branch and it is the interesting one**, because it is the mixed case: it issues
+`ALTER TABLE` statements of its own alongside the block it takes from `statements()`. The rule the
+four of them share is not "always call `statements()`" but **a whole table is created from the one
+text; a column added to an existing table is an `ALTER` the DDL also carries.** This change is
+purely the first kind, which is why behaviour 1 is unqualified.
 
 **Behaviour 2 invents nothing, and the test it passes is the one the glossary passed.** A plan
 written before the catalogue existed has no catalogue, and empty is the truthful answer rather
@@ -508,89 +690,262 @@ would be a change about recovery.
 
 ## 5. Packet 3B — the service
 
-Depends on 3A. A new module, `engine/catalogue.py`, and `models.py`.
+Depends on 3A and on 3D.1 (§3.10). A new module, `engine/catalogue.py`, and `models.py`.
 
-### Task 3B.1 — `catalogue_object`
+**The service is constructed with `Storage` and `TermService`, and neither is optional.** The
+first is convention 3; the second is §3.7, and it is written here rather than assumed because
+convention 11 makes an unpassed collaborator skip its guard and proceed.
+
+**Two tasks were added at the front of this packet and the rest renumbered**, because the draft
+consumed five models nothing defined and needed four distinct lookups against no read path. Both
+are the same defect: a task specified in terms of machinery that no task builds.
+
+### Task 3B.0 — the models
+
+**Signature.** Five frozen dataclasses in `models.py`.
+
+**Behaviours**
+
+| | behaviour |
+|---|---|
+| 1 | `CatalogueEntry` — `id`, `name`, `container` (a name, or `None`), `kind`, `visibility`, `purpose`, `owner` (a `task_id` or a `component_ref`), `retired_at`, `retire_reason`. |
+| 2 | `Candidate` — a `CatalogueEntry` plus the score's two components and the words that matched. |
+| 3 | `Comparison` — `matched` (a name and container, not an id), `relationship`, `reason`. |
+| 4 | `Cluster` — the shared words, and every member entry with its container. |
+| 5 | `CatalogueResult` — `entry: CatalogueEntry \| None`, `comparisons`, `use_instead: CatalogueEntry \| None`, `vocabulary_note: str \| None`. |
+
+**This task exists because of a recorded v2 defect, quoted in the conventions register's own §2:**
+the plan named `WriteBatch`, `RowSelector`, `TraversalSpec` and `GraphScope` and defined none of
+them, *"so two implementers would have built two incompatible interfaces."* The draft named four
+and defined none. The register is explicit that a return type's fields are **not** a convention —
+they differ per task — so they are a hole in every task that leaves them out, and they are closed
+here.
+
+**Behaviour 3 is the load-bearing one and it settles three other tasks at once.** Whether a
+comparison names its candidate **by name and container or by id** decides 3D.1's payload parser,
+the shape a search result must hand back, and how 3B matches a supplied comparison against
+`candidates[0]`. **By name and container**, for the reason 3D.2 behaviour 1 gives: a catalogue
+entry is addressed by the name you were about to type, never by an ordinal, and a planner
+answering an adjudication has the name in front of them because the refusal just printed it.
+
+**Behaviour 1 carries the container as a *name*, not an id**, for the same reason, and it is what
+makes a `CatalogueEntry` passable straight back into `catalogue_function`.
+
+**Behaviour 2 carries the words that matched** because the whole ranking is lexical and a planner
+asked to adjudicate a candidate needs to see *why* it ranked — a candidate that matched on `get`
+alone is dismissed at a glance, and one that matched on `resolve supersession chain` is not.
+
+### Task 3B.1 — the read path and the ranking
+
+**Signature.** Four private methods on `CatalogueService`: `_find(name: str, container: str | None,
+include_retired: bool = False) -> CatalogueEntry | None`, `_resolve_container(name: str) -> int |
+None`, `_live_within(container_id: int) -> tuple[CatalogueEntry, ...]`, and `_rank(name: str,
+purpose: str, limit: int = 5) -> tuple[Candidate, ...]`.
+
+**Behaviours**
+
+| | behaviour |
+|---|---|
+| 1 | `_find` returns the one live entry with this name and container, or `None`; `container` is a name and `None` means module level. |
+| 2 | `_resolve_container` returns the id of the live object entry with this name, or `None` when there is none. |
+| 3 | `_live_within` returns the live entries whose container is this id. |
+| 4 | `_rank` ranks live entries by shared words in the name and shared words in the purpose, both. |
+| 5 | Name matches outrank purpose matches at equal counts. |
+| 6 | An entry sharing nothing is not a candidate at any rank. |
+| 7 | Ties break on the lower `id` first, so the ranking is stable across calls. |
+| 8 | Returns at most `limit`. |
+| 9 | A retired entry is never a candidate; `_find(include_retired=True)` is how the name check sees one. |
+
+**Behaviours 1 to 3 are the read path the draft never specified**, and they are not three
+incidental helpers: the registrations need a lookup **four** times — the name check, the container
+name-to-id resolution, the `(name, container)` finder that 3B.4 and 3B.5 both start from, and
+3B.4's "is this object still holding live entries". Plus the entry that every one of these calls
+returns has to be read back from somewhere. Left unspecified, five tasks each invent their own
+query, which is this change's own subject matter happening inside this change.
+
+**`_resolve_container` and `_live_within` are what `idx_catalogue_container` exists for**, which is
+why that index survives §4's cull and `idx_comparisons_matched` does not.
+
+**Behaviour 4 is the both-directions search stated as one function**, which is the design's own
+point: one query answers two questions, so it costs nothing to look for both.
+
+**Behaviour 5 encodes which defect is more expensive to miss.** A name collision is the one that
+bit this build three times in a sitting; a description collision is the one the catalogue is
+primarily aimed at. Ranking name matches first is a preference and is stated as one, so a later
+change can argue with it.
+
+**Behaviour 7 reads `id` and not `created_at`, and the draft's "older entry first" was not a
+stability guarantee at all.** Two entries written in the same clock tick share a `created_at` —
+`clock.now()` is microsecond precision but a batch write can land inside one — and their order is
+then whatever SQLite returns. `id` is the only total order this schema guarantees. **The
+registration refuses until the *highest-ranked* candidate is adjudicated**, so an unstable ranking
+makes the required answer change between the call that showed the candidates and the call that
+answers them: the planner adjudicates what they were shown and is refused for not adjudicating
+something else. This is a one-word correction that decides whether the change's central refusal is
+usable.
+
+**Behaviour 9 is the implementation site the draft's "a retired entry is still consulted for the
+name check" never had.** It was stated as a property in 3B.4 and nothing anywhere could perform
+it.
+
+**The draft's "the entry being registered is never its own candidate" is deleted.** At registration
+the entry does not exist yet, so there is nothing to exclude; `search_catalogue` has no entry being
+registered at all. The only exclusion it could have implemented is **name equality — which would
+hide the exact name collision the search exists to find.** Dead text that would have been
+implemented as the opposite of the requirement.
+
+**The limit is a page size and not a threshold.** It bounds what is displayed, not what counts as
+similar; `references.search` already carries `limit: int = 10` for the same job. 5 is chosen
+against the measurement in §3.5, where a page of five shows a mean of 3.90.
+
+**How stop words are handled is task-local and this specification does not make it** (§3.7).
+
+### Task 3B.2 — `catalogue_object`
 
 **Signature.** `catalogue_object(self, name: str, purpose: str, visibility: str,
-component_ref: RowRef | str, comparisons: tuple[Comparison, ...] = (),
-idempotency_key: str = "") -> CatalogueResult`, on `CatalogueService`.
+component_ref: RowRef | str, idempotency_key: str,
+comparisons: tuple[Comparison, ...] = ()) -> CatalogueResult`, on `CatalogueService`.
 
 **Behaviours**
 
 | | behaviour |
 |---|---|
 | 1 | Writes one `object` entry owned by the component, and returns it. |
-| 2 | Refuses with `PurposeRequired` when `purpose` is blank. |
-| 3 | Refuses with `RefNotFound` when `component_ref` is not a live `components` row, naming it. |
-| 4 | Refuses with `NearMatchesUnadjudicated` when the search returns candidates and the highest-ranked one has no comparison, naming every candidate shown. |
-| 5 | Refuses with `NameTaken` when a live entry already holds this name at module level, naming it. |
-| 6 | Returns without writing an entry when a comparison on the highest-ranked candidate is `same` or `contains`, recording the comparison and naming the entry to use. |
-| 7 | Every supplied comparison is written, whether or not an entry was. |
-| 8 | Replaying the idempotency key returns the first result. |
-| 9 | One transaction, one op batch. |
+| 2 | Refuses with `PurposeRequired` when `purpose` is blank, and `ReasonRequired` when any comparison's `reason` is blank. |
+| 3 | Refuses with `RefNotFound` unless `component_ref` addresses a row that is **both** in `components` and live, naming it and what it actually is. |
+| 4 | Refuses with `NameTaken` when a live entry already holds this name at module level, naming it. |
+| 5 | Refuses with `NearMatchesUnadjudicated` when the search returns candidates and the highest-ranked one has no comparison, naming every candidate shown. |
+| 6 | Refuses with `UnresolvableRef` when `purpose` or a comparison `reason` cites a `table:ordinal` that resolves to nothing, naming the token. |
+| 7 | Returns without writing an entry when the comparison on the highest-ranked candidate is `same` or `contains`, recording the comparison and naming the entry to use. |
+| 8 | Every supplied comparison is written, whether or not an entry was. |
+| 9 | The purpose line is checked against the glossary, and retired vocabulary is returned as a warning without refusing. |
+| 10 | One transaction, one op batch. |
+| 11 | A replay that would have written an entry is refused with `NameTaken` naming the row the first call wrote; a replay of a `same`/`contains` call returns the original receipt. |
 
-**Behaviour 3 checks the component is live and this is the one guard that is not obvious.** An
-object owned by a superseded component is an entry whose owner has moved, and the entry is what
-the cross-container report groups by. The check is `RefNotFound` and not a new error because the
-codebase already has that name for exactly this.
+**The refusal order is the pseudocode's order and the two now agree.** In the draft they did not,
+and the mismatch was not cosmetic: with the name check *after* the adjudication check, an exact
+name collision would surface as `NearMatchesUnadjudicated` — because an exact match ranks first —
+so the planner would be told to adjudicate a candidate when what they needed to be told is that the
+name is taken. Cheap checks on the caller's own arguments run first; the lookups run next; the
+search runs last because it is the expensive one.
 
-**Behaviour 5 is the index in §3.3 reported as a refusal rather than as an `IntegrityError`.**
+**Behaviour 3 checks the component is live *and is a component*, and the draft checked neither
+properly.** `RowService.get` takes any ref, so `catalogue_object(component_ref="requirements:4")`
+was accepted and produced an object owned by a requirement. Both halves matter: an object owned by
+a superseded component is an entry whose owner has moved, and the report groups by owner. The
+error is `RefNotFound` and not a new name because the codebase already has that name for exactly
+this.
+
+**Behaviour 4 is the index in §3.3 reported as a refusal rather than as an `IntegrityError`.**
 The service checks before writing so the message can name what already holds the name; the index
 is what makes the check true rather than merely attempted. Both, deliberately — the same
-arrangement `submit_rows` has with `idx_rows_live_name`.
+arrangement `submit_rows` has with `idx_rows_live_name`. **And the message carries a retired
+entry when it finds one**, with its retire reason: that is 3B.1 behaviour 9's reason for existing,
+and the design's own argument — the planner may be undoing somebody's decision without knowing it.
 
-**Behaviour 6 is §3.6, and the return type carries it.** `CatalogueResult` holds
-`entry: CatalogueEntry | None`, `comparisons: tuple[Comparison, ...]`, and `use_instead:
-CatalogueEntry | None`. A caller that reads `.entry` and finds `None` has been told the thing
-already exists, with the entry in hand.
+**Behaviour 2's second half closes an `IntegrityError` on this change's central write path.** A
+comparison `reason` is `NOT NULL`, and a blank one had no refusal in front of it, so the honest
+answer "I have not written why" would have surfaced as a database error naming a column. It gets a
+named refusal like every other required justification in this engine.
+
+**Behaviour 6 is §10's proposed convention applied, and it needs its own error name.** The draft
+specified the check and named no error for it, which is the shape convention 9 exists to prevent.
+It matters more here than where change 2 met it: a comparison `reason` cannot be rewritten, so an
+unresolvable ref in one makes the row permanently unreadable through the door. **And the trap
+change 2's probe found is promoted by this behaviour** — a URL with a port reads as
+`table:ordinal`, and where change 2 left it rendering oddly, here it *refuses the write*. So the
+refusal names the token, and the planner can see it is their `localhost:8080` and not a citation.
+
+**Behaviour 7 is §3.6, and it is a deliberate override of convention 1**, written here because the
+register requires an override to be written in the task rather than upstream. Convention 1 says a
+named error is raised and never reported as a status field in a success payload; `CatalogueResult`
+with `entry=None` is exactly such a field. The override's reason is §3.6's: the planner did the
+right thing, the call did what it exists to do, and a comparison **was** committed — an exception
+path that also commits a write is a shape nothing else in this engine has. `use_instead` carries
+the entry, so nothing has to be looked up to act on it.
+
+**Behaviour 9 is §3.7's glossary dependency made real**, and it warns rather than refuses for
+`_vocabulary_note`'s reason: a retired word inside a quotation of the owner is legitimate, and a
+check that refused those would have the tool editing his words.
+
+**Behaviour 11 replaces the draft's "replaying the idempotency key returns the first result",
+which was unreachable.** Every guard above runs *before* `write_atomic`, so a replayed
+entry-writing call never reaches the receipt — it hits `NameTaken` on the row the first call wrote.
+That is the correct outcome and it is now stated as one. The case where replay does its job is
+`same`/`contains`: no entry was written, no name is taken, the call reaches `write_atomic` and the
+receipt suppresses a duplicate comparison row.
+
+**And `idempotency_key` is required, not defaulted.** The draft gave it `= ""`, which means the
+first defaulted call's receipt replays for **every** later defaulted call in that database — every
+registration after the first silently returning the first one's result. It is required here as it
+already is on 3B.4 and 3B.5, which is why the signature reorders the parameters.
 
 **Pseudocode**
 
 ```
 if not purpose.strip():
     raise PurposeRequired naming the name
+for c in comparisons:
+    if not c.reason.strip():
+        raise ReasonRequired naming c.matched
+refuse_unresolvable_refs(purpose, [c.reason for c in comparisons])   # UnresolvableRef
 component = rows.get(component_ref)                   # RefNotFound naming the ref
-if not component.is_live:
-    raise RefNotFound naming the ref and its state
-if a live entry holds (name, no container):
+if component.table != "components" or not component.is_live:
+    raise RefNotFound naming the ref and what it actually is
+existing = self._find(name, container=None, include_retired=True)   # 3B.1
+if existing and existing.is_live:
     raise NameTaken naming it
-candidates = self._rank(name, "", purpose)            # 3C.1
+candidates = self._rank(name=name, purpose=purpose)                 # 3B.1
 if candidates and no comparison names candidates[0]:
     raise NearMatchesUnadjudicated naming every candidate shown
 verdict = the comparison naming candidates[0], if any
-ops = [insert each comparison]
-if verdict is not in (SAME, CONTAINS):
-    ops = [insert the entry] + [insert each comparison, entry_id borrowed from op 0]
+note = self.terms.violations(purpose) or None
+if verdict in (SAME, CONTAINS):
+    ops = [insert each comparison, entry_id null]
+    write_atomic(ops, idempotency_key)
+    return CatalogueResult(None, comparisons, use_instead=candidates[0],
+                           vocabulary_note=note)
+ops = [insert the entry] + [insert each comparison, entry_id borrowed from op 0]
 write_atomic(ops, idempotency_key)
-return CatalogueResult(entry, comparisons, use_instead=candidates[0] if refused else None)
+return CatalogueResult(entry, comparisons, use_instead=None, vocabulary_note=note)
 ```
 
 `FromOp` is what lets the comparisons borrow the entry's assigned id inside one transaction; it
 exists for exactly this and its docstring gives the reason — a parent and its children split
 across two transactions leaves a parent with no children when a crash lands in between.
 
-### Task 3B.2 — `catalogue_function`
+### Task 3B.3 — `catalogue_function`
 
 **Signature.** `catalogue_function(self, name: str, purpose: str, visibility: str, task_id: int,
-container: str | None = None, comparisons: tuple[Comparison, ...] = (),
-idempotency_key: str = "") -> CatalogueResult`.
+idempotency_key: str, container: str | None = None,
+comparisons: tuple[Comparison, ...] = ()) -> CatalogueResult`.
 
 **Behaviours**
 
 | | behaviour |
 |---|---|
 | 1 | Writes one `function` entry owned by the task, and returns it. |
-| 2 | Everything 3B.1 refuses, refused the same way. |
+| 2 | Everything 3B.2 refuses, refused the same way and in the same order. |
 | 3 | Refuses with `ContainerNotCatalogued` when `container` names no live object entry, naming it and saying to catalogue the object first. |
 | 4 | Refuses with `TaskNotFound` when `task_id` is not a task, naming it. |
 | 5 | Refuses with `EntryPointExists` when `visibility` is `public` and the task already has a live public entry, naming it. |
 | 6 | A `container` of `None` is module level, and is not an error. |
+| 7 | `NameTaken` is checked against **this container**, not against module level. |
+
+**Behaviour 7 is a one-word correction with a real consequence.** 3B.2's behaviour reads "a live
+entry already holds this name at module level", which is right for an object and wrong here:
+inherited verbatim, `catalogue_function("_hydrate", container="RowService")` would be refused
+because a module-level `_hydrate` exists — the exact case §3.1 uses to argue the whole table's
+identity. The check is `_find(name, container)`.
 
 **Behaviour 3 is what makes the container safe to be a foreign key.** The container is supplied
-as a *name* because that is what a planner has in hand, and it is resolved to an id here; an
-unresolvable one is refused rather than created, because creating it would be the tool deciding
-that a new object exists.
+as a *name* because that is what a planner has in hand, and `_resolve_container` turns it into an
+id; an unresolvable one is refused rather than created, because creating it would be the tool
+deciding that a new object exists.
+
+**Behaviour 3's message is why this packet lands after 3D.1** (§3.10). "Catalogue the object
+first" names a call, and `door.scan` raises `UnreachableCall` on outgoing text naming a call the
+registry cannot resolve. Written before the registry row exists, the tool refuses its own refusal.
 
 **Behaviour 5 is the index of 3A.1 behaviour 4, reported as a refusal.** It is D6 stated as a
 constraint: a task is one externally-callable function, so a second one means either the task is
@@ -603,7 +958,7 @@ plan that has been finalized. That is awkward for the end-to-end drive of this c
 not a defect: the catalogue's real population happens at stage 8 and change 5 is what builds it.
 Object entries have no such constraint, because a component is a plan row and exists from stage 6.
 
-### Task 3B.3 — `retire_catalogue_entry`
+### Task 3B.4 — `retire_catalogue_entry`
 
 **Signature.** `retire_catalogue_entry(self, name: str, container: str | None, reason: str,
 idempotency_key: str) -> CatalogueEntry`.
@@ -616,20 +971,25 @@ idempotency_key: str) -> CatalogueEntry`.
 | 2 | Refuses with `RetireNeedsReason` when `reason` is blank. |
 | 3 | Refuses with `EntryNotFound` when no live entry holds this name and container. |
 | 4 | Refuses with `ContainerNotEmpty` when the entry is an object still holding live entries, naming them. |
-| 5 | A retired entry is never returned as a search candidate and is still consulted for the name check. |
+| 5 | A retired entry is never returned as a search candidate, and a later `NameTaken` or `EntryNotFound` naming this name carries it and its retire reason. |
 | 6 | Retirement is never undone; the name is free for a new entry, which is a new row. |
 
 **Behaviour 2 reuses the error name change 2 gives `retire_row`**, because it is the same
 refusal for the same reason and a second spelling of it is what this whole family of documents is
 about.
 
-**Behaviour 4 exists because the container is a foreign key.** Retiring an object whose methods
-are still live leaves entries pointing at a dead container, and the report groups by it. Naming
-the survivors is what makes the refusal actionable.
+**Behaviour 4 exists because the container is a foreign key**, and `_live_within` is the query
+that answers it. Retiring an object whose methods are still live leaves entries pointing at a dead
+container, and the report groups by it. Naming the survivors is what makes the refusal actionable.
 
-**Behaviour 5 is `FUNCTION_CATALOGUE.md` §8 unchanged**: a dead function cannot be reused and
-offering it is a confidently wrong answer, but the thing about to be written may have been
-removed on purpose, and the planner may be undoing somebody's decision without knowing it.
+**Behaviour 5 is `FUNCTION_CATALOGUE.md` §8, and the draft stated it as a property with nowhere to
+happen.** *"A retired entry is still consulted for the name check"* was true of nothing: no call
+looked, and the search excluded retired entries by definition. It is a *delivery* obligation, so
+it is written as one — the retired entry surfaces in the refusal text of the two calls that would
+have found it. The reason is the strongest sentence in the design: a dead function cannot be
+reused and offering it as a candidate is a confidently wrong answer, but **the thing about to be
+written may have been removed on purpose, and the planner may be undoing somebody's decision
+without knowing it.** Delivered nowhere, that argument protects nobody.
 
 **Behaviour 6 is the reintroduction case, and the design's ruling stands.** A function written,
 removed and written again is precisely the case that suggests something was wrong with the
@@ -637,7 +997,7 @@ original design, and nulling the retirement erases that history at the moment it
 interesting. The lineage is a query — every entry with this name and container, oldest first —
 and no edge type is added, because the edge vocabulary is deliberately closed.
 
-### Task 3B.4 — `restate_purpose`
+### Task 3B.5 — `restate_purpose`
 
 **Signature.** `restate_purpose(self, name: str, container: str | None, purpose: str,
 idempotency_key: str) -> CatalogueEntry`.
@@ -648,7 +1008,9 @@ idempotency_key: str) -> CatalogueEntry`.
 |---|---|
 | 1 | Replaces `purpose` in place and stamps `updated_at`. |
 | 2 | Refuses with `PurposeRequired` when blank, and `EntryNotFound` when there is no live entry. |
-| 3 | Recorded comparisons are untouched. |
+| 3 | Refuses with `UnresolvableRef` on the same terms as 3B.2 behaviour 6. |
+| 4 | The new purpose is checked against the glossary and warns without refusing. |
+| 5 | Recorded comparisons are untouched. |
 
 **In place, and this is a deliberate departure from every other justification-bearing field in
 the store.** Change 2 made `grounds` write-once because an argument that can be rewritten is a
@@ -657,8 +1019,8 @@ nothing cites it. Forcing a retirement and a re-registration to fix a wrong verb
 one measurement the commit fields were carried for — churn is designed-and-dead-quickly, and it
 stops meaning anything if typos produce dead entries.
 
-**Behaviour 3 is the honest cost.** A comparison recorded against the old wording is not
-re-adjudicated, so a restatement can leave a `unrelated` verdict standing against an entry it no
+**Behaviour 5 is the honest cost.** A comparison recorded against the old wording is not
+re-adjudicated, so a restatement can leave an `unrelated` verdict standing against an entry it no
 longer describes. The alternative — invalidating comparisons on restatement — makes restating
 expensive again and re-creates the problem this call solves. The comparison records what was
 judged and when; the change feed records the restatement.
@@ -667,43 +1029,10 @@ judged and when; the change feed records the restatement.
 
 Depends on 3B's module. Read-only.
 
-### Task 3C.1 — the ranking
+**The ranking is not here.** It was task 3C.1 in the draft and is now 3B.1, because 3B's
+registrations call it — §3.10's third inversion.
 
-**Signature.** `_rank(self, name: str, container: str, purpose: str, limit: int = 5)
--> tuple[Candidate, ...]`, private to `CatalogueService`.
-
-**Behaviours**
-
-| | behaviour |
-|---|---|
-| 1 | Ranks live entries by shared words in the name and shared words in the purpose, both. |
-| 2 | Name matches outrank purpose matches at equal counts. |
-| 3 | An entry sharing nothing is not a candidate at any rank. |
-| 4 | The entry being registered is never its own candidate. |
-| 5 | Ties break on the older entry first, so the ranking is stable across calls. |
-| 6 | Returns at most `limit`. |
-
-**Behaviour 1 is the both-directions search stated as one function**, which is the design's own
-point: one query answers two questions, so it costs nothing to look for both.
-
-**Behaviour 2 encodes which defect is more expensive to miss.** A name collision is the one that
-bit this build three times in a sitting; a description collision is the one the catalogue is
-primarily aimed at. Ranking name matches first is a preference and is stated as one, so a later
-change can argue with it.
-
-**Behaviour 5 is not tidiness.** The registration refuses until the *highest-ranked* candidate is
-adjudicated, so an unstable ranking makes the required answer change between the call that
-showed the candidates and the call that answers them.
-
-**This function is called by both `search_catalogue` and every registration**, per §3.7: two
-rankings would drift, and the planner would be required to adjudicate a candidate they were never
-shown.
-
-**The limit is a page size and not a threshold.** It bounds what is displayed, not what counts as
-similar; `references.search` already carries `limit: int = 10` for the same job. 5 is chosen
-against the measurement in §3.5, where a page of five shows a mean of 3.3.
-
-### Task 3C.2 — `search_catalogue`
+### Task 3C.1 — `search_catalogue`
 
 **Signature.** `search_catalogue(self, query: str, limit: int = 5) -> tuple[Candidate, ...]`.
 
@@ -711,14 +1040,27 @@ against the measurement in §3.5, where a page of five shows a mean of 3.3.
 
 | | behaviour |
 |---|---|
-| 1 | Ranks live entries against a free-text query, using 3C.1. |
+| 1 | Ranks live entries against a free-text query by calling `_rank(name=query, purpose=query)`. |
 | 2 | Each candidate carries name, container name, purpose, kind, visibility and owner. |
 | 3 | Returns an empty result for a query that matches nothing, and that is not an error. |
+
+**Behaviour 1 is stated as the exact call because the draft's `_rank` signature could not serve
+it.** `_rank` took three arguments — name, container, purpose — against one free-text query, with
+no rule for what the search should pass. The `container` parameter had no semantics and every call
+site passed `""`, so it is dropped (3B.1), and the query goes into **both** remaining arguments.
+
+**Passing the query twice is right, and it is worth saying why, because it reads like
+double-counting that would collapse behaviour 5 of 3B.1.** It does not. An entry scores on words
+appearing in **its own** name and **its own** purpose; the probe is only the source of the words.
+So an entry that matches the query in its name *and* in its purpose is a genuinely stronger match
+than one matching in either alone, and the name-outranks-purpose preference is a property of the
+entry side, untouched. A cold reader drew the opposite conclusion from the same fact, which is why
+the argument is written down rather than left to be re-derived.
 
 **Behaviour 2 carries the container's *name* and not its id**, because a caller reading a result
 needs to be able to pass it back to `catalogue_function`, which takes a container name.
 
-### Task 3C.3 — `catalogue_clusters`
+### Task 3C.2 — `catalogue_clusters`
 
 **Signature.** `catalogue_clusters(self, limit: int = 20) -> tuple[Cluster, ...]`.
 
@@ -726,10 +1068,23 @@ needs to be able to pass it back to `catalogue_function`, which takes a containe
 
 | | behaviour |
 |---|---|
-| 1 | Groups live entries whose purposes share vocabulary and whose containers differ. |
+| 1 | Groups live entries by shared purpose vocabulary. Containers are **reported**, never filtered on. |
 | 2 | Orders by how much they share; no cut-off, no notification, no gap. |
 | 3 | Each cluster names the shared words and every entry in it, with its container. |
-| 4 | Module-level entries participate, and share the empty container. |
+| 4 | Module-level entries participate on the same terms as any other. |
+
+**Behaviour 1 is a correction, and the two halves of the draft cancelled each other.** It said
+group entries *"whose containers differ"* and, four lines later, that module-level entries *"share
+the empty container"* — so no two module-level entries could ever cluster. Against §3.2's
+measurement that is not a corner case: **56 module-level functions and every one of the 204
+objects sit at module level**, and the report would have been blind to all of them. The container
+filter goes; the report groups on the thing it is named for, shows the containers, and lets the
+reader see that two entries share a container as easily as that they do not.
+
+**Two entries in the same container that share vocabulary are also worth seeing**, which is the
+positive case for the same change: `RowService.get_row` and `RowService.fetch_row` is duplication
+of exactly the kind this table exists to catch, and the draft filtered it out by construction.
+"Cross-container" names where the *design* expected to find things, not a predicate.
 
 **Behaviour 2 is `CATALOGUE.md` §5 and the argument is the owner's standing ruling.** A threshold
 is a judgment written as arithmetic so that review cannot see it; "three or more containers share
@@ -746,7 +1101,7 @@ schedules that read. §3.8 and §9 say who owes it.
 
 ## 7. Packet 3D — the surface and what a reader sees
 
-Depends on 3B and 3C. `surface.py`, `render.py`.
+`surface.py`, `render.py`. **3D.1 lands before packet 3B and 3D.2 after packet 3C** — §3.10.
 
 ### Task 3D.1 — the registry
 
@@ -754,10 +1109,11 @@ Depends on 3B and 3C. `surface.py`, `render.py`.
 
 | | behaviour |
 |---|---|
-| 1 | Six tools are added, all `DEVIATION`, each appearing in `ADDED` with its reason. |
-| 2 | A `comparisons` payload parser accepts a list of `{matched, relationship, reason}`, rejecting an unknown relationship by name. |
-| 3 | The registrations and the two mutating calls carry `writes=True`; the three reads do not. |
-| 4 | No contract row is superseded. |
+| 1 | Six tools are added to the **planning** surface, all `DEVIATION`, each appearing in `ADDED` with its reason. |
+| 2 | A `comparisons` payload parser accepts a list of `{matched, container, relationship, reason}`, rejecting an unknown relationship by name. |
+| 3 | The four writing tools carry `writes=True`; the two reads do not. |
+| 4 | Every parameter of all six carries a `Param.note`. |
+| 5 | No contract row is superseded, and no `Absence` entry is filed. |
 
 **The six tools.**
 
@@ -771,13 +1127,48 @@ Depends on 3B and 3C. `surface.py`, `render.py`.
 | `catalogue_clusters` | no | the cross-container report |
 
 **Behaviour 1's count is stated because a coverage test that asserts a number nobody wrote down
-cements whichever number the builder guessed.** The planning surface goes from 54 tools to 60.
+cements whichever number the builder guessed — and the draft's number was wrong at both ends,
+which two readers caught independently.** The arithmetic, from this change's own cited premises:
 
-**Behaviour 4 is the correction to the instinct, and change 2's cold read is why it is stated.**
+| | |
+|---|---|
+| v2's planning surface today | 54 |
+| change 1 removes | **4** — `declare_package`, `assign_task`, `packaging` and **`split_subtask`** |
+| change 2 adds | 1 — `record_grounds` |
+| this change adds | 6 |
+| **after this change** | **57** |
+
+**`split_subtask` is the one that was missed**, and change 1 is explicit about it: task 1C.3
+deletes the call, and convention 12 takes its registry row and its `split` payload parser with it.
+Three removals was a count of the *renaming* work, and the fourth tool left the surface for a
+different reason. `ADDED` moves the same way — 12 today, minus the three deviations that go
+(`split_subtask` is not among them; it cites a contract), plus `record_grounds`, plus these six —
+**16**.
+
+The draft said 60, which is the number you get by adding six to 54 and forgetting both intervening
+changes. **The paragraph arguing that an unstated count gets cemented at whatever the builder
+guessed stated one and cemented the wrong one**, which is a sharper argument for the rule than the
+paragraph made.
+
+**Behaviour 3 also miscounted itself**: the table above lists **two** reads, not three, and four
+writes. `search_catalogue` and `catalogue_clusters` are the reads.
+
+**Behaviour 4 is not padding, and `surface.py` says why in its own words**: `Param.note` is *"the
+whole of the tool's documented interface, so it says what the caller must decide — never what the
+implementation does with it."* Three of these tools take a parameter whose whole difficulty is
+knowing what to put in it — `visibility`, `container` and `comparisons` — and a caller who cannot
+tell whether `container` wants a name or a ref will pass the wrong one and read
+`ContainerNotCatalogued` as a bug in the tool.
+
+**Behaviour 5 is the correction to the instinct, and change 2's cold read is why it is stated.**
 No contract row describes any of this — the frozen plan never anticipated a catalogue, so it
 cannot have anticipated the calls — which is exactly what `DEVIATION` means and why each carries
 a written reason in `ADDED`. No `Absence` entry is filed either: an absence records a call that
 **exists** and is deliberately not exposed, and none of these was ever built before.
+
+**Behaviour 2 carries `container` because a comparison names its candidate by name and container**
+(3B.0 behaviour 3). A bare name cannot identify a candidate in a table whose identity is a pair,
+and the parser is where that would first go wrong.
 
 **No tool reads a comparison back, and that is a hole this change accepts with its eyes open.**
 The comparisons are written and are readable only from the database. The next planner who would
@@ -795,7 +1186,7 @@ is what brief composition also consumes and specifying it twice is how two shape
 |---|---|
 | 1 | A rendered candidate shows its name, container and purpose, never a bare id. |
 | 2 | A refusal listing candidates lists them the same way. |
-| 3 | Refs inside a `purpose` or a comparison `reason` are rendered as `name (ref)`. |
+| 3 | A `purpose` and a comparison `reason` are `door.Verbatim`: served as written, with every ref they cite resolved **alongside** them. |
 
 **Behaviour 1 is the naming discipline applied to a table that has no refs.** A catalogue entry
 is addressed by name and container, following `terms`, which is looked up *"by the word you were
@@ -803,93 +1194,127 @@ about to type, never by an ordinal"*. So `door.scan` never sees a `catalogue:` a
 text, and `resolver_from` needs no third lookup — unlike `findings`, where the absence of one
 made every `findings:3` in the owner's prose read as *no live row at this address* (F38).
 
-**Behaviour 3 is the door's existing invariant and this change walks into it, exactly as change 2
-did.** A comparison's `reason` is argumentative prose — *"different thing: this one is about the
-contract, see components:6"* — and `door.scan` raises `BareAddress` on any `table:ordinal` in an
-outgoing payload not accompanied by a name. Change 2 probed the pattern against realistic
-justification prose and found one trap, a URL with a port; that probe stands and is not re-run.
+**Behaviour 3 is a correction, and the draft had it exactly backwards.** It said refs inside those
+fields *"are rendered as `name (ref)`"* — an inline rewrite of stored prose, which is the one thing
+the door's design forbids. `Verbatim` is *"stored prose, served as written"*, and the door
+**annotates alongside**: `render` appends the resolution of every address the prose cites and hands
+the text back untouched. Its docstring says why the alternative broke the tool — annotation that
+changes a value's shape turns an identifier a caller reads and passes back into an object.
 
-**A comparison `reason` and a `purpose` are validated for unresolvable refs at the write**, for
+**A `purpose` and a comparison `reason` are stored prose, so `Verbatim` is what they are**, and
+this is a case where the type carries the rule so nothing rots: the value's own type exempts it
+from the `BareAddress` invariant, rather than a list of exempt fields that has to be maintained.
+A comparison's `reason` is argumentative prose — *"different thing: this one is about the contract,
+see components:6"* — and that address is the planner's own writing, which the tool does not edit.
+
+**The write-time check is the other half and it belongs to 3B, not here** (3B.2 behaviour 6), for
 the reason `record_grounds` behaviour 6 gives: combined with a field nothing can rewrite, an
-unresolvable ref makes the row permanently unreadable through the surface. `purpose` is
-restatable and so is repairable; a comparison `reason` is not, which makes the check matter more
-here than there. **This is now the third task to reach the same answer**, and per the register's
-own growth rule it is proposed as a convention entry — see §10.
+unresolvable ref makes the row permanently unreadable through the surface. `purpose` is restatable
+and so is repairable; a comparison `reason` is not, which makes the check matter more here than
+there. Change 2's probe against realistic justification prose found one trap, a URL with a port;
+that probe stands and is not re-run, but **its consequence is worse here** — where change 2 left
+such a token rendering oddly, this change refuses the write over it. That is why 3B.2 behaviour 6
+names the token in the refusal.
+
+**This is now the third task to reach the same answer**, and per the register's own growth rule it
+is proposed as a convention entry — see §10.
 
 ## 8. Packet 3E — the enforcement
 
-Depends on all of the above.
+Depends on all of the above. **The justification-vocabulary task that was 3E.1 in the draft is now
+task 3A.0 and lands first** — §3.10.
 
-### Task 3E.1 — the justification vocabulary, extended
-
-**Behaviours**
-
-| | behaviour |
-|---|---|
-| 1 | `catalogue.retire_reason` and `catalogue_comparisons.reason` join `JUSTIFICATION_ROLES`. |
-| 2 | The declared set becomes **eleven** members. |
-| 3 | Both are role 1 — why an act was performed — and the declaration says which act. |
-
-**This task exists because change 2 built a check that will refuse this change's schema.** 2E.1
-behaviour 2: a column named `reason`, `grounds` or `alternatives`, or ending in `_reason`, must be
-a declared member. `catalogue.retire_reason` and `catalogue_comparisons.reason` are both, so
-without this task the suite fails on 3A.1 and the failure looks like a mistake rather than the
-sequencing it is — the same shape as change 1's task 1A.0.
-
-**Behaviour 3 applies change 2's own test rather than assuming the answer.** *A `reason` is
-attached to an act and names a transition; `grounds` are attached to content and name no
-transition.* `retire_reason` names retiring. `catalogue_comparisons.reason` names the comparison —
-the act of judging one candidate against one proposal — which is why the column is `reason` and
-not `grounds`, even though it reads like an argument. The comparison row **is** the act; it has no
-content of its own to have grounds for.
-
-**No new `_at` role and no new suffix.** `retired_at`, `created_at` and `updated_at` are all
-declared. The commit fields that would have needed a `_commit` shape are not in this change (§3.9),
-so `SHAPES` is untouched.
-
-### Task 3E.2 — schema parity, and the index that must be shown to work
+### Task 3E.1 — the store's own invariants, and the index that must be shown to work
 
 **Behaviours**
 
 | | behaviour |
 |---|---|
-| 1 | A version-9 database migrated to 10 is structurally identical to a fresh 10 — raw `PRAGMA table_info`, `index_list` and `foreign_key_list` output, compared as-is. |
-| 2 | Two live module-level entries with the same name are refused. |
-| 3 | The same name in two different containers is accepted. |
-| 4 | A retired name is available again, and the new entry is a new row. |
-| 5 | A task cannot hold two live public function entries. |
-| 6 | An entry with two owners, or none, is refused by the store itself. |
+| 1 | A version-9 database migrated to 10 is structurally identical to a fresh 10 — raw `PRAGMA table_info`, `index_list`, `index_info` and `foreign_key_list` output, compared as-is. |
+| 2 | `schema.statements(CATALOGUE_DDL)` yields five statements. |
+| 3 | Two live module-level entries with the same name are refused. |
+| 4 | The same name in two different containers is accepted. |
+| 5 | A retired name is available again, and the new entry is a new row. |
+| 6 | A task cannot hold two live public function entries. |
+| 7 | An entry with two owners, or none, is refused; so is a `function` owned by a component and an `object` owned by a task. |
+| 8 | `kind`, `visibility` and `relationship` refuse a value outside their set. |
+| 9 | The 9→10 migration writes no catalogue row, and `snapshot_version` still carries nine tables. |
+| 10 | `_columns()` finds `catalogue` and `catalogue_comparisons`, and no table the retained v9 fixture declares. |
 
-**Behaviour 2 is the whole reason this task is not just a parity check.** `PRAGMA index_list`
+**Behaviours 3 to 8 are asserted at the store, with raw SQL, and this is the correction that
+matters most in this packet.** Driven through the service instead, **behaviour 3 passes on the
+naive index**: a second entry with an identical name ranks first in `_rank`, so
+`NearMatchesUnadjudicated` refuses the call before the index is ever reached. The test would be
+green, the refusal would be the wrong one, and the defect §3.3 exists to prevent would ship — a
+check running green while measuring something narrower than its name, which is exactly the failure
+this project has recorded twice. The same applies to behaviour 6: a service guard that happens to
+agree with a constraint proves nothing about the constraint.
+
+**Behaviour 3 is the whole reason this task is not just a parity check.** `PRAGMA index_list`
 reports the naive index and the `COALESCE` index identically, so parity cannot tell them apart —
-and the naive one accepts the duplicate. A test that asserts the schema text would pass on a
-correct-looking index that does not work. The assertion has to be the behaviour, and it is the
-one assertion in this change that would catch a builder writing the obvious thing.
+and the naive one accepts the duplicate. A test asserting the schema text would pass on a
+correct-looking index that does not work. The assertion has to be the behaviour, and it is the one
+assertion in this change that would catch a builder writing the obvious thing.
 
-**Behaviour 6 asserts the `CHECK` at the store**, not through the service, because a service guard
-that happens to agree with a constraint proves nothing about the constraint.
+**Behaviour 1 adds `index_info`, which the draft omitted.** `index_list` names the indexes; only
+`index_info` says which columns each covers. Without it the parity check is blind to
+`idx_catalogue_container`'s columns entirely — an index could migrate as a name over the wrong
+column and parity would report a match.
 
-### Task 3E.3 — the size and the shape
+**Parity is close to unfailable here and that is the point, not a defect.** Both sides are built
+from one text, which is the invariant 3A.1 behaviour 2 exists to hold; parity's job is to catch a
+migration that omits the block, and every substantive question about the indexes is behaviours 3
+to 8's business.
+
+**Behaviour 9 exists because nothing verified 3A.2's two negative behaviours.** "Backfills
+nothing" and "adds nothing to the snapshot table set" are both claims a builder could quietly
+break — a helpful backfill, or a `catalogue` added to `snapshot_version` on instinct — and neither
+would fail anything else. The snapshot half is the one with teeth: §4 argues that a catalogue
+inside the snapshot set would be rewound while its `tasks` rows were not.
+
+**Behaviour 10 is the guard on the guard.** `_columns()` parses `engine/schema.py` with a regex,
+so if the new tables are declared in a shape it does not match, every vocabulary check passes while
+seeing nothing of this change — and `test_the_check_can_actually_fail`'s `> 100` floor is far too
+loose to notice. Its second half is §11.4: the retained v9 fixture must be invisible to the parser,
+which is the assertion that proves it lives outside `schema.py`.
+
+### Task 3E.2 — the size and the shape
 
 **Behaviours**
 
 | | behaviour |
 |---|---|
-| 1 | The registry holds 60 tools, and every `DEVIATION` among the six appears in `ADDED`. |
+| 1 | The planning registry holds **57** tools, `ADDED` holds **16**, and every `DEVIATION` among the six appears in `ADDED` with a reason. |
 | 2 | A registration with candidates and no comparison is refused, and the refusal names every candidate. |
 | 3 | A `same` verdict writes the comparison, writes no entry, and returns the entry to use. |
 | 4 | The ranking a registration adjudicates against is the ranking `search_catalogue` returns for the same input. |
+| 5 | A registration naming a container that is not a live object entry is refused, and the refusal passes `door.scan`. |
+| 6 | An exact name collision is refused as `NameTaken`, not as `NearMatchesUnadjudicated`. |
 
 **Behaviour 4 is the one a builder would skip**, because each half looks covered by a unit test of
 its own. It is what makes §3.7's "one ranking function" a mechanism rather than a sentence: two
 rankings would let a planner be shown one candidate and required to adjudicate another, and every
 individual test would still pass.
 
+**Behaviour 5 is the landing-order inversion made into an assertion.** `ContainerNotCatalogued`
+names a call, so the refusal only survives the door if 3D.1's registry rows exist. Asserting that
+the refusal *renders* — rather than that it is raised — is what catches the ordering being undone
+later, and this project's standing evidence is that a missing route reports a refusal reading like
+the caller's mistake (F39).
+
+**Behaviour 6 asserts the refusal order**, which is a decision two tasks make jointly and neither
+would fail alone: 3B.2's pseudocode order and 3B.3's container-scoped name check. Get it wrong and
+the tool answers a name collision by asking the planner to adjudicate it.
+
 ## 9. What this change does not do
 
-**It does not populate anything.** Nothing in the eight-stage interview reaches the catalogue, so
+**It does not populate anything.** Nothing in the interview as it stands reaches the catalogue, so
 after this change the table is empty and stays empty until change 5 writes tasks, pseudocode and
 entries at stage 8. This change builds the instrument; change 5 is what uses it.
+
+**Two different eights, said once so the rest of this document is unambiguous.** The interview
+running today is v2's **eight stages**; every "stage 8" in this document means the eighth of
+v3's **eleven** (`INTERVIEW.md` §2), which is detailed design and does not exist until change 5.
 
 **It does not add a gap rule.** The countable obligations — a task with no public entry, a
 pseudocode call with no entry — all have denominators that do not exist yet. A rule counting
@@ -909,19 +1334,34 @@ search result, whose shape change 5 settles.
 **It does not schedule a read of the cross-container report.** §3.8; change 5's stage-8 script
 owes that step, and without it the report is a query nobody runs.
 
+**It does not act on a `contained_by` or a `partially_overlaps` verdict** — §3.6. The judgment is
+recorded and the follow-through is the planner's next call. No gap counts them, because the
+denominator is a table nothing populates until change 5.
+
 **Three items change 5 inherits from this change, listed together so they are not rediscovered:**
 the stage-8 script step that reads the report; the prior-verdict field on a search result; and the
 "at least one public entry per task" gap.
 
-## 10. A convention this change proposes
+**Two sentences this change owes to earlier ones, because their specifications are wrong without
+them and nothing else will notice:** change 2 must say that `JUSTIFICATION_ROLES` is keyed
+`table.column` (3A.0), and changes 1 and 2 must say that their retained DDL fixtures live outside
+`engine/schema.py` (3A.1 behaviour 7, §11.4).
+
+## 10. Two conventions this change proposes
 
 **Validate refs in stored prose at the write.** *A free-text field that will be rendered through
 the door is checked at the write for `table:ordinal` tokens that do not resolve, and the write is
-refused naming the token.* Change 2 reached this for `grounds` and `alternatives` (2B.2 behaviour
-6) with a probe behind it; this change reaches it again for `purpose` and a comparison `reason`.
-**That is the third task, which is the register's own bar** — an entry is proposed when the same
-uncited decision appears in three tasks with the same answer — so it goes to `CONVENTIONS.md`
-with change 2's probe as its evidence.
+refused naming the token, and the field is served `Verbatim` thereafter.* Change 2 reached this
+for `grounds` and `alternatives` (2B.2 behaviour 6) with a probe behind it; this change reaches it
+again for `purpose` and a comparison `reason`. **That is the third task, which is the register's
+own bar** — an entry is proposed when the same uncited decision appears in three tasks with the
+same answer — so it goes to `CONVENTIONS.md` with change 2's probe as its evidence.
+
+**The `Verbatim` half is written into the entry deliberately**, because leaving it out is how this
+change got it wrong: the draft specified the write-time check correctly and then had the renderer
+rewrite the prose inline, which is the opposite of what the door does. The two halves are one
+decision — *check it at the write, then never touch it again* — and an entry stating only the
+first invites the second mistake.
 
 **Strip on store**, proposed by change 2 as its second occurrence, reaches its third here:
 `name`, `purpose` and a comparison `reason` all need the same answer. It goes to `CONVENTIONS.md`
@@ -933,16 +1373,28 @@ in this change.
 was given its packet verbatim, the §3 sections it depends on verbatim, the adjacent packets
 verbatim, the conventions register, and the source a builder would hold.
 
-**The corrections below are NOT yet applied to §1–§10.** This section is the worklist. It is
-written out in full because the readings cost about six minutes of wall clock and exist nowhere
-else.
+**Everything below is applied to §1–§10, and this section stays as the record.** It is written out
+in full because the readings cost about six minutes of wall clock and the evidence exists nowhere
+else — the measurements, the probe results, and the two findings the readers got wrong.
+
+**Task numbers below are the draft's.** Applying the corrections moved three tasks: the
+justification vocabulary from 3E.1 to **3A.0**, the ranking from 3C.1 to **3B.1**, and the four
+registrations down one to make room for **3B.0**, the models. Read a `3B.n` here as `3B.n+1` above.
 
 ### 11.1 What was re-measured, and what the numbers actually are
 
-Every count in §3 was taken from an AST parse of `engine/*.py` — 30 modules — treating a class as
-an object entry, a method as a function entry with that class as its container, and a module-level
-`def` as a function entry with no container. **The method was never stated, which is itself a
-finding: a denominator produced by an unnamed method is not checkable.**
+Every count in §3 was taken from an AST parse of the engine, treating a class as an object entry, a
+method as a function entry with that class as its container, and a module-level `def` as a
+function entry with no container. **The method was never stated, which is itself a finding: a
+denominator produced by an unnamed method is not checkable.**
+
+**And stating it took two attempts, which is worth recording.** The version written into §2 while
+applying these corrections said `engine/*.py`, 30 modules, and named the two entry shapes — and
+re-running it reproduced 30 modules and 204 objects but **260 public functions, not 255**. Two
+things were missing: `engine/*.py` matches 29 modules, not 30 (`engine/methodology/__init__.py` is
+the thirtieth), and **functions nested inside functions are excluded** — five of them, with no
+identity `(name, container)` can address. With both, the parse returns 204 objects, 464 functions,
+33 dunders, 255 public and 176 private exactly. §2 now carries the full method.
 
 | | drafted | **measured** |
 |---|---|---|

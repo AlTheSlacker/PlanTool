@@ -287,6 +287,17 @@ compares a freshly-initialised version-8 database against one migrated from vers
 is retained — as text, next to the migration, not as a checked-in binary database, because a
 `.db` file is opaque to review and a text fixture diffs.
 
+**And it is retained outside `engine/schema.py`. This sentence was missing and it is load-bearing**
+— found by change 3's cold read, which meets the same question a third time (`03-catalogue.md`
+§11.4). `_columns()` in `test_schema_vocabulary.py` reads the whole of `schema.py` and regexes
+every `CREATE TABLE IF NOT EXISTS` out of it. A retained v7 DDL living there is **phantom schema**
+for all five vocabulary tests: it declares `subtasks` and `package_id`, so this change's renames
+would be undone as far as those checks can see, and the suite would certify the presence of the
+words 1A.1 exists to remove. **1F.3 already assumes this** — it corrects an assertion from
+`subtasks` to `tasks`, which a retained v7 DDL in `schema.py` would keep satisfying either way, so
+the assumption is currently unstated and unenforced. 3E.1 behaviour 10 is where it finally gets a
+test.
+
 **The `task_id` column on the old `subtasks` becomes nothing.** It pointed at the dead middle
 level. It was already nullable and already reported rather than guessed when absent, so removing
 it loses no truth — but it has to be dropped explicitly in 1A.1, because a table rename preserves
