@@ -1,9 +1,11 @@
 # v3 vocabulary
 
-**Status: a planning artefact.** It specifies what `GLOSSARY.md` becomes; it is not itself
-enforced yet. `GLOSSARY.md` is parsed by a test that fails the suite on any identifier
-containing a retired word, so changing it changes what the *current* code is held to. That is
-build work and waits for the freeze.
+**Status: a transitional document, and it stays one.** It is read by people and by sessions
+writing v3; **no v3 code reads it, and none ever will** — v3's only glossary is the `terms`
+table. `GLOSSARY.md` has the same status: it is still parsed today by a test that fails the
+suite on any identifier holding a retired word, and change 1's first task deletes that test
+(`builds/01-vocabulary-and-levels.md` task 1A.0, and `builds/04-glossary-and-labels.md` §4.1
+for why). After that, nothing here or there is mechanically enforced, deliberately.
 
 Settled with the owner 2026-07-28, except where marked **open**.
 
@@ -165,10 +167,16 @@ Labels sit **outside the breakdown entirely.** A row may carry none or several, 
 freely, and they never affect build order, completion, ownership or what a builder is served.
 That is what makes them safe to let the tool propose.
 
-**Labels are governed by the glossary machinery**, not by a second mechanism of their own: the
-tool proposes a label, the owner settles it, and a near-duplicate is refused exactly as a
-near-duplicate term is. That is the guard against a hundred nearly-identical labels, which is
-the failure mode the owner named.
+**Labels are governed by the glossary's rules**, not by a second mechanism of their own: the tool
+proposes a label with a definition, the owner settles it, and a near-duplicate is refused. That is
+the guard against a hundred nearly-identical labels, which is the failure mode the owner named.
+
+**This entry said the near-duplicate was "refused exactly as a near-duplicate term is", and no such
+refusal existed anywhere.** `define_term` refuses only an exact match. Corrected in D12 on
+2026-07-29; **change 4 builds the refusal, for labels and for the glossary both**, over the same
+ranking the catalogue uses. Labels get their own table rather than glossary rows, because
+`idx_terms_live` allows one live row per word and a word can legitimately be both a term and a
+label — "engine" is both in this plan.
 
 **The starter list — ten, deliberately.** Every one names a *place in the system* rather than a
 kind of work, because "refactor", "bugfix" and "cleanup" describe an activity that is over once
@@ -178,10 +186,18 @@ it is done, and a label has to stay true for the life of the row.
 `tests` · `docs` · `gui`
 
 Ten because the failure mode is too many, not too few, and the tool adds one only when nothing
-fits — which is a proposal the glossary can refuse. The list is deliberately coarse: a label's
+fits — which is a proposal the guard can refuse. The list is deliberately coarse: a label's
 job is to shrink a review list from everything to something a person can read, not to classify.
 If a filter on `engine` returns too much, the answer is a dependency query or a search, not a
 finer label.
+
+**Change 4 tried to replace this list with cross-cutting concerns and the measurement refused.**
+The argument was that a place-name duplicates a filter the plan's own structure already gives you,
+through the component a row belongs to. Measured against the frozen v2 plan: **53 of 687 live rows
+carry a component and 4 more link to one — 92% of a plan has no path to a component at all.**
+Requirements, decisions, entities, use cases, steps, extensions, state-machine cells and the CRUD
+grid are most of a plan and none of them belongs anywhere. The place-name is the only filter they
+will ever have. See `builds/04-labels.md` §3.2.
 
 ### Catalogue entry
 One object, method or function the plan intends to exist, with **one owner** and a statement of

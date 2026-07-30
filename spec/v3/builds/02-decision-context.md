@@ -744,7 +744,7 @@ Depends on all of the above.
 | 1 | `test_schema_vocabulary.py` gains `JUSTIFICATION_ROLES`, a declared set of justification columns **keyed `table.column`**, each with its role. |
 | 2 | A column whose name is `reason`, `grounds` or `alternatives`, or which ends in `_reason`, must be a declared member. |
 | 3 | Fails if any schema column is named `rationale`, `justification`, `explanation` or `why`, exactly or as a suffix. |
-| 4 | The declared set is **nine** members: `grounds`, `alternatives`, `supersede_reason`, `retire_reason`, three `reason` columns, `findings.reason`, and `technical_claims.evidence` as the declared non-justification. |
+| 4 | The declared set is **sixteen** members, enumerated below from the schema rather than restated. |
 | 5 | **`SHAPES` is made to drive the check that quotes it.** |
 
 **Behaviour 2 is a correction the cold read forced, and the reason the draft was wrong is worse
@@ -772,8 +772,31 @@ anyone declaring anything. Change 3 adds `catalogue.retire_reason` and
 **And bare-column keying is wrong on its own terms, which is why this is the correction rather
 than a choice.** The register's entry *is* the role, and the role differs per table:
 `behaviour_amendments.reason` names amending, `scope_attachments.reason` names attaching. One key
-carrying three roles cannot record any of them. Keyed `table.column`, behaviour 4's nine enumerate
-exactly.
+carrying three roles cannot record any of them.
+
+**Behaviour 4's count is sixteen, not nine, and the nine were never enumerated — this is change 4's
+correction applied here (`builds/04-labels.md` §11.3).** "Three `reason` columns" is a bare-column
+count and there are **seven** bare `reason` columns; `terms.ban_reason` and both `block_reason`s
+were missing altogether. A count drafted from a reconstruction rather than from the source is
+exactly what `CONVENTIONS.md` requires an entry to quote the code against, and this one was
+inherited and multiplied by changes 3 and 4 before anybody counted it.
+
+**The method, stated so it can be re-run.** Parse `engine/schema.py` with `_columns()`'s own regex
+— every `CREATE TABLE IF NOT EXISTS name (…\n);`, every line matching
+`^(\w+)\s+(INTEGER|TEXT|REAL|BLOB|NUMERIC)` with comments stripped — and select the columns
+behaviour 2 requires to be declared. **Re-run 2026-07-30: 255 columns, and these eleven, before
+this change adds anything:**
+
+`plan_rows.retire_reason` · `plan_versions.reason` · `gap_overlay.reason` · `warnings.reason` ·
+`spikes.block_reason` · `subtasks.block_reason` · `obligation_amendments.reason` ·
+`brief_rows.reason` · `scope_attachments.reason` · `terms.ban_reason` ·
+`finding_reallocations.reason`
+
+This change adds `plan_rows.grounds`, `plan_rows.alternatives` and `plan_rows.supersede_reason`,
+and renames `findings.rationale` → `findings.reason` — which is a rename, not an addition, since
+`findings.rationale` was never a declared member and `findings.reason` becomes one. **Fifteen**,
+plus `technical_claims.evidence` as the declared non-justification: **sixteen**. Change 1 renames
+`subtasks.block_reason` to `tasks.block_reason` and changes no count.
 
 **Behaviour 4 states the number because a fixture that asserts a count nobody wrote down cements
 whichever number the builder guessed.** `technical_claims.evidence` is a declared member with the
