@@ -501,6 +501,7 @@ Version 10 → 11. `SCHEMA_VERSION` is **7 in the code today**; changes 1, 2 and
 | 2 | **`approved_at` leaves `TIMESTAMP_ROLES` — but in 4A.1's commit, not this one**, because it must leave at the same moment its column does. |
 | 3 | The set therefore holds **seven** members before and **seven** after — not eight. |
 | 3a | A new test asserts the **reverse** direction: every declared role has at least one column in `engine/schema.py`. |
+| 3b | `SHAPES` gains **`_root`** — *"the lineage root of a target row, as a `table:ordinal` ref"* — and the check requires it to be `TEXT`. |
 | 4 | `JUSTIFICATION_ROLES` is unchanged at **18**: nothing this change adds carries a reason. |
 | 5 | Both counts are re-enumerated from source at build time, by the method in §14, and not carried from this document. |
 
@@ -520,6 +521,16 @@ columns. A role left behind after its column dies is therefore invisible **forev
 generalises to every future change, and is the reverse of a check this repository has now been bitten
 by twice — `GLOSSARY.md`'s exception protecting `PartsDontCover`, an identifier that does not exist,
 was the same defect in the other register.
+
+**Behaviour 3b is this task noticing its own subject, and it is the reason the task exists at all.**
+The schema already holds two names for one concept: `gap_overlay.root_ref` and
+`scope_attachments.target_root` are both *the lineage root of the row this record is keyed to*, spelt
+two ways. `SHAPES` polices `_id`, `_key`, `_ref` and `_by`, and has no entry for `_root`, so
+`target_root` has never been checked by anything. **`label_attachments.target_root` is the third
+occurrence**, added by this change — so this is the moment the declared-vocabulary task either does
+its job or becomes the thing it exists to prevent. Declaring `_root` does not rename either existing
+column; it makes the next one a deliberate act. Renaming `root_ref` is a separate change's work and
+is noted here rather than smuggled in.
 
 **Behaviour 2 is a finding, not bookkeeping, and it is invisible to the mechanism that would
 otherwise catch it.** `test_every_timestamp_column_is_a_declared_role` flags a column with no
@@ -552,9 +563,9 @@ reason, because attaching is the act §1 makes free.
 |---|---|
 | 1 | `terms` loses six columns: `approved_at`, `names_ref`, `ban_scope`, `ban_reason`, `use_instead`, `superseded_at`. |
 | 2 | `idx_terms_live`, a partial unique index on `term WHERE superseded_at IS NULL`, is replaced by a **`CREATE UNIQUE INDEX` on `term`** — an index, not a table constraint, so that 4A.2 can create it after the drops. |
-| 3 | `label_attachments` is created, with its two indexes. |
+| 3 | `label_attachments` is created, with **three** indexes — the live uniqueness index, one leading on `target_root`, and one leading on `task_id`. |
 | 4 | **No `term_comparisons`.** It goes with the near-match guard. |
-| 5 | `LABELS_DDL` yields exactly **three** statements through `schema.statements`, verified through that function rather than counted by eye. |
+| 5 | `LABELS_DDL` yields exactly **four** statements through `schema.statements` — one table, three indexes — verified through that function rather than counted by eye. |
 | 6 | `label_attachments.word` carries no foreign key, and the DDL comment says why — **the reason rewritten, see below**. |
 | 7 | Any retained per-version DDL fixture lives **outside** `engine/schema.py`. |
 | 8 | **`DDL += LABELS_DDL`.** Without this line no freshly created plan has the table. |
@@ -623,6 +634,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_label_attachments_live
 -- word and cannot answer that direction.
 CREATE INDEX IF NOT EXISTS idx_label_attachments_target
     ON label_attachments (target_root, detached_at);
+
+-- The same read for the other target kind. Half the rows here have a null target_root,
+-- so the index above cannot serve them: remove_term's refusal has to count the tasks
+-- carrying a word, and labels(word) has to list them, and both would be a table scan.
+CREATE INDEX IF NOT EXISTS idx_label_attachments_task
+    ON label_attachments (task_id, detached_at);
 ```
 
 **Behaviour 2 is the half of this task that a reader will take for cosmetic, and the cold read found
@@ -670,7 +687,17 @@ branch.
 | 4 | The steps are, in this exact order: delete superseded rows → `DROP INDEX idx_terms_live` → six `DROP COLUMN`s → `CREATE UNIQUE INDEX` on `term`. |
 | 5 | Seeds no word, and backfills no attachment. |
 | 6 | Adds `label_attachments` **to** the snapshot table set. |
-| 7 | Its docstring states what the migration **discards**. |
+| 7 | Its docstring states what the migration **discards**, and its opening line stops saying "Two paths exist" when it will then document eight. |
+| 8 | `migrate` **chains**: a store at any version below the target steps through every intermediate branch in one call, rather than raising "no migration path". |
+
+**Behaviour 8 closes a hole that is not this change's fault and becomes unavoidable at this change.**
+`_migration_steps` matches adjacent pairs only — `(3,4)`, `(4,5)`, `(5,6)`, `(6,7)` — and ends by
+raising when no pair matches. `SCHEMA_VERSION` is 7 in the code and exactly one database exists, at
+7. Changes 1, 2 and 3 each add one branch and this change adds the fourth, so reaching 11 means four
+separate `migrate` calls in the right order, and a single `migrate(11)` — the obvious thing to do —
+raises. Nobody would discover that until the one real database was in front of them. Chaining is a
+loop over the intermediate versions; each step keeps its own snapshot and its own failure, so nothing
+about the existing safety changes.
 
 **Behaviour 2 reverses the draft, and it was settled by probe rather than by argument.** The draft
 asserted that dropping six columns and swapping a partial unique index for a total one "is a table
@@ -1212,7 +1239,7 @@ defect; it is the constraint change 3 recorded for function entries. Plan-row ta
 | | behaviour |
 |---|---|
 | 1 | `labels()` returns every word with at least one live attachment, alphabetically, with its definition and its count split into rows and tasks. |
-| 2 | The report carries **two** denominators — live plan rows, and live tasks — never their sum. |
+| 2 | The report carries **two** denominators — never their sum — and each counts the same population its numerator does: **live lineages** (rows with no successor) and live tasks. |
 | 3 | It carries the number of live terms with no live attachment as a count, not a list. |
 | 4 | `labels(word)` returns that word, its counts, and every target carrying it; a plan row as its name and ref, a task as its id and title. |
 | 5 | A word with no live attachment, named explicitly, reports a zero count — not missing. |
@@ -1297,6 +1324,13 @@ is most of them early in a plan, and none of them in the fixture somebody writes
 **Behaviour 2 is the half a builder drops**, because a count reads as complete on its own. It is not:
 a label on all 687 rows and a label on one are both useless for filtering, and only the denominator
 tells them apart.
+
+**And the cold read found the two halves counting different populations, which would have made the
+ratio quietly wrong.** The numerator counts live *attachments*, which key on lineage roots; the draft's
+denominator was "live plan rows". Those two sets coincide only for lineages that have never been
+superseded — so on a plan with any revision history the fraction compares labelled roots against live
+rows and drifts. Both sides now count live lineages: one row per lineage, the one with no successor.
+That is also the population a person means by "how much of the plan carries this label".
 
 **Behaviour 5 keeps a word findable.** Reporting it as missing would tell the planner the word is
 free, which is the moment they define it again — and `define_term` would refuse it as a duplicate, so
@@ -1416,6 +1450,23 @@ of the results.
 | 4d | The surviving glossary tools' summaries are rewritten: `define_term`'s "the owner settles it", `redefine_term`'s "keeping the old wording as history. Also how a retired word comes back", `glossary`'s "retired ones included", and `define_term`'s `ADDED` reason. |
 | 4e | `Surface.__init__` constructs `LabelService` and the registry rows name the attribute it is bound to. |
 | 4f | A payload decoder for a **mixed** sequence of refs and task ids is registered, since `DECODERS` today has `refs` and `ints` and nothing that accepts both. |
+| 4g | The `Surface` attribute holding `LabelService` is **`label_service`**, not `labels`. |
+| 4h | `read_rows` refuses a `limit` above a stated ceiling, because both new queries bind one parameter per element. |
+
+**Behaviour 4g avoids a collision this change was walking into.** Four things would otherwise be
+called `labels`: the tool, the `RowSelector` field, the `RowPage` field, and the service method — plus
+the `Surface` attribute the registry's `service` column resolves to, which would be a fifth. The three
+data fields are fine, because each is qualified by what holds it. The service attribute is the one
+that would sit beside the tool name in dispatch, and `surface.py` already records the precedent
+against exactly that: *"`renderer`, not `render`: the door's `render` is a module-level function used
+a few lines below in `dispatch`, and two things called the same word in one class is exactly the
+collision this build keeps writing down."*
+
+**Behaviour 4h is a small ceiling on an unbounded thing.** `read_rows` validates only that `limit` is
+positive. Both recursive CTEs bind one parameter per page ref or per requested word, so a caller
+asking for fifty thousand rows builds a fifty-thousand-parameter statement. SQLite's default limit is
+well above a sensible page and well below that, so the failure would be a driver error rather than a
+refusal naming the field.
 
 **Behaviour 4 is a correction, and as drafted the filter could not have run.** The `read_rows`
 registry row takes exactly one parameter, `selector`, and dispatch calls
@@ -1640,7 +1691,7 @@ would have passed the rule that exists to forbid summing.
 | 3 | `tests/test_schema_vocabulary.py` gains 4A.0's two `TIMESTAMP_ROLES` edits **and** behaviour 3a's reverse check; the `junctions` set is hoisted to module scope so it can be asserted against. |
 | 4 | `tests/conftest.py` loses every `terms=` fixture argument for the five services that drop the parameter. |
 | 5 | The stage script for the new round renders without raising. |
-| 6 | The **second** file asserting `glossary.json` was written is found and cleared. |
+| 6 | The second file asserting `glossary.json` was written is **`tests/test_surface.py`** — two tests, one dispatching `export_glossary` and asserting the filename appears in the summary and the file exists on disk, the other reading it back. Both go. |
 | 7 | Two tests that survive the change but can no longer fail are deleted: `test_a_clean_row_carries_no_note` and `test_the_question_stops_once_any_word_is_defined`. |
 | 8 | Packet 4C's deletions are asserted positively, not by the absence of tests. |
 
@@ -1677,7 +1728,7 @@ than trusted.
 |---|---|---|
 | `TIMESTAMP_ROLES` becomes **8** | **7 → 7.** `detached_at` joins, `approved_at` leaves with the only column that used it | parse the dict in `test_schema_vocabulary.py`; grep `approved_at` across all 37 tables in `engine/schema.py` |
 | `JUSTIFICATION_ROLES` is **18 today** | **it does not exist in the code.** It appears only in the specs for changes 2, 3 and 4, none of which is built | grep the repository |
-| `LABELS_DDL` yields **four** statements | **three.** `term_comparisons` is deleted with the guard | count `CREATE` in the block; re-probe through `schema.statements`, because the split survives only on comments being stripped |
+| `LABELS_DDL` yields **four** statements | **three**, then **four again** — and the round trip is the point. `term_comparisons` went with the guard, taking it to three; the cold read then found the task-side read had no index, and adding it brings it back to four. Same number, different four | count `CREATE` in the block; re-probe through `schema.statements`, because the split survives only on comments being stripped |
 | the change *"removes three tools and adds three"* | **removes 3, adds 4.** `remove_term` is a new registration, not a rename of `retire_term`: different signature, different act | `_t(` and `Absence(` in `engine/surface.py` — 54 and 12 today |
 
 **A fifth, found by the cold read rather than by me:** the arithmetic paragraph in §11 said
