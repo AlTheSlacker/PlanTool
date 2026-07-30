@@ -752,7 +752,22 @@ at runtime rather than merely reading oddly.**
 | 2 | The eight assets are renamed `stage1_context.md` … `stage8_finalization.md`. |
 | 3 | Every `package` in asset prose and in the manifest becomes `stage`; every `obligation` becomes `behaviour`; the contract row's array is `behaviours`. |
 | 4 | The stage-6 script stops naming `declare_package()`, `assign_task()` and `packaging()`. |
-| 5 | The revision stamp is 4, and `plan_status` reports it. |
+| 5 | **The stage-6 packaging round is deleted, not just its call names**, and the stage is left with no mandatory grouping. |
+| 6 | The revision stamp is 4, and `plan_status` reports it. |
+
+**Behaviour 5 is change 4's correction applied here (`builds/04-labels.md` §11.3), and without it
+behaviour 4 leaves the round standing.** `rev3/package6_architecture.md`'s round is more than the
+three calls behaviour 4 strips: its prose says *"Every component is a task, and every task belongs
+to exactly one package… this is the one grouping a human chooses rather than derives"*, and **that
+sentence names no call**, so removing call names leaves it untouched. A planner would read a stage
+instructing them to cut packages, with no tool that cuts one. **The whole round goes**, and stage 6
+keeps its architecture work and loses its grouping round — which is what `INTERVIEW.md` §7 already
+says: *"Stage 6 loses the packaging round and the mandatory package cut… It gains labels."*
+
+**What fills the hole is change 4's**, and it is named here so the two changes do not each assume
+the other did it: revision 6 adds a labelling round in the same place, and this change leaves the
+place empty rather than half-filled. A residual packaging round surviving into rev6 would sit
+beside the round that replaced it.
 
 **Behaviour 4 is why this packet exists, and it is a correctness break, not untidiness.**
 `rev3/package6_architecture.md` tells the planner: "`declare_package()` each one the user agrees
