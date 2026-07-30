@@ -326,7 +326,7 @@ message still names `define_term`.
 
 ### 5.5 Packet D — labels
 
-`attach_label`, `detach_label`, `labels`, and the `RowSelector.label` filter with its join. Registry
+`attach_label`, `detach_label`, `labels`, and the `RowSelector.labels` filter with its join. Registry
 rows, payload parsers, rendering. **All of this is already specified** in `04-labels.md` packets 4B,
 4D and 4F — see §5.8 for what transfers and what changes.
 
@@ -951,7 +951,7 @@ defect; it is the constraint change 3 recorded for function entries. Plan-row ta
 ### Task 4D.3 — `labels` and the `read_rows` filter
 
 **Signature.** `labels(self, word: str | None = None) -> LabelReport`; `RowSelector` gains
-`label: str | None = None` and `RowService.read_rows` honours it.
+`labels: tuple[str, ...] = ()` and `RowService.read_rows` honours it.
 
 **Behaviours**
 
@@ -963,10 +963,13 @@ defect; it is the constraint change 3 recorded for function entries. Plan-row ta
 | 4 | `labels(word)` returns that word, its counts, and every target carrying it; a plan row as its name and ref, a task as its id and title. |
 | 5 | A word with no live attachment, named explicitly, reports a zero count — not missing. |
 | 6 | No threshold, no warning, no gap. |
-| 7 | `read_rows(label=w)` returns live plan rows whose **lineage root** carries a live attachment for `w`. |
+| 7 | `read_rows` with one or more labels returns live plan rows whose **lineage root** carries a live attachment for **every** word given — AND, never OR. |
 | 8 | It composes with every other selector dimension by intersection, and returns a row once however many attachments it has. |
 | 9 | `total` counts the filtered set; `limit` and `offset` apply after the filter. |
-| 10 | An unknown word returns an empty page with `total = 0` rather than raising. |
+| 10 | An empty `labels` is not a filter: the page is unfiltered, not empty. |
+| 10a | A word nothing carries makes the whole result empty, however many of the others match. |
+| 10b | Duplicate words in the request are collapsed before the query, and each is normalised — stripped and lowercased. |
+| 10c | A bare `str` passed as `labels` is **refused**, naming the tuple form. |
 | 11 | **`RowPage` gains `labels: dict[RowRef, tuple[str, ...]]`**, keyed by the ref of each row in the page, holding that row's live labels alphabetically — populated whether or not a label filter was used. |
 | 12 | The labels for a whole page are fetched in **one** query keyed on the page's lineage roots, never one query per row. |
 | 13 | A row with no labels appears in the mapping with an empty tuple, rather than being absent from it. |
@@ -1032,8 +1035,57 @@ written as arithmetic so review cannot see it.
 filter and specified only a dataclass field and a parser key. Attachments key on lineage roots while
 `read_rows` is handed refs, so the join is `plan_rows` → `lineage_root(ref)` → `target_root`, and the
 root is computed per candidate row rather than matched directly. **The cheap correct form is a
-subquery over the attachments**: collect the attached roots for the word, then filter rows whose root
-is in that set, because one word's target set is small and the row set is not.
+subquery over the attachments**: collect the qualifying roots, then filter rows whose root is in that
+set, because the attached set is small and the row set is not.
+
+**The AND is the owner's decision of 2026-07-30, taken against my recommendation, and it is stated
+here so nobody re-argues it.** I proposed one label only, on the ground that a second with an AND is
+the start of a filter language. He asked for it *"for completeness"*. The form is one query, and the
+`HAVING` is the whole of it:
+
+```sql
+SELECT target_root FROM label_attachments
+ WHERE word IN (?, ?, …) AND detached_at IS NULL AND target_root IS NOT NULL
+ GROUP BY target_root
+HAVING COUNT(DISTINCT word) = :n
+```
+
+**`COUNT(DISTINCT word)` and not `COUNT(*)`, and this was probed rather than reasoned.** The live
+unique index is supposed to guarantee one live attachment per word per target, which would make the
+two forms equivalent — but this change already measured that the *natural* spelling of that index
+enforces nothing whatsoever, because every row has exactly one NULL among the target columns and SQL
+compares NULLs as distinct. So the duplicate the two forms disagree about is reachable in exactly the
+case the index was got wrong.
+
+Probed at SQLite 3.49.1 on 2026-07-30, against a fixture holding a row with `engine` only, a row with
+`schema` only, a row with both, and a row with all three:
+
+| query for `('engine', 'schema')` | returns |
+|---|---|
+| `COUNT(DISTINCT word)` | the both-row and the all-three row — **correct** |
+| `COUNT(*)`, after one duplicate `engine` row is inserted on the engine-only row | the engine-only row as well — **a row that carries neither `schema` nor two labels** |
+
+`DISTINCT` makes the filter correct independently of the constraint, which is what a query should be
+when the constraint protecting it has already been observed to fail. The same run confirmed that
+detaching one of two labels drops the row from the result, and that a typo'd word returns nothing.
+
+**Behaviour 10b is not tidying either.** `labels=("engine", "engine")` sets `:n` to two while the
+`HAVING` can only ever reach one, so the query returns nothing at all — a filter that silently
+matches zero rows because the caller repeated a word. Deduplicating after normalising also means
+`("Engine", "engine")` collapses rather than guaranteeing an empty page.
+
+**Behaviour 10c is the same class of trap as `isinstance(True, int)` in 4D.1**, and it is worse
+because it fails quietly. A bare `str` **is** a sequence of `str`, so `labels="engine"` iterates to
+`'e', 'n', 'g', 'i', 'n', 'e'` — **four** distinct single characters after dedupe, measured rather
+than counted by eye, none of which is a term, so the page comes back empty and correct-looking. The
+selector refuses a bare `str` outright.
+The payload parser is the one place allowed to be generous: a JSON `"labels": "engine"` is coerced to
+a one-element tuple there, so the friendliness lives at the edge and the model stays strict.
+
+**Behaviour 10a is a consequence worth stating because it will look like a bug.** Asking for `engine`
+and `schemer` when the second is a typo returns nothing, not the `engine` rows. That is what AND
+means, and it is why 10c and 10b matter: two of the three ways to get an empty page from this filter
+are input mistakes, and only the third is a real answer.
 
 **Behaviours 8 and 9 are stated because they are where this kind of filter fails silently.** A join
 against a one-to-many table duplicates rows; `total` computed before the filter reports a page count
@@ -1051,7 +1103,7 @@ of the results.
 | 1 | Removed: `approve_term`, `retire_term`, `export_glossary` — from the registry **and** from `ADDED`. |
 | 2 | Added: `remove_term`, `attach_label`, `detach_label`, `labels` — to the registry **and** to `ADDED`, each with the reason it exists. |
 | 3 | `define_term` and `redefine_term` keep their registry rows; `define_term` loses its `names_ref` parameter. |
-| 4 | `read_rows` gains a `label` parameter, and the contract row and docstring enumeration are amended. |
+| 4 | `read_rows` gains a `labels` parameter taking a list, and the contract row and docstring enumeration are amended to say the match is AND. |
 | 4a | The rendered form of a page shows each row's labels, and `contracts:10` — the contract `RowPage` answers to — is amended to say the page carries them. |
 | 5 | The registry rows land **before** any refusal whose text names the call. |
 | 6 | Payload parsing for the label calls is registered once, under one name. |
@@ -1145,8 +1197,12 @@ lifecycle stamp.
 | 5 | The replacement move collapses a duplicate rather than raising, and leaves detached rows pointing at the dead word. |
 | 6 | `detach_all=True` removes the word and leaves every attachment detached. |
 | 7 | `replacement` and `detach_all` together are refused. |
-| 8 | `read_rows(label=w)` returns each row once, `total` matches the filtered set, and paging is correct across a boundary. |
-| 9 | `read_rows(label=<unknown>)` returns an empty page rather than raising. |
+| 8 | `read_rows` on one label returns each row once, `total` matches the filtered set, and paging is correct across a boundary. |
+| 9 | An unknown word returns an empty page rather than raising. |
+| 9a | **The AND is exclusive.** A fixture with a row carrying `engine` alone, one carrying `schema` alone, and one carrying both returns **only the third** for `("engine", "schema")` — the test that fails if the query is ever written as OR or as `COUNT(*)`. |
+| 9b | Asking for a real label and a typo returns nothing, not the real label's rows. |
+| 9c | `labels=("engine", "engine")` returns the same rows as `("engine",)`, not an empty page. |
+| 9d | `labels="engine"` is refused, and the message names the tuple form. |
 | 10 | A row carrying three labels comes back from `read_rows` with all three, and a row carrying none appears in the mapping with an empty tuple. |
 | 11 | Reading a page of N labelled rows issues a **fixed** number of queries, not one per row. |
 | 12 | A label attached before a row was superseded is still reported against the live version. |
