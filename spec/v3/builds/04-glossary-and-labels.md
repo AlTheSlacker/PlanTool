@@ -461,10 +461,15 @@ refusal naming that call, and a stage script lands after the registry rows it na
 | 3 | 4D.0, the models | the parser and the selector field both consume these types |
 | 4 | 4D.4, the registry rows | `remove_term`'s refusal names `attach_label`; `attach_label`'s names `define_term` |
 | 5 | **4C, the call-site removals** | **before 4B — see §7.2** |
-| 6 | 4B, `terms.py` reduces | |
-| 7 | 4D.1–4D.3, the label service and the filter | |
+| 6 | **4D.1–4D.3, the label service and the filter** | **before 4B — `remove_term` counts, moves and detaches attachments, which is all label-service work (4B.3 behaviour 12). The draft had these the other way round.** |
+| 7 | 4B, `terms.py` reduces | |
 | 8 | 4E, the methodology | after the registry rows its script names |
 | 9 | 4F, the tests | last, because it asserts the rest landed |
+
+**Row 6 was inverted in the draft and the cold read caught it.** That makes **four landing-order
+inversions in four changes**, and change 3 had three at once. The shape is always the same: a task's
+text names work that a later task provides. It is now worth treating as a standing pre-write check
+rather than something the readers find.
 
 ### 7.2 The one sequencing hazard specific to this change
 
@@ -493,10 +498,28 @@ Version 10 → 11. `SCHEMA_VERSION` is **7 in the code today**; changes 1, 2 and
 | | behaviour |
 |---|---|
 | 1 | `detached_at` joins `TIMESTAMP_ROLES`, meaning *the attachment was taken off its target; the row stays as the record that it was once there.* |
-| 2 | **`approved_at` leaves `TIMESTAMP_ROLES`**, because 4A.1 removes the only column in the schema that used it. |
+| 2 | **`approved_at` leaves `TIMESTAMP_ROLES` — but in 4A.1's commit, not this one**, because it must leave at the same moment its column does. |
 | 3 | The set therefore holds **seven** members before and **seven** after — not eight. |
+| 3a | A new test asserts the **reverse** direction: every declared role has at least one column in `engine/schema.py`. |
 | 4 | `JUSTIFICATION_ROLES` is unchanged at **18**: nothing this change adds carries a reason. |
 | 5 | Both counts are re-enumerated from source at build time, by the method in §14, and not carried from this document. |
+
+**Behaviour 2 splits across two commits, and the cold read is why.** The draft removed `approved_at`
+here, in the task that lands *first* — while `terms.approved_at` still exists in `engine/schema.py`
+until 4A.1 lands second. That fails `test_every_timestamp_column_is_a_declared_role` between the two
+commits, which is the exact red window the "declaration lands before the DDL" rule exists to prevent,
+running in the opposite direction. **The rule only covers additions; a removal wants the reverse
+order.** So: `detached_at` is added here, `approved_at` is removed in 4A.1's commit alongside the
+column. Fourth change running that this ordering rule has needed stating, and the first time it has
+been stated in both directions.
+
+**Behaviour 3a is the mechanism this whole finding shows is missing.** `test_every_timestamp_column_is_a_declared_role`
+iterates columns and looks each up in the register; nothing iterates the register and looks for
+columns. A role left behind after its column dies is therefore invisible **forever**, which is how
+`approved_at` would have survived. The check is a few lines against the same `_columns()` helper,
+generalises to every future change, and is the reverse of a check this repository has now been bitten
+by twice — `GLOSSARY.md`'s exception protecting `PartsDontCover`, an identifier that does not exist,
+was the same defect in the other register.
 
 **Behaviour 2 is a finding, not bookkeeping, and it is invisible to the mechanism that would
 otherwise catch it.** `test_every_timestamp_column_is_a_declared_role` flags a column with no
@@ -528,12 +551,38 @@ reason, because attaching is the act §1 makes free.
 | | behaviour |
 |---|---|
 | 1 | `terms` loses six columns: `approved_at`, `names_ref`, `ban_scope`, `ban_reason`, `use_instead`, `superseded_at`. |
-| 2 | `idx_terms_live`, a partial unique index on `term WHERE superseded_at IS NULL`, becomes a plain `UNIQUE (term)`. |
+| 2 | `idx_terms_live`, a partial unique index on `term WHERE superseded_at IS NULL`, is replaced by a **`CREATE UNIQUE INDEX` on `term`** — an index, not a table constraint, so that 4A.2 can create it after the drops. |
 | 3 | `label_attachments` is created, with its two indexes. |
 | 4 | **No `term_comparisons`.** It goes with the near-match guard. |
 | 5 | `LABELS_DDL` yields exactly **three** statements through `schema.statements`, verified through that function rather than counted by eye. |
-| 6 | `label_attachments.word` carries no foreign key, and the DDL comment says why. |
+| 6 | `label_attachments.word` carries no foreign key, and the DDL comment says why — **the reason rewritten, see below**. |
 | 7 | Any retained per-version DDL fixture lives **outside** `engine/schema.py`. |
+| 8 | **`DDL += LABELS_DDL`.** Without this line no freshly created plan has the table. |
+| 9 | **`SCHEMA_VERSION` becomes 11**, and the running comment block above it gains this change's reasoning, as all four previous bumps did. |
+| 10 | **The 3→4 migration branch stops sharing `TERMS_DDL`** and takes a frozen copy of the eleven-column text, held outside `engine/schema.py` per behaviour 7. |
+| 11 | `approved_at` leaves `TIMESTAMP_ROLES` in this commit (4A.0 behaviour 2). |
+| 12 | The 33-line comment block above `TERMS_DDL` is rewritten, and `CHANGE_LOG_DDL`'s comment loses its `ban_scope` sentence. |
+
+**Behaviours 8, 9 and 10 are cold-read findings and each one alone stops the change working.**
+
+*Behaviour 8.* `engine/schema.py` assembles its full DDL by explicit append — `DDL += TERMS_DDL`,
+`DDL += REALLOCATIONS_DDL`, `DDL += REVISIONS_DDL`, `DDL += CHANGE_LOG_DDL`, four times — and
+`init_plan` runs `executescript(schema.DDL)`. The draft said the table "is created" and never said to
+append it. Every new plan would come up without it and fail on first use, while migrated stores had
+it; and §8 says no migrated store exists.
+
+*Behaviour 9.* Nothing in the draft set `SCHEMA_VERSION = 11`. `init_plan` stamps whatever that
+constant says, so a v11 store would call itself v10, and `migrate(schema.SCHEMA_VERSION)` would never
+select the new branch.
+
+*Behaviour 10 is the nastiest, because it fails late and in the data-losing step.* `storage.py`
+contains `if (current, target) == (3, 4): return schema.statements(schema.TERMS_DDL)`, and
+`schema.py` says why in its own words — *"Held apart from DDL above so that `migrate`'s 3 -> 4 step
+and a fresh `init_plan` create it from the same text."* Rewriting `TERMS_DDL` therefore rewrites
+**history**: a store climbing from 3 would be handed the new five-column table, then reach 10→11 and
+be asked for `superseded_at`, a column it never had. A migration is a point-in-time step and must
+name a point-in-time text — which is exactly what behaviour 7 already says, applied one branch
+earlier than the draft applied it.
 
 **The DDL, carried from `04-labels.md` with `term_comparisons` removed:**
 
@@ -542,10 +591,11 @@ reason, because attaching is the act §1 makes free.
 -- table is the attachment and nothing else.
 CREATE TABLE IF NOT EXISTS label_attachments (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    word        TEXT    NOT NULL,  -- the term, as the word. No REFERENCES terms (term):
-                                   -- keying on terms.id would cost the design, since a
-                                   -- redefinition must not detach every target. The word
-                                   -- is the identity that survives redefinition.
+    word        TEXT    NOT NULL,  -- the term, as the word, and deliberately NOT
+                                   -- REFERENCES terms (term): a detached attachment must
+                                   -- go on naming a word the owner has since removed,
+                                   -- because it is the record that the label was once
+                                   -- there. An FK would delete or forbid that record.
     target_root TEXT,              -- the lineage root of a plan row, so the label neither
                                    -- re-surfaces nor silently detaches when the row is
                                    -- superseded (rows.py, lineage_root)
@@ -553,9 +603,10 @@ CREATE TABLE IF NOT EXISTS label_attachments (
     detached_at TEXT,              -- null == the label is on this target now
     created_at  TEXT    NOT NULL,
     CHECK ((target_root IS NULL) != (task_id IS NULL)),
-    -- Both COALESCE sentinels below are reachable without these. Probed: INSERT INTO tasks
-    -- (id) VALUES (0) is accepted despite AUTOINCREMENT, and a row with target_root = ''
-    -- then collides with it — two different targets sharing one index key.
+    -- Both COALESCE sentinels below are reachable without these. Probed 2026-07-30:
+    -- a task row with id 0 inserts despite AUTOINCREMENT once its NOT NULL columns are
+    -- supplied, and an attachment on it then collides with one whose target_root is ''
+    -- — two different targets sharing the index key (word, '', 0).
     CHECK (target_root IS NULL OR target_root <> ''),
     CHECK (task_id IS NULL OR task_id > 0)
 );
@@ -574,11 +625,25 @@ CREATE INDEX IF NOT EXISTS idx_label_attachments_target
     ON label_attachments (target_root, detached_at);
 ```
 
-**Behaviour 2 is the half of this task that a reader will take for cosmetic.** `idx_terms_live` is
-partial *because* definitions were superseded rather than edited; with `superseded_at` gone the
-`WHERE` clause references a column that no longer exists, so the index does not survive the column
-drop in any case. Replacing it with a total `UNIQUE (term)` is what makes `word` a candidate FK
-parent in principle — and behaviour 6 still declines the FK, for the reason in the comment.
+**Behaviour 2 is the half of this task that a reader will take for cosmetic, and the cold read found
+the spec saying two different things about it.** `idx_terms_live` is partial *because* definitions
+were superseded rather than edited; with `superseded_at` gone the `WHERE` clause names a column that
+no longer exists, and SQLite refuses the column drop while it stands (probed — 4A.2 behaviour 4).
+
+**It is an index, not a table-level `UNIQUE (term)` constraint**, and the draft wrote it both ways —
+§3.1 and this behaviour as a constraint, 4A.2 as something "created" after a rename. A table
+constraint cannot be added after the fact, so the constraint reading would have made 4A.2's step list
+impossible; the index reading is what makes the in-place `ALTER` route work at all. §3.1's shorthand
+stands as a description of the shape, not as DDL.
+
+**And behaviour 6 still declines the foreign key, but the comment's reason was wrong and is
+rewritten.** The draft's comment announced that it was rejecting `REFERENCES terms (term)` and then
+argued against keying on `terms.id` — a non sequitur — on the ground that a redefinition would detach
+every target. Under §3.2 a redefinition is an in-place `UPDATE` and detaches nothing, so that
+argument is dead. The real reason is §3.4: a detached attachment must go on naming a word the owner
+has since removed, because it is the record that the label was once there, and a foreign key would
+either forbid the removal or delete the record. That is what the comment now says. **This is the
+defect 4A.0 behaviour 2 exists to catch — a citation to nothing — committed inside the same task.**
 
 **Behaviour 5 is a real dependency and not arithmetic.** `schema.statements` splits on semicolons and
 the block above **contains semicolons inside comments**, so the count holds only because comments are
@@ -600,21 +665,56 @@ branch.
 | | behaviour |
 |---|---|
 | 1 | Creates `label_attachments` and both indexes from `schema.LABELS_DDL` via `schema.statements`. |
-| 2 | Rebuilds `terms`: new table, copy `id`, `term`, `definition`, `created_at`, `updated_at`, drop the old, rename, then create `UNIQUE (term)`. |
-| 3 | Only **live** term rows are copied — those with `superseded_at IS NULL`. |
-| 4 | Seeds no word, and backfills no attachment. |
-| 5 | Adds nothing to the snapshot table set. |
-| 6 | Its docstring states what the migration **discards**. |
+| 2 | Reduces `terms` **in place, with `ALTER TABLE … DROP COLUMN`** — no table rebuild, no second copy of the DDL. |
+| 3 | Only **live** term rows survive: the superseded ones are deleted, and that `DELETE` runs **first**. |
+| 4 | The steps are, in this exact order: delete superseded rows → `DROP INDEX idx_terms_live` → six `DROP COLUMN`s → `CREATE UNIQUE INDEX` on `term`. |
+| 5 | Seeds no word, and backfills no attachment. |
+| 6 | Adds `label_attachments` **to** the snapshot table set. |
+| 7 | Its docstring states what the migration **discards**. |
 
-**Behaviour 2 is the real work in this packet.** Dropping six columns and swapping a partial unique
-index for a total one is a table rebuild in SQLite, not a sequence of `ALTER`s.
+**Behaviour 2 reverses the draft, and it was settled by probe rather than by argument.** The draft
+asserted that dropping six columns and swapping a partial unique index for a total one "is a table
+rebuild in SQLite, not a sequence of `ALTER`s" — offered with no probe, and the cold read challenged
+it. `ALTER TABLE … DROP COLUMN` has existed since SQLite 3.35 and this engine runs 3.49.1. Probed on
+2026-07-30 against a v10 `terms` holding a redefined word and a banned word:
 
-**Behaviour 3 is the one place this migration could silently corrupt the table, and it is a
-consequence of behaviour 2 rather than a choice.** Under the old schema a redefinition wrote a new
-row and stamped the old one, so a word that has ever been redefined has **several** rows and only one
-live. The new `UNIQUE (term)` is total. Copy everything and the rebuild fails on the first
-redefined word — or, worse, if the copy is written to tolerate it, keeps an arbitrary one. The
+| | result |
+|---|---|
+| the six drops plus the index swap, inside `BEGIN IMMEDIATE`, `PRAGMA foreign_keys = ON` | **works**; final columns are exactly `id, term, definition, created_at, updated_at` |
+| live rows | kept, with their original `created_at` and `updated_at` |
+| `sqlite_sequence` | **preserved** — high-water mark 3 before, next id allocated 4 after, so register entry 7's "ids are never reused" survives |
+| the new `UNIQUE (term)` | enforcing — a duplicate is refused |
+| forcing a failure on the last step, then `ROLLBACK` | table restored to all **11** columns and all 3 rows; DDL is transactional here |
+
+This deletes a hole the draft carried without noticing: a rebuild would have needed a second
+`CREATE TABLE terms` written inside `storage.py`, and `schema.py` forbids exactly that in its own
+words — *"Two copies of a `CREATE TABLE` is a schema that drifts between the stores that were
+migrated and the stores that were born."* There is now no second copy.
+
+**Behaviour 4's order is not stylistic; two of its three dependencies were probed and both bite.**
+Dropping `superseded_at` while `idx_terms_live` still exists fails with *"error in index
+idx_terms_live after drop column: no such column: superseded_at"* — SQLite validates surviving
+indexes against the reduced table. And the `DELETE` must precede the drop, because after it
+`superseded_at` is not there to filter on. Written in any other order the migration fails, and it
+fails inside the step that is discarding data.
+
+**Behaviour 3 is the one place this migration could silently corrupt the table.** Under the old
+schema a redefinition wrote a new row and stamped the old one, so a word that has ever been redefined
+has **several** rows and one live. The new `UNIQUE (term)` is total, so keeping them all makes the
+index creation fail — and a copy written to tolerate that would keep an arbitrary definition. The
 lineage is what §4 deletes; the live row is what survives.
+
+**Behaviour 6 reverses the draft too, and the draft stated the decision with no argument at all.**
+`snapshot_version` covers nine tables, and `storage.py` says what earns a place: *"overlays and
+ledgers that are not derivable from the rows. A snapshot that dropped these would silently unblock
+gates on restore … and re-surface dismissals the owner had already answered."* `label_attachments` is
+precisely that — an overlay keyed on lineage roots, the same primitive as `gap_overlay`, holding
+judgments that cannot be recomputed from the rows. Left out: `restore_snapshot` on an abandoned
+revision rewinds `plan_rows` and strands attachments on roots that no longer exist; `recover("restart")`
+deletes every plan row and orphans all of them, and neither column carries a foreign key to catch it;
+and `remove_term`'s refusal would then report affected rows that do not exist. **`terms` itself stays
+out**, because it is not derived from the plan and is not rewound by a revision — but the attachment
+of a word to a row is a judgment about the plan, and it belongs with the plan's other overlays.
 
 **Behaviour 6 is a first for this engine and it is why the task is specified rather than assumed.**
 Every existing migration says in its own words that it invents nothing. This one **loses data**: the
@@ -645,7 +745,25 @@ Depends on 4C having landed first (§7.2).
 | 3 | Deleted errors: `AlreadyApproved`, `BanNeedsReason`. |
 | 4 | `Term` loses `approved_at`, `names_ref`, `ban_scope`, `ban_reason`, `use_instead`, `superseded_at`. |
 | 5 | The module docstring is rewritten to §2.2 and §3.3. |
-| 6 | `WORD` and `_word` survive. |
+| 6 | `_word` survives. **`WORD` does not** — see below. |
+| 7 | **Also deleted, each with no reader left:** `_segments` (only caller `violations`), `_succeed` (only callers `redefine_term`, now an `UPDATE`, and `approve_term`), `Term.is_live` (reads the deleted `superseded_at`), `history()` (a lineage that no longer exists), and the `rows` constructor parameter with `self.rows` (only reader `_name_of`). |
+| 8 | `find()` and `glossary()` lose their `superseded_at IS NULL` predicates; `_hydrate` stops reading the six dropped columns. |
+| 9 | The now-unused imports go: `json` and `Path` (only `export_glossary`), `RowRef` (only `names_ref`). |
+| 10 | Stale prose on **surviving** members is rewritten, not just the module docstring: `find`'s "banned or not", `glossary`'s "Banned words are included", `redefine_term`'s "the old wording stays as history", `TermExists`'s promise of history. |
+
+**Behaviours 7 to 10 are cold-read findings, and every one of them meets the test §4 already applies
+elsewhere.** §4 justifies deleting `_tokens`, `ADDRESS` and `names_ref` on "no second caller" — and
+then the draft's list stopped, leaving five members whose only callers it was deleting in the same
+task. `history()` is the sharpest: over a table with no lineage it can only ever return the one live
+row, so it survives as a call whose answer is `find()`.
+
+**Behaviour 6 reverses the draft on `WORD`, because the draft's own reason contradicted itself.** It
+kept the regex "because change 3 needs a tokeniser", citing §4's ruling — which says
+`CatalogueService` keeps `_rank` private **and takes the tokeniser with it**. Both cannot be true. If
+change 3 takes it, `WORD` has no reader here once `_tokens` and `violations` go, because `_word` is
+strip-and-lowercase and needs no regex; if change 3 imports `terms.WORD` instead, that is the second
+caller whose absence §4 used to justify deleting `engine/lexical.py`. The tokeniser goes to change 3,
+and `WORD` goes with it.
 
 **Behaviour 2 deletes `ADDRESS` and that is a deliberate loss.** It stripped `requirements:61`-style
 addresses before tokenising, so a citation of a retired word did not read as a use of it. It existed
@@ -656,8 +774,17 @@ for `violations()` and has no second caller — measured, not assumed. It goes w
 delete. Left standing it is the most persuasive document in the repository arguing for machinery that
 no longer exists, sitting in the file a reader opens first. It must instead carry §2.2: the failure
 is a synonym sharing no letters, no scan sees it, and the glossary's job is to be **in front of the
-writer at the moment of naming**. That argument is already in the file's own v2 docstring, one
-paragraph down, and has been since before any of this was built.
+writer at the moment of naming**.
+
+**And the sentence that argument comes from is not where this document twice said it was.** §2.2 and
+the draft of this behaviour both claim it sits in `terms.py`'s *module* docstring, "one paragraph
+down". It does not. Measured 2026-07-30: the module docstring runs to line 50 and covers F27, the
+real-table argument, propose-and-approve, the retired-word trap and plan-level scope. The sentence —
+*"it matches words, so a new name invented for an existing concept, sharing no letters with it, goes
+unseen. Nothing without judgment can catch that"* — is at **line 482, inside the docstring of
+`violations()`**, the method behaviour 1 deletes. So a builder doing the deletions before the rewrite
+destroys the text this behaviour tells them to promote. **Copy it out before deleting**, and correct
+§2.2, which rests the whole design on a claim about where it lives.
 
 **Behaviour 6 keeps `WORD` because change 3 needs a tokeniser and `lexical.py` is reversed.** §4's
 last paragraph is the ruling: one caller, so no shared module, and `CatalogueService` keeps `_rank`
@@ -717,6 +844,37 @@ the owner's own word at the moment he defines it.
 | 7 | With `detach_all=True`: every live attachment is detached, then the row is deleted. One transaction. |
 | 8 | `replacement` and `detach_all` together are refused — they are two answers to one question. |
 | 9 | Removing an unknown word refuses with `TermNotFound`. |
+| 10 | **`Storage`'s op vocabulary gains a `delete` kind**, without which none of the above can be written. |
+| 11 | Two new errors: `TermInUse` (behaviour 2) and `AmbiguousRemoval` (behaviour 8). |
+| 12 | The attachment work is done through `LabelService`, which therefore lands **before** this task. |
+| 13 | A `replacement` equal to the word being removed is refused; a `replacement` supplied when nothing is attached is still validated as a live term, then ignored. |
+
+**Behaviour 10 is the cold read's hardest finding in this packet: as drafted, `remove_term` was
+unbuildable.** `Storage.write_atomic` accepts `kind: Literal["insert", "update", "insert_row"]` and
+nothing else — there is no delete, and `briefs.py` states the reason in the source: *"storage's op
+vocabulary is insert/update by design (no delete: plan history is append-only)."* Every one of
+behaviours 1, 3 and 7 ends by deleting the `terms` row.
+
+**The rule that forbids a delete does not reach this table, and that is the owner's own decision.**
+Append-only is a property of **plan history** — `plan_rows` and the ledgers keyed to it, where a
+superseded row is the record of what the plan used to say. `terms` was deliberately made a real table
+rather than a plan-row type, and §1 makes its contents the owner's to edit: *"the user defines the
+contents."* A glossary you may add to and rewrite but never remove from is not a table the owner
+owns. So the vocabulary gains `delete`, and the guard is that it is **the narrowest possible
+addition** — one op kind, and this specification names `terms` as its only permitted target, so a
+later change deleting from `plan_rows` has to argue for it in its own words rather than inherit
+permission from here.
+
+**Behaviour 11 exists because the draft named two refusals and no error classes**, while 4B.1 deletes
+two and adds none. The register requires a typed exception per named error, and there were none to be
+per.
+
+**Behaviour 12 reverses the landing order and §7.1 is corrected to match.** The draft put this packet
+at step 6 and the label service at step 7, while requiring this task to count live attachments, move
+them, dedupe the collapse and detach them — all of it label-service work. The alternative the draft
+implied is that `remove_term` reaches into `label_attachments` directly, which duplicates the dedupe
+and the root resolution, in the same change that deleted `engine/lexical.py` on the ground that there
+was no second occurrence. **This would have been the second occurrence.**
 
 **Behaviour 2 is the owner's instruction and the shape of it matters.** *"If the user tries to delete
 a glossary item that is a label then prompt for a replacement label, do not arbitrarily remove the
@@ -762,9 +920,23 @@ to stop existing. Line numbers are as measured 2026-07-30 and are a finding aid,
 
 | | behaviour |
 |---|---|
-| 1 | The submission scan at `rows.py:412` — `self.terms.violations(submission.content)` — is deleted with the warnings it raised. |
+| 1 | The submission scan at `rows.py:412` is deleted, **and with it `_vocabulary_note` whole (`rows.py:399`) and its call site at `rows.py:218`.** |
 | 2 | The `terms` constructor parameter, its default `TermService` construction and the `self.terms` attribute are deleted. |
-| 3 | **`terms` stays a reserved plan-row table name**, and its refusal still names `define_term`. |
+| 3 | **`terms` stays a reserved plan-row table name** — but its refusal text is rewritten, because the argument in it dies here. |
+| 4 | `RowVerdict.note` is left with no producer in `rows.py`; the field stays, and this task says so rather than leaving it to be discovered. |
+
+**Behaviour 1 is corrected from the draft, which said the scan is "deleted with the warnings it
+raised."** It raises no warnings. It produces a **verdict note** —
+`verdicts.append(RowVerdict(index, True, note=self._vocabulary_note(submission)))` — so what the
+deletion actually orphans is the `_vocabulary_note` method, its call site, and the argument. The
+draft named none of the three.
+
+**Behaviour 3's reservation survives; its stated reason does not.** The refusal text argues that the
+glossary is a real table *"because a word being redefined and a word being replaced are two different
+relations that supersession collapses into one."* After this change redefinition is an `UPDATE`,
+replacement is a parameter of the delete, and supersession is gone — so the sentence explains the
+table by machinery the same change deletes. The reservation is still right for the plain reason: a
+real table owns that name, so plan rows must not be written into it.
 
 **Behaviour 3 is the one thing in this module that does not change**, and it is called out because
 the surrounding deletions make it look like an oversight. The reservation exists so that
@@ -777,9 +949,14 @@ namespace the real table owns. That is as true after this change as before it.
 
 | | behaviour |
 |---|---|
-| 1 | `_retired_words()` is deleted whole, and the loop over it in `run_gate`. |
-| 2 | The `terms` parameter, the `TermService` default and the `Usage` import go with it. |
+| 1 | `_retired_words()` is deleted whole, and the loop over it — which is in **`_raise_warnings` (`gates.py:340`)**, not in `run_gate`. |
+| 2 | The `terms` parameter, the `TermService` default, the `Usage` import **and the `RETIRED_TERM` import (`gates.py:49`)** go with it. |
 | 3 | The gate's remaining warning kinds and their counting are untouched. |
+
+**Behaviour 2's `RETIRED_TERM` import is the one that would have broken the entire suite, not just
+the glossary tests.** 4C.6 deletes that constant from `warnings.py`; `gates.py` imports it by name at
+module level, so the import fails and every test importing `gates` fails with it. The draft's
+behaviour 2 listed only the `Usage` import.
 
 **This is the gate that "counts what submission only mentioned in passing", and losing it is the
 deliberate half of §2.5.** The gate counted a denominator that came from the banned list; with no
@@ -794,13 +971,29 @@ F23's shape, which is worse than not running.
 |---|---|
 | 1 | `_rule_no_glossary` is deleted, and its `"no_glossary"` entry in the rule table. |
 | 2 | The awaiting-approval rule is deleted, and its entry. |
-| 3 | The violations rule at `gaps.py:331` is deleted, and its entry. |
+| 3 | **`gaps.py:331` is not a rule and there is no third entry to delete.** It is the `violations()` loop inside `live_warning_keys()`, and *that loop* is what goes. |
 | 4 | The `terms` parameter and the `TermService` default go. |
-| 5 | `gap_rules.yaml` loses the rules' declarations, so the rule table and its declaration stay in step. |
+| 5 | `gap_rules.yaml` loses the two rules' declarations **in every loadable revision — rev3, rev4, rev5 and rev6 — not only the newest.** |
 
-**Behaviour 5 is the failure mode this engine has already had.** A rule table and its YAML
-declaration are two lists that must agree; deleting one side leaves either a declared rule with no
-implementation or an implementation nothing declares, and only one of those fails loudly.
+**Behaviour 3 is a factual correction and it matters because the draft's version fires the exact
+hazard §7.2 sequences the whole change around.** The rule table holds seven handlers —
+`empty_table`, `missing_field`, `untraced`, `open_assumption`, `uncited_section`, `no_glossary`,
+`unsettled_term` — and no violations rule; §4's evidence table repeats the same error. A builder
+following the draft deletes nothing at line 331, then behaviour 4 removes `self.terms`, and
+`live_warning_keys()` — called from both `GateEngine._clear_settled_warnings` and
+`WarningService._reconcile` — raises on a collaborator that is gone, and then on `violations` once 4B
+lands. The count of three call sites was right; the identification of the third was wrong.
+
+**`live_warning_keys` is the F50 reconciliation method**, and losing its retired-word branch is
+correct: it reconciles live warnings against what still holds, and a warning kind with no producer
+has nothing to reconcile.
+
+**Behaviour 5 is widened, and the draft's version left the harm it describes in place.** `rev3` is
+`EARLIEST_LOADABLE_REVISION`, so it stays loadable forever, and its `gap_rules.yaml` declares both
+rules — with `unsettled_term`'s text ending *"record the answer with `approve_term`"*. Strip only the
+newest revision and `load(3)` still yields two rules whose types `gaps.py` no longer implements, and
+still tells a planner to call a tool the registry cannot resolve. That is 4E's own stated harm,
+surviving in three of the four loadable revisions.
 
 ### Task 4C.4 — `resume.py`
 
@@ -808,8 +1001,8 @@ implementation or an implementation nothing declares, and only one of those fail
 
 | | behaviour |
 |---|---|
-| 1 | The `glossary` `Fetch` field, its construction at `resume.py:420` and its two rendered lines go. |
-| 2 | `terms_awaiting_approval`, its count at `resume.py:423` and the line naming `approve_term()` go. |
+| 1 | The `glossary` `Fetch` field, its construction at `resume.py:420` and its **one** rendered line — `lines.append(self.glossary.present())` at `resume.py:262` — go. |
+| 2 | `terms_awaiting_approval`, its count at `resume.py:423` and the sub-line naming `approve_term()` (`resume.py:263–272`) go. |
 | 3 | The "No agreed terms yet — `define_term()`…" line goes with them. |
 | 4 | The `terms` parameter and the `TermService` default go. |
 
@@ -841,12 +1034,22 @@ conclusion from it.
 
 | | behaviour |
 |---|---|
-| 1 | The retired-word warning kind is deleted from the kind table. |
-| 2 | Its key-construction comment and any suppression fixture naming it go with it. |
+| 1 | The `RETIRED_TERM` constant is deleted from `warnings.py`, **and removed from `SETTLEABLE_KINDS`**. |
+| 2 | Its rationale comment in `warnings.py` goes; the key-construction literals it describes live in `gates.py` and `gaps.py` and go with 4C.2 and 4C.3. |
+| 3 | **Any `retired_term` rows already in a live `warnings` table are settled by the migration**, not left active. |
 
 **Its only producer was `violations()`.** A warning kind with no producer cannot fire, and a kind
-table listing one is a menu item that is never cooked — the register says a kind is declared where it
-is raised.
+table listing one is a menu item that is never cooked.
+
+**Behaviour 3 is a hole the draft left open and it fails in the direction that annoys the owner.**
+Once `RETIRED_TERM` leaves `SETTLEABLE_KINDS`, neither `_reconcile` nor `_clear_settled_warnings`
+will ever touch an existing `retired_term` row again — so it stays `active` forever, with nothing
+able to produce it and nothing able to settle it. A permanent nag, in the digest §1 exists to
+de-noise, about a rule that no longer exists.
+
+**And behaviour 2 corrects the draft, which put the key-construction comment in the wrong file.**
+`warnings.py` holds the kind's rationale; the `f"term:{root}:{usage.term}"` literals are in `gates.py`
+and `gaps.py`.
 
 ## 11. Packet 4D — labels
 
@@ -861,10 +1064,30 @@ Depends on 4A. 4D.0 lands with 4A; 4D.4 lands before 4C.
 | | behaviour |
 |---|---|
 | 1 | `Attachment` — `id: int`, `word: str`, `target_root: RowRef \| None`, `task_id: int \| None`, `detached_at: str \| None`, `created_at: str`, with an `is_live` property. |
-| 2 | `LabelUsage` — the word, its definition, and its live attachment count split into rows and tasks. |
-| 3 | `LabelReport` — the usages, the two denominators, the count of live terms with no attachment, and, when one word was asked for, its targets. |
-| 4 | `RowPage` gains `labels: dict[RowRef, tuple[str, ...]]`, defaulting to an empty dict. |
-| 5 | There is no `Candidate`, no `TermComparison`, no `LabelResult` and no `Label`. |
+| 2 | `LabelUsage` — `word: str`, `definition: str`, `row_count: int`, `task_count: int`. |
+| 3 | `LabelTarget` — `kind: str` (`"row"` or `"task"`), `ref: RowRef \| None`, `task_id: int \| None`, `name: str`. |
+| 4 | `LabelReport` — `usages: tuple[LabelUsage, ...]`, `live_rows: int`, `live_tasks: int`, `unattached_terms: int`, `targets: tuple[LabelTarget, ...]`. |
+| 5 | `RowPage` gains `labels: dict[RowRef, tuple[str, ...]] = field(default_factory=dict)`. |
+| 6 | `RowSelector` gains `labels: tuple[str, ...] = ()` — **here, not in 4D.3**, because the payload parser lands before the filter. |
+| 7 | There is no `Candidate`, no `TermComparison`, no `LabelResult` and no `Label`. |
+
+**Behaviours 2 to 4 spell out every field because the draft did not, and that is the defect this task
+was written to prevent.** Its own justification names the v2 case — `WriteBatch`, `RowSelector`,
+`TraversalSpec` and `GraphScope`, four types the plan named and nobody defined, *"so two implementers
+would have built two incompatible interfaces"* — and then gave `LabelUsage` and `LabelReport` as
+prose. Two builders would have produced `LabelUsage(word, definition, rows, tasks)` and
+`LabelUsage(term, definition, row_count, task_count)`. Worse, 4D.3 requires the report to carry
+"a plan row as its name and ref, a task as its id and title" — a fourth type with no name at all,
+which is now `LabelTarget`.
+
+**Behaviour 5's `default_factory` is not a detail.** `RowPage` is `@dataclass(frozen=True,
+slots=True)`, and a bare `= {}` is a `ValueError` at class-definition time. Note also that `frozen`
+synthesises `__hash__`, so a page carrying a dict can no longer be hashed — harmless today, since
+nothing puts a page in a set, and recorded so it is not discovered by a `TypeError`.
+
+**Behaviour 6 moves the selector field into this task, correcting §7.1.** The landing order justified
+putting the models early because "the parser and the selector field both consume these types", then
+defined the field three steps later than the parser that fills it.
 
 **Every field is listed because a return type's fields are not a convention.** They differ per task,
 so a type named and not defined is a hole in every task that consumes it — the recorded v2 defect is
@@ -883,7 +1106,9 @@ alone.
 
 ### Task 4D.1 — the read path
 
-**Signature.** Three private methods on `LabelService`: `_live_term(word) -> Term`,
+**Signature.** A new module `engine/labels.py` holding `LabelService`, with
+`__init__(self, storage: Storage, rows: RowService, terms: TermService)` — **all three required, none
+optional** — and three private methods: `_live_term(word) -> Term`,
 `_target_key(target) -> tuple[str | None, int | None]`, `_attachments(word, live_only=True) -> tuple[Attachment, ...]`.
 
 **Behaviours**
@@ -891,9 +1116,25 @@ alone.
 | | behaviour |
 |---|---|
 | 1 | `_live_term` returns the live `terms` row, or refuses with `TermNotFound` naming `define_term`. |
-| 2 | `_target_key` returns `(lineage root, None)` for a ref and `(None, task id)` for a task id, and refuses anything else. |
-| 3 | The word is normalised — stripped and lowercased — and an empty one is refused. |
-| 4 | `_attachments` returns live attachments unless asked for all. |
+| 2 | `_target_key` returns `(str(lineage root), None)` for a ref and `(None, task id)` for a task id, and refuses anything else with `InvalidTarget`. |
+| 3 | A ref is checked for **existence** via `RowService.get` before its root is taken; an unknown one raises `RowNotFound`. A task id is checked against `tasks`. |
+| 4 | The word is normalised — stripped and lowercased — and an empty one is refused. |
+| 5 | `_attachments` returns live attachments unless asked for all. |
+
+**The constructor is specified, and its collaborators are required rather than optional, because the
+register's default would have made this fail silently.** Nothing in the draft said which module
+`LabelService` lives in, what it takes, or who builds it. Register entry 11 says a collaborator not
+passed has "its guard skipped and its effects omitted" — so `LabelService(storage)` would have
+constructed cleanly and quietly stopped resolving lineage roots, which is the one thing the whole
+keying design exists to do. This task overrides entry 11, with that as the written reason.
+
+**Behaviour 3 is a cold-read finding and the draft's delegation could not deliver it.** The draft said
+`_target_key` "refuses an unknown one" and named `RowService.lineage_root` as the mechanism.
+`lineage_root` does not refuse anything — its body is `if not found or not found[0]["supersedes"]:
+return current`, so a row that does not exist and a row with no parent take the same branch and both
+return the input ref. `attach_label("engine", ("nosuch:99",))` would have succeeded, writing an
+attachment to a target that has never existed and that nothing would ever clean up, since `word` and
+`target_root` both carry no foreign key. Existence has to be checked explicitly.
 
 **Behaviour 1 is the whole of the glossary's mechanical role** (§3.3). There is no ban branch and no
 `TermBanned`; the superseded design had both.
@@ -921,7 +1162,7 @@ and `detach_label` with the same shape.
 | 4 | Detaching an unattached target is a no-op. |
 | 5 | Duplicate targets **within one call** are collapsed before the write. |
 | 6 | Detaching stamps `detached_at`; it never deletes the row. |
-| 7 | Neither call takes an idempotency key; each derives one from the word and the sorted target keys. |
+| 7 | Neither call takes an idempotency key; each derives one from **the call's own name**, the word, and the sorted target keys. |
 | 8 | No reason is recorded on either act. |
 | 9 | Both return the word's live attachments after the call, not the delta. |
 
@@ -936,6 +1177,19 @@ construction**: behaviour 3 makes a repeat a no-op returning the same answer, so
 to protect against. The superseded draft argued for caller-supplied keys on four writing calls and
 the cold read found that not one of them could ever consult it, because every path refused or no-oped
 before `write_atomic`. Here the guard is not unreachable — it is unnecessary.
+
+**The call's name is in the key because without it the two calls collide, and the cold read caught
+it.** The draft derived the key from "the word and the sorted target keys" — which are *identical*
+for `attach_label("part", refs)` and `detach_label("part", refs)`. `Storage.replay(key)` returns the
+original receipt and skips execution, so a detach following an attach on the same targets would have
+been swallowed as a replay of the attach and written nothing, silently. `terms.py` already carries
+the fix as a pattern — `key("retire_term", word, current.id)`, `key("approve_term", word, ...)` — the
+act is always part of the key. **This is the one finding in the packet that produces wrong data
+rather than a loud failure.**
+
+**A second replay hazard follows from it and is why the key must also carry the resolved live set.**
+Attach → detach → re-attach on the same targets re-derives the first attach's key. Include the
+current live-attachment keys in the derivation, so the third call is a different act from the first.
 
 **Behaviour 8 is the control level, in the schema.** Attaching is the act §1 leaves free; a required
 reason on it would be friction on the one thing the design says is frictionless.
@@ -1009,11 +1263,32 @@ somebody looked.
 the mapping, a caller could not tell "this row has no labels" from "this page did not fetch them",
 and would write `labels.get(ref, ())` — restoring the ambiguity the mapping exists to remove.
 
-**Behaviour 12 is where this goes wrong if it is written per row.** A page is up to a few hundred
-rows, and a label lookup per row is a few hundred queries to render one page — the read that made the
-index worth having becomes the reason the page is slow. The correct form is the same shape as
-behaviour 7's filter, in reverse: collect the page's lineage roots, select every live attachment whose
-`target_root` is in that set, and group in memory.
+**Behaviour 12 promised what its only primitive forbade, and it is fixed the same way.** A label
+lookup per row is a few hundred queries to render one page — but "the page's lineage roots" cannot be
+had without one `lineage_root` walk per row *before* the single query runs, so the draft's own
+mechanism defeated its own promise. The fix is the mirror of behaviour 7's: one recursive CTE walking
+`supersedes` **backward** from the page's refs, joined to the attachments in the same statement.
+Probed at SQLite 3.49.1, on a page mixing a thrice-superseded row with two never-superseded ones:
+
+```sql
+WITH RECURSIVE walk(ref, cur) AS (
+    SELECT value, value FROM json_each(?)          -- the page's refs
+    UNION ALL
+    SELECT w.ref, p.supersedes
+      FROM walk w
+      JOIN plan_rows p ON p.table_name || ':' || p.ordinal = w.cur
+     WHERE p.supersedes IS NOT NULL
+)
+SELECT w.ref, la.word FROM walk w
+  JOIN plan_rows p ON p.table_name || ':' || p.ordinal = w.cur
+  JOIN label_attachments la ON la.target_root = w.cur AND la.detached_at IS NULL
+ WHERE p.supersedes IS NULL
+ ORDER BY w.ref, la.word
+```
+
+It returned each row's labels correctly, including for the superseded lineage whose attachment sits
+on a root three versions back. `ORDER BY … la.word` is where behaviour 11's alphabetical ordering
+actually comes from, rather than being left to the grouping.
 
 **Behaviour 13 matters because the alternative is silent.** A null would make every consumer test for
 it before iterating, and the one that forgets fails on precisely the rows that carry no labels — which
@@ -1031,12 +1306,31 @@ the report would have walked them into a refusal.
 of everything are both interesting, and any rule saying *which* is bad is a threshold — a judgment
 written as arithmetic so review cannot see it.
 
-**Behaviour 7 is a real join and it is the task the superseded draft never wrote** — it promised the
-filter and specified only a dataclass field and a parser key. Attachments key on lineage roots while
-`read_rows` is handed refs, so the join is `plan_rows` → `lineage_root(ref)` → `target_root`, and the
-root is computed per candidate row rather than matched directly. **The cheap correct form is a
-subquery over the attachments**: collect the qualifying roots, then filter rows whose root is in that
-set, because the attached set is small and the row set is not.
+**Behaviour 7's join had no mechanism, and this is the deepest thing the cold read found.** The draft
+said "collect the qualifying roots, then filter rows whose root is in that set" — but there is no way
+to express *a row's root* in the single `WHERE` clause `read_rows` builds. The only root primitive in
+the engine is `RowService.lineage_root`, a **Python loop issuing one query per supersession hop**. So
+a builder had three options and the draft chose none: a recursive CTE, which the draft never
+mentions; matching roots against refs directly, which is correct only for rows that have never been
+superseded and silently drops exactly the lineages root-keying exists to preserve; or resolving in
+Python, which breaks behaviour 9, since `total` and paging both ride in SQL.
+
+**The fix walks the chain the other way, and it was probed.** Rather than resolving every candidate
+row *back* to its root, resolve the small attached set *forward* to its live heads — the CTE above.
+Probed at SQLite 3.49.1 on 2026-07-30 against a lineage superseded twice, labelled at its root:
+
+| request | live rows returned |
+|---|---|
+| `('engine',)` where `requirements:1` (root, now `requirements:9`) and `requirements:2` carry it | `requirements:2`, `requirements:9` |
+| `('engine', 'schema')` where only the first lineage carries both | `requirements:9` |
+
+So a label attached before three supersessions still finds the live row, the AND still holds, and the
+result is a plain set of refs that composes with every other selector dimension and leaves `total`,
+`limit` and `offset` in SQL where behaviour 9 needs them.
+
+**One placeholder style, not two.** The draft's SQL mixed `?` and `:n` in one statement. Probed: it
+runs today with a `DeprecationWarning` and becomes a `ProgrammingError` in Python 3.14 — and every
+`Storage.query` call in the engine passes a tuple. The count binds as a trailing `?`.
 
 **The AND is the owner's decision of 2026-07-30, taken against my recommendation, and it is stated
 here so nobody re-argues it.** I proposed one label only, on the ground that a second with an AND is
@@ -1044,10 +1338,22 @@ the start of a filter language. He asked for it *"for completeness"*. The form i
 `HAVING` is the whole of it:
 
 ```sql
-SELECT target_root FROM label_attachments
- WHERE word IN (?, ?, …) AND detached_at IS NULL AND target_root IS NOT NULL
- GROUP BY target_root
-HAVING COUNT(DISTINCT word) = :n
+WITH RECURSIVE attached(root) AS (
+    SELECT target_root FROM label_attachments
+     WHERE word IN (?, ?, …) AND detached_at IS NULL AND target_root IS NOT NULL
+     GROUP BY target_root
+    HAVING COUNT(DISTINCT word) = ?
+),
+chain(root, ref) AS (
+    SELECT root, root FROM attached
+    UNION ALL
+    SELECT c.root, p.superseded_by
+      FROM chain c
+      JOIN plan_rows p ON p.table_name || ':' || p.ordinal = c.ref
+     WHERE p.superseded_by IS NOT NULL
+)
+SELECT DISTINCT ref FROM chain
+ WHERE ref IN (SELECT table_name || ':' || ordinal FROM plan_rows WHERE superseded_by IS NULL)
 ```
 
 **`COUNT(DISTINCT word)` and not `COUNT(*)`, and this was probed rather than reasoned.** The live
@@ -1103,8 +1409,37 @@ of the results.
 | 1 | Removed: `approve_term`, `retire_term`, `export_glossary` — from the registry **and** from `ADDED`. |
 | 2 | Added: `remove_term`, `attach_label`, `detach_label`, `labels` — to the registry **and** to `ADDED`, each with the reason it exists. |
 | 3 | `define_term` and `redefine_term` keep their registry rows; `define_term` loses its `names_ref` parameter. |
-| 4 | `read_rows` gains a `labels` parameter taking a list, and the contract row and docstring enumeration are amended to say the match is AND. |
+| 4 | **`labels` is a field of the `selector` payload, not a top-level `read_rows` parameter**, and `as_selector`'s whitelist gains `"labels"` and constructs it. |
 | 4a | The rendered form of a page shows each row's labels, and `contracts:10` — the contract `RowPage` answers to — is amended to say the page carries them. |
+| 4b | The labels mapping is rendered with a **name beside every address**, never as a dict keyed on a bare `table:ordinal`. |
+| 4c | `redefine_term` **also** loses its `names_ref` parameter. |
+| 4d | The surviving glossary tools' summaries are rewritten: `define_term`'s "the owner settles it", `redefine_term`'s "keeping the old wording as history. Also how a retired word comes back", `glossary`'s "retired ones included", and `define_term`'s `ADDED` reason. |
+| 4e | `Surface.__init__` constructs `LabelService` and the registry rows name the attribute it is bound to. |
+| 4f | A payload decoder for a **mixed** sequence of refs and task ids is registered, since `DECODERS` today has `refs` and `ints` and nothing that accepts both. |
+
+**Behaviour 4 is a correction, and as drafted the filter could not have run.** The `read_rows`
+registry row takes exactly one parameter, `selector`, and dispatch calls
+`getattr(service, method)(**args)` against `read_rows(self, selector: RowSelector)`. A top-level
+`labels` parameter produces `read_rows(selector=…, labels=[…])` → `TypeError`, caught by the blanket
+handler and reported as a `"partial"` failure — the tool blaming the caller for the spec's mistake.
+And `as_selector` whitelists its keys explicitly, refusing anything else with *"a selector; it has no
+field 'labels'"*, so both halves must change together.
+
+**Behaviour 4c is the same omission one row over.** The draft said `define_term` loses `names_ref`
+and said nothing about `redefine_term`, whose registry row carries one too. Left as drafted, `_bind`
+decodes it and passes it to a method that no longer accepts it.
+
+**Behaviour 4e is a hole that would have made all four new tools fail.** Dispatch resolves a tool by
+`getattr(getattr(self, tool.service), tool.method)`. No task in the draft constructed `LabelService`,
+named its attribute, or said which module it lives in.
+
+**And the arithmetic paragraph below carried a wrong count, which is worth recording rather than
+quietly fixing.** It said `EXCLUDED` and `DEFERRED` are both empty. `DEFERRED` is; **`EXCLUDED` holds
+three** — `renew_lease`, `release_writer_lock`, `acquire_writer_lock`, the writer-lock tools, and
+`surface.py`'s own docstring says so in prose. The script I measured with matched `Absence(`
+followed by a bare identifier, and those three begin with a quoted contract address, so they counted
+as zero. **A method that is 95% written produces a number that looks checkable and is not** — the
+same lesson §14 was written to enforce, failing inside the change that wrote it.
 | 5 | The registry rows land **before** any refusal whose text names the call. |
 | 6 | Payload parsing for the label calls is registered once, under one name. |
 
@@ -1114,7 +1449,7 @@ registered and all six are in `ADDED`, because the frozen plan never asked what 
 each carries `DEVIATION`. This change removes three and adds four, giving **55** and **13** — *against
 today's code*. Changes 1, 2 and 3 all touch this file and none of them is built, so **re-run the
 count at build time**; the number to trust is the one measured against what those changes actually
-left. `EXCLUDED` and `DEFERRED` are both empty today and neither is touched.
+left. `DEFERRED` is empty; **`EXCLUDED` holds three** (the writer-lock tools). Neither is touched.
 
 **Behaviour 1 must remove the `ADDED` entries too, or the suite fails.** A test asserts that every
 tool carrying `DEVIATION` appears in `ADDED`; the register is the reverse direction, so a stale
@@ -1135,11 +1470,39 @@ Revision 6. Lands after the registry rows its script names.
 
 | | behaviour |
 |---|---|
-| 1 | `engine/methodology/rev6/` is created from rev5, with a stage-6 labelling round. |
+| 1 | `engine/methodology/rev6/` is created from rev5, with a labelling round added as a **new stage**, not bolted onto an existing one. |
+| 1a | **`manifest.yaml`'s `revision:` becomes 6 and `revision_stamp` is changed.** |
+| 1b | The new stage declares all five fields `Package` requires — `number`, `name`, `mode`, `script`, `tables` — and the stage list and `package_range` grow to match. |
+| 1c | `gate_criteria.yaml` gains entries for the new stage, or records that it deliberately has none. |
+| 1d | `DEFAULT_REVISION` in `engine/methodology/__init__.py` becomes 6. |
 | 2 | The round says in as many words that **a label is a glossary term**, and that `define_term` is how you mint one. |
 | 3 | `approve_term` is removed from `mandate.md` and `gap_rules.yaml`. |
 | 4 | Residual packaging-round prose is deleted. |
-| 5 | `get_stage_script(6)` renders without raising. |
+| 5 | The stage script renders without raising, **under whatever name change 1 leaves that call** — see below. |
+| 6 | A plan sitting on rev5 is either owed a rev5→rev6 migration or explicitly is not, with the reason recorded. |
+
+**Behaviour 1a is the failure this project has already had, and the draft was walking straight back
+into it.** `load()` reads `revision` and `revision_stamp` out of `manifest.yaml`, and rev6 is a
+**copy** of rev5. The manifest's own comment is the record: *"It identified itself as rev 2 until
+2026-07-22 — revision and stamp both copied along with the content they exist to distinguish, so
+every caller asking which methodology was in force got the wrong answer (F31). Change the stamp
+whenever the content changes."* The draft cited the sibling of that failure — rev2's `stage` keying
+surviving two revisions — as its reason for behaviour 4, and then repeated the original.
+
+**Behaviour 1d is the difference between an asset and a used asset.** `DEFAULT_REVISION` and
+`EARLIEST_LOADABLE_REVISION` are both 3 today and no packet touched them; rev6 would have been a
+directory nothing loads.
+
+**Behaviour 1's "new stage" resolves a collision the draft did not see.** It called this "a stage-6
+labelling round" — and in the manifest, number 6 is **Architecture**. Either the labelling round is a
+new stage with its own number and the list grows, or it is bolted onto architecture, which is a
+different thing. Nothing in the draft chose, and none of the five fields a stage needs was given.
+
+**Behaviour 5 is stated conditionally on purpose.** The draft named `get_stage_script(6)`; the call
+in the code today is `get_package_script`, and the loader exposes `package(number)`. The rename to
+`stage` belongs to change 1, which is not built. Naming the post-change-1 call here and being wrong
+is how a stage script comes to name a call the door cannot resolve — a failure this loop has already
+caught twice.
 
 **Behaviour 2 is not decoration.** A planner who has read D12 will look for a `propose_label`, find
 nothing, and either invent a call or skip the round. The script is the only place that gap gets
@@ -1168,8 +1531,36 @@ Last. Asserts what the packets above did.
 | 2 | A plan holding a redefined word — several rows, one live — migrates to exactly one row. |
 | 3 | Migration parity: a migrated v11 and a fresh v11 are byte-identical across all four pragmas. |
 | 4 | The duplicate-attachment refusal is asserted **at the store, in raw SQL**. |
-| 5 | Both `COALESCE` sentinels are unreachable: `INSERT INTO tasks (id) VALUES (0)` and a `target_root` of `''` are both refused. |
-| 6 | `label_attachments` is **not** in the snapshot table set, and **not** in the `junctions` exemption set. |
+| 5 | Both `COALESCE` sentinels are unreachable **at `label_attachments`**: an attachment with `task_id = 0`, and one with `target_root = ''`, are each refused by their `CHECK`. |
+| 6 | `label_attachments` **is** in the snapshot table set, and a restore round-trip preserves attachments. |
+| 7 | The `ALTER` route's order dependencies fail loudly if reversed: dropping `superseded_at` before `idx_terms_live`, and filtering live rows after the drop. |
+| 8 | `sqlite_sequence` survives the migration — a term inserted afterwards gets an id above the pre-migration maximum. |
+| 9 | A migration failure rolls back to the full eleven-column table with every row intact. |
+| 10 | **`COUNT(*)` is caught here, not in 4F.2**: a duplicate live attachment inserted in raw SQL makes the AND filter return a row carrying only one of two requested labels, unless the query uses `COUNT(DISTINCT word)`. |
+
+**Behaviour 5 is corrected, and the draft's version asserted something this change does not do.** It
+said `INSERT INTO tasks (id) VALUES (0)` is "refused" — but nothing here touches the `tasks` table,
+and the DDL comment says the opposite, that such a row *is* accepted. Written literally the test
+fails, and the tempting repair is to add a constraint to `tasks`, which is out of scope and would be
+a schema change nobody specified. What this change constrains is `label_attachments`, and that is
+what the test asserts.
+
+**Behaviour 10 moved down from 4F.2, because there it could not fail.** The claim was that a fixture
+of three rows — one `engine`, one `schema`, one both — fails if the query is written as `COUNT(*)`.
+It does not: the two spellings diverge only when a *duplicate live attachment* exists, and
+`attach_label` treats a duplicate as a no-op, so no service-driven fixture can create one. Against
+that fixture both spellings return the same rows. The test catches OR and nothing else. To catch
+`COUNT(*)` the duplicate must be inserted in raw SQL — which makes it a store-level test, alongside
+behaviour 4, for exactly the reason behaviour 4 already gives.
+
+**Behaviour 6 follows 4A.2's reversal** — the table is in the snapshot set now — and the round trip is
+what proves it, since the list itself is a tuple in `storage.py` that no test reads.
+
+**Behaviour 3's parity check is inert for `label_attachments` and load-bearing only for `terms`.**
+Both the fresh path and the migration build the attachment table from `schema.LABELS_DDL`, so
+comparing them proves that one constant executed twice gives the same answer. A defect shared by both
+paths — a missing `CHECK`, a wrong index — is invisible to it. `terms` is where parity earns its
+keep, because there the migration reaches the shape by a different route than a fresh install does.
 
 **Behaviour 4 is the one that cannot be written through the service and is the reason this task
 exists.** `attach_label` treats a duplicate as a no-op, so a service-driven test passes against a
@@ -1203,9 +1594,36 @@ lifecycle stamp.
 | 9b | Asking for a real label and a typo returns nothing, not the real label's rows. |
 | 9c | `labels=("engine", "engine")` returns the same rows as `("engine",)`, not an empty page. |
 | 9d | `labels="engine"` is refused, and the message names the tuple form. |
-| 10 | A row carrying three labels comes back from `read_rows` with all three, and a row carrying none appears in the mapping with an empty tuple. |
-| 11 | Reading a page of N labelled rows issues a **fixed** number of queries, not one per row. |
-| 12 | A label attached before a row was superseded is still reported against the live version. |
+| 10 | A row carrying three labels comes back from `read_rows` with all three, alphabetically, and a row carrying none appears in the mapping with an empty tuple. |
+| 11 | Reading a page of N labelled rows issues **one** label query, asserted by counting statements, not a number obtained by running the code once. |
+| 12 | A label attached before a row was superseded is still reported against the live version, and `read_rows(labels=…)` still finds that row. |
+| 13 | `labels=()` is **not** a filter: the page comes back unfiltered rather than empty. |
+| 14 | `("Engine", "engine")` collapses to one word; `attach_label(" Engine ")` matches the term `engine`. |
+| 15 | A row carrying a **superset** of the requested labels is returned. |
+| 16 | `read_rows(labels=…)` composes with `table=` and with paging, and a row with two matching attachments is returned once. |
+| 17 | `labels()` — alphabetical order from an out-of-order fixture; both denominators present and **different from each other**; the unattached-term count; a named word with no attachment reporting zero rather than missing. |
+| 18 | `detach_label` — an unattached target is a no-op; detaching stamps rather than deletes; attach → detach → re-attach leaves the label attached. |
+| 19 | `define_term`/`redefine_term` — a redefine leaves **one** row with the same `id` and `created_at` and a changed `updated_at`. |
+| 20 | Every count and emptiness assertion in this task carries a **positive control** — a fixture the assertion demonstrably fails against. |
+
+**Behaviour 11 is restated because "a fixed number" and "one" are different claims**, and the draft's
+test asserted the weaker one against the specification's stronger one. A two-query implementation
+satisfies "fixed" while violating 4D.3 behaviour 12. And a count captured by running the code once is
+a change-detector, not a check.
+
+**Behaviour 17 exists because the draft tested `labels()` not at all.** A whole new tool with a new
+report type had no test — including the two denominators, which the specification itself calls "the
+half a builder drops", and the zero-rather-than-missing rule, which exists to stop a planner being
+walked into a `define_term` refusal.
+
+**Behaviour 20 is the register gap made concrete.** This repository's own idiom is
+`test_the_check_can_actually_fail`, and the standing evidence is a check that ran green while seeing
+four names where there were twenty-two. The draft's filter tests asserted emptiness three times —
+unknown word, typo, and the implied negatives — all of which a filter returning nothing for every
+input satisfies. Three of the draft's assertions could not fail: the both-labels fixture had no
+duplicate to catch `COUNT(*)`, the "returned once" case filtered on a single label so no row could
+duplicate, and the two-count refusal had no fixture where the two counts differed, so a summed count
+would have passed the rule that exists to forbid summing.
 
 **Behaviour 3 is a one-line test for a defect that is invisible until a caller passes a flag.**
 
@@ -1218,10 +1636,36 @@ lifecycle stamp.
 | | behaviour |
 |---|---|
 | 1 | `tests/test_vocabulary.py` is already gone — change 1 deleted it (§4.1). Nothing here re-deletes it. |
-| 2 | The `terms` tests are rewritten for the removed calls; every test of approval, bans, supersession and export goes. |
-| 3 | `tests/test_schema_vocabulary.py` is untouched except for 4A.0's two edits to `TIMESTAMP_ROLES`. |
-| 4 | No test asserts a warning kind, gap rule or status line that packet 4C deleted. |
-| 5 | `get_stage_script(6)` renders without raising. |
+| 2 | `tests/test_terms.py` holds **41** tests today. Six survive; the rest are deleted or rewritten, and this task enumerates them rather than naming categories. |
+| 3 | `tests/test_schema_vocabulary.py` gains 4A.0's two `TIMESTAMP_ROLES` edits **and** behaviour 3a's reverse check; the `junctions` set is hoisted to module scope so it can be asserted against. |
+| 4 | `tests/conftest.py` loses every `terms=` fixture argument for the five services that drop the parameter. |
+| 5 | The stage script for the new round renders without raising. |
+| 6 | The **second** file asserting `glossary.json` was written is found and cleared. |
+| 7 | Two tests that survive the change but can no longer fail are deleted: `test_a_clean_row_carries_no_note` and `test_the_question_stops_once_any_word_is_defined`. |
+| 8 | Packet 4C's deletions are asserted positively, not by the absence of tests. |
+
+**Behaviour 2 replaces four categories that reached 16 of 41 tests.** The draft said "approval, bans,
+supersession and export", and behaviour 4 added warning kinds, gap rules and status lines — together
+about 22. That leaves roughly **13 tests neither behaviour names**: the lexical-scan tests, the
+submission-note tests, the two brief-glossary tests, `test_a_term_records_what_a_word_means` (which
+asserts `is_banned`) and `test_redefining_carries_the_named_row_forward` (which asserts `names_ref`).
+Most fail loudly, because the module's import line names `BOTH`, `IDENTIFIER`, `PROSE`,
+`AlreadyApproved` and `BanNeedsReason` — that import is the real mechanism protecting this change and
+the draft never acknowledged it.
+
+**Behaviour 7 is the sharp one, because those two do not fail loudly.** `test_a_clean_row_carries_no_note`
+asserts a verdict note is `None` — and after 4C.1 nothing can produce that note, so the setup
+satisfies the assertion. `test_the_question_stops_once_any_word_is_defined` filters open gaps for
+`no_glossary` and asserts the result is empty — and after 4C.3 that comprehension is empty forever.
+Both call only surviving methods, so both stay green while meaning nothing. **This change would have
+left two checks in the suite that run, pass, and measure nothing** — the defect the whole project is
+organised against, created by the packet that deletes their subject.
+
+**Behaviour 8 is the biggest single gap the read found.** The draft's entire coverage of packet 4C
+was one line saying *no test asserts* the deleted things — a statement about the repository, not code
+that executes. Nineteen behaviours across six modules, including the one the specification itself
+flags as "the one a builder will want to keep and must not", had nothing that would fail if a builder
+simply kept them.
 
 ## 14. What re-measuring disagreed with
 
@@ -1236,6 +1680,107 @@ than trusted.
 | `LABELS_DDL` yields **four** statements | **three.** `term_comparisons` is deleted with the guard | count `CREATE` in the block; re-probe through `schema.statements`, because the split survives only on comments being stripped |
 | the change *"removes three tools and adds three"* | **removes 3, adds 4.** `remove_term` is a new registration, not a rename of `retire_term`: different signature, different act | `_t(` and `Absence(` in `engine/surface.py` — 54 and 12 today |
 
+**A fifth, found by the cold read rather than by me:** the arithmetic paragraph in §11 said
+`EXCLUDED` and `DEFERRED` are both empty. `DEFERRED` is; **`EXCLUDED` holds three**. My script
+matched `Absence(` followed by a bare identifier and those three entries begin with a quoted contract
+address, so it reported zero and I published it. The lesson §14 exists to enforce — write the method,
+then re-run it and confirm it returns the number in the document — failed on its own page, because I
+never checked the method against a number I could see by eye.
+
 **And one that held.** `SCHEMA_VERSION` is **7** in the code; changes 1–3 take it to 10, so this
 change's 10 → 11 is right — but 10 is a number to verify at build time and not to assume, for the
 same reason as every other number here.
+
+---
+
+## 15. The cold read — what it found, and what was done
+
+**Run 2026-07-30 against §7–§14 as first written.** Four readers, one per packet group — 4A, 4B+4C,
+4D, 4E+4F — each given a bundle and told to open nothing else. **All four reported exactly one file
+opened.** Every finding below was checked against the source before it was acted on; the ones marked
+*probed* were settled by experiment rather than argument. §7–§14 above are the corrected text. This
+section is the record of what they were before, and is evidence, not specification.
+
+### 15.1 A change of method, and why
+
+Previous reads pasted the whole bundle inline and forbade every tool, because the reader shares a
+filesystem with the build documents. That control held for three changes and **produced four bad
+bundles in four changes**, every one of them from abridging something to make it fit — the last run
+alone returned two false findings, one because the conventions register was trimmed and one because a
+packet the reader depended on was left out.
+
+So the bundles were staged as four files, each carrying every relevant source file **whole**:
+`terms.py`, `rows.py`, `gates.py`, `gaps.py`, `resume.py`, `briefs.py`, `warnings.py`, `models.py`,
+`surface.py`, `schema.py`, `storage.py`, the tests, the methodology assets and the full register. The
+largest was 4,279 lines. Each reader opened exactly one path and reported it.
+
+**The blindness that matters is sharper this way, not weaker.** What a reader must not see is the
+build document, where the conclusions already are — a reader that wandered into §14 would have handed
+back the four counts I had already caught, as fresh findings. What it *should* see is ground truth.
+The staged directory held the specification and the source and nothing else. **This is the method to
+use from now on**, and the tell that it worked is that no reader reported a finding that turned out
+to be an artefact of a missing file — the first run of four with none.
+
+### 15.2 Four defects that each stopped the change dead
+
+None of these is a matter of degree; each one alone means the change does not work.
+
+- **Nothing appended the new table to the schema.** `schema.py` builds its DDL by explicit
+  `DDL += …`, four times over. The draft said the table "is created". Every new plan would have come
+  up without it.
+- **Nothing bumped `SCHEMA_VERSION`.** A v11 store would call itself v10 and never select the
+  migration branch.
+- **Rewriting `TERMS_DDL` rewrote history.** The 3→4 migration branch reuses that same constant, on
+  purpose and with a comment saying so. Any store climbing from 3 would have been handed the new
+  five-column table and then asked for `superseded_at` in the 10→11 step — failing inside the one
+  migration that destroys data.
+- **`remove_term` deleted a row through a store with no delete.** `Storage`'s op vocabulary is
+  `insert`, `update`, `insert_row`. Resolved by 4B.3 behaviour 10, narrowly.
+
+### 15.3 The deepest one: a join with no mechanism
+
+`read_rows(labels=…)` has to match live rows against attachments keyed on lineage roots, and the
+draft said "collect the qualifying roots, then filter rows whose root is in that set" — which cannot
+be written in the single `WHERE` clause `read_rows` builds. The only root primitive in the engine is
+a Python loop doing one query per supersession hop. Every route a builder could have taken was wrong:
+matching roots to refs directly drops exactly the superseded lineages root-keying exists to preserve;
+resolving in Python breaks `total` and paging. The same wall stood behind the promise of one label
+query per page, which needs the page's roots *before* the query runs.
+
+Fixed with two recursive CTEs, both probed: forward along `superseded_by` from the attached roots to
+their live heads for the filter, backward along `supersedes` from a page of refs for the read.
+
+### 15.4 Probes that refuted what was written down
+
+| claim | outcome |
+|---|---|
+| dropping six columns "is a table rebuild in SQLite, not a sequence of `ALTER`s" | **refuted.** `ALTER TABLE … DROP COLUMN` works at 3.49.1, inside `BEGIN IMMEDIATE`, with `sqlite_sequence` preserved and rollback clean. The rebuild — and the second copy of `CREATE TABLE terms` it would have forced into `storage.py`, against `schema.py`'s explicit prohibition — is gone |
+| `INSERT INTO tasks (id) VALUES (0)` "is accepted despite AUTOINCREMENT" | **refuted as written** — `tasks` has four `NOT NULL` columns and the statement fails on the first. Re-probed properly: with them supplied, **task id 0 is reachable**, so the `CHECK` still earns its place. Inherited from the superseded document and never re-run |
+| the AND filter's SQL | **would not have run** — it mixed `?` and `:n` placeholders in one statement. Deprecated today, a hard error in Python 3.14 |
+| the both-labels fixture "fails if the query is written as `COUNT(*)`" | **refuted.** The two spellings diverge only when a duplicate live attachment exists, and `attach_label` no-ops duplicates, so no service-driven fixture can make one. Moved to a raw-SQL test |
+| the order of the migration's steps | **confirmed as load-bearing.** Dropping `superseded_at` before its index fails; filtering live rows after the drop fails. Both would have failed inside the data-losing step |
+
+### 15.5 The shapes that recurred, again
+
+- **A landing-order inversion.** `remove_term` needed the label service and landed before it. **Four
+  changes, four inversions** — change 3 had three at once. This is now a pre-write check.
+- **A citation to nothing.** `approved_at` would have stayed in the timestamp register after its only
+  column died, and the register's check is blind in that direction — it validates columns against
+  roles, never roles against columns. The reverse check is now specified. The `word` foreign-key
+  comment was the same defect inside the same task, arguing from a redefinition behaviour this change
+  deletes.
+- **A count nobody enumerated.** Five this time, one of them mine after §14 was written to prevent it.
+- **A check that cannot fail.** Two live ones would have been left in the suite by the packet that
+  deletes their subject, both passing because their setup satisfies them.
+- **A denominator that is not a denominator.** The label counts count attachments on lineage roots
+  against a denominator of live rows — two populations that coincide only for lineages never
+  superseded.
+
+### 15.6 What the readers found that nothing else would have
+
+The test packet was the worst result of the four: roughly **sixty of ninety-nine behaviours** across
+the change had no test that would fail if a builder skipped them. `labels()` had none at all;
+`detach_label` had none; the tool surface was never exercised; and packet 4C's entire coverage was one
+sentence asserting that no test exists — a claim about the repository rather than code that runs.
+That is not a thing a specification's author can see, because the author knows what the code is
+supposed to do and reads the intent rather than the assertion.
