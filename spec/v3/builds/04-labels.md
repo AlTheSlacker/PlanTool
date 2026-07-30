@@ -1,6 +1,20 @@
 # Change 4 — labels
 
-## Status — §1–§11 were rewritten against §0 on 2026-07-30. Not yet cold-read.
+## SUPERSEDED 2026-07-30 by `04-glossary-and-labels.md`. Do not build from this file.
+
+**The owner reduced the glossary itself later the same day**, after this file was rewritten. There
+is no near-duplicate guard, no `term_comparisons`, no ranking, no banned words and no
+`approve_term`; the glossary is a five-column table whose only mechanical use is looking a word up
+when a label is assigned. **`04-glossary-and-labels.md` is the work order**, and its §5.8 lists
+exactly what transfers from here — the attachment table, its two index probes, the sentinel checks
+and the measurements — so nothing below needs re-deriving.
+
+**Keep reading below only for those carried items and for §12**, the cold read of the first draft.
+Everything else here describes a design that was overtaken twice.
+
+---
+
+## Status — §1–§11 were rewritten against §0 on 2026-07-30, then superseded the same day.
 
 **§0 is the owner's settled design of 2026-07-29 and the rewrite builds from it.** §1–§11 are the
 specification; **they replaced a draft the owner overturned, and every number in them was re-measured

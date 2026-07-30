@@ -93,7 +93,14 @@ both.
    after it — so it goes early to earn its value across the rest of the work.
 3. **The catalogue** (D10). A dependency of both brief derivation and the cold read, which is why
    it stops being the unscheduled topic it was in v2.
-4. **Labels** (D12), including the starter list and the glossary refusal of a near-duplicate.
+4. **The glossary and labels** (D12, D18). The glossary reduces to a five-column user-owned table,
+   and labels are its one mechanical use: a label is a live glossary term, looked up when it is
+   assigned. **Rewritten 2026-07-30** — this item used to read *"labels, including the starter list
+   and the glossary refusal of a near-duplicate"*, and the refusal is gone with the rest of the
+   scanning machinery. The work order is `builds/04-glossary-and-labels.md`; `builds/04-labels.md`
+   is superseded and kept for its probes and its cold-read record. Net it **deletes more than it
+   adds** — the banned list, the prose scans at submission and at the gate, two gap rules, the
+   export, the brief's glossary section and a test file all go.
 5. **Detailed design** — tasks, behaviours, pseudocode, and the rule that pseudocode may only call
    a catalogued entry. The stage script, the gap rules, the gate criteria. This is the density
    fix and it depends on the catalogue existing.
