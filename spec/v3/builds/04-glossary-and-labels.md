@@ -211,9 +211,35 @@ as a fix to the restart limitation; the owner said no), and carrying it in the b
 | both glossary gap rules — `_rule_no_glossary`, and the awaiting-approval gap | owner, §1 — *"another friction point"* |
 | `plan_status`'s glossary count and its "N definitions waiting on approve_term" line | owner, §1 |
 | the brief's live glossary section (`briefs.py`) | owner, §1 — the brief is served after finalisation; the naming drift happens while rows are being written, so it arrives after the damage |
-| `tests/test_vocabulary.py`, entire | owner, §1. **Safe: it is a different file from `test_schema_vocabulary.py`**, which holds the column-role checks change 2 and this change both depend on. All three of its tests are glossary enforcement and they go together |
+| `tests/test_vocabulary.py`, entire | owner, §1 — and it is **change 1** that deletes it, not this change; see §4.1. **Safe: it is a different file from `test_schema_vocabulary.py`**, which holds the column-role checks change 2 and this change both depend on |
 | `TermService._tokens` | its only caller was `violations()` |
 | change 4's near-match guard — the whole of `04-labels.md` packet 4C, `term_comparisons`, the ranking, the ties | §3.3 — one mechanical use, and it is not this. A guard refusing the owner's own word is the tool adjudicating him |
+
+### 4.1 `GLOSSARY.md` is transitional, and change 1 loses two tasks because of it
+
+**The owner ruled on this twice on 2026-07-30 and a later session logged it as open anyway. It is
+not open.** *"Why are you writing `GLOSSARY.md` if you are not using it? The glossary should be a
+table in the database"*, and *"if the data is in a table in the database, why are you writing an md
+file?"* Restated when the question was put again: the file is **a transitional tool used to help
+write v3**, and **v3 code reads only the `terms` table**.
+
+So no v3 module and **no v3 test** reads that file. Two tasks in `01-vocabulary-and-levels.md` are
+built on it and both are struck:
+
+- **Task 1A.0** rewrote the file's ban line so the live check would permit `stage`. Gone.
+- **Packet 1F, task 1F.1**, the banned-word enforcement test, whose behaviour 4 is *"takes its word
+  list from `GLOSSARY.md`"*. Gone with the packet's other member re-homed, since 1F.2 is schema
+  parity and unaffected.
+
+**In their place, change 1's first task deletes `tests/test_vocabulary.py`.** It must be first for
+the same reason 1A.0 was: change 1 renames the words that check bans, so every packet after it goes
+red otherwise. Change 1 lands before change 4, which is why the deletion belongs there and not here.
+
+**What is left enforcing v3's own identifier naming: nothing mechanical, deliberately.** §2.2 is the
+argument — the failure is a synonym sharing no letters, and no scan sees it. `test_schema_vocabulary.py`
+survives untouched; it checks column-name *roles* in `engine/schema.py` and never opens a markdown
+file. The starter labels are not seeded into `terms` either: the owner defines the contents, and ten
+words written by the tool at plan creation is the tool defining them.
 
 **And one reversal of an amendment made earlier the same day.** `engine/lexical.py` was to hold a
 shared tokeniser and ranking because three callers needed them, then two. With this change's guard
@@ -237,6 +263,18 @@ governance.
 its content: the decision, the two directions of the failure, the measurement that killed the
 allowlist, why no scan can work, and the rejected alternatives. A decision without its rejected
 alternatives cannot be safely reopened.
+
+**Amend `01-vocabulary-and-levels.md` too** — §4.1: task 1A.0 and task 1F.1 are struck, and change
+1's first task becomes the deletion of `tests/test_vocabulary.py`. **Done 2026-07-30**, along with
+`VOCABULARY.md`'s status header.
+
+**`VOCABULARY.md`'s `Label` entry still describes the overturned design** and must be rewritten to
+§3.3: it says labels are proposed by the tool and settled by the owner, that a near-duplicate is
+refused, and that labels get their own table rather than glossary rows. All four are now false. Its
+argument for a separate table — that a word can be both a term and a label, as `engine` is here —
+dissolves, because under this design a label **is** a term. The ten starter labels stay in that
+document as a suggestion to a reader; **they are not seeded into `terms`**, since the owner defines
+its contents.
 
 **PLAN.md item 4** reads *"Labels (D12), including the starter list and the glossary refusal of a
 near-duplicate."* Rewrite: *the glossary reduces to a user-owned table, and labels are its one
@@ -308,7 +346,8 @@ not exist.
 
 ### 5.7 Packet F — the tests
 
-Delete `tests/test_vocabulary.py`. Rewrite the `terms` tests for the removed calls. Assert the new
+Rewrite the `terms` tests for the removed calls (`tests/test_vocabulary.py` is already gone —
+change 1 deletes it, §4.1). Assert the new
 shape: the migration drops the columns and keeps the words; `remove_term` refuses while attachments
 exist and names the count; the replacement move collapses a duplicate rather than raising;
 `get_stage_script(6)` renders without raising; the attachment index refuses a duplicate **at the
@@ -364,18 +403,16 @@ middle with failures that read as mistakes.
 
 **The owner has not ruled on these. Do not invent an answer and proceed silently.**
 
-1. **`GLOSSARY.md` at the repo root.** `test_vocabulary.py` was the only thing enforcing it, and
-   that dies here. Does the document survive as unenforced prose, get rewritten by change 1 (which
-   already retires half its vocabulary), or become rows? It governs **PlanTool's own source code**,
-   not a plan's content — a different scope from the `terms` table, and the owner's decisions above
-   were about the product.
-2. **`spec/v3/VOCABULARY.md`** has the same question, and holds the ten starter labels this change
-   still needs a home for.
-3. **Is "take it off everything" an allowed answer to the `remove_term` prompt**, or is deletion
+**Two questions listed here on 2026-07-30 were never open — he had ruled twice.** `GLOSSARY.md` and
+`spec/v3/VOCABULARY.md` are **transitional documents used to write v3**, read by people and sessions,
+never by code. See §4.1, which also carries the two change-1 tasks that struck. Do not restore either
+question and do not propose a mechanism over either file.
+
+1. **Is "take it off everything" an allowed answer to the `remove_term` prompt**, or is deletion
    simply blocked until nothing carries the word? The assumption written into §3.4 is that it is
    allowed, because otherwise a filter you have decided is wrong must be detached by hand from forty
    rows first. Either way the owner chooses; it is never automatic. **Stated to him and not
    contradicted, which is not the same as confirmed.**
-4. **`define_term` and `redefine_term` as two tools or one upsert.** Two keeps a refusal that catches
+2. **`define_term` and `redefine_term` as two tools or one upsert.** Two keeps a refusal that catches
    "I thought this word was new"; one is less to know. Currently two, by inheritance rather than by
    decision.

@@ -1,9 +1,11 @@
 # v3 vocabulary
 
-**Status: a planning artefact.** It specifies what `GLOSSARY.md` becomes; it is not itself
-enforced yet. `GLOSSARY.md` is parsed by a test that fails the suite on any identifier
-containing a retired word, so changing it changes what the *current* code is held to. That is
-build work and waits for the freeze.
+**Status: a transitional document, and it stays one.** It is read by people and by sessions
+writing v3; **no v3 code reads it, and none ever will** — v3's only glossary is the `terms`
+table. `GLOSSARY.md` has the same status: it is still parsed today by a test that fails the
+suite on any identifier holding a retired word, and change 1's first task deletes that test
+(`builds/01-vocabulary-and-levels.md` task 1A.0, and `builds/04-glossary-and-labels.md` §4.1
+for why). After that, nothing here or there is mechanically enforced, deliberately.
 
 Settled with the owner 2026-07-28, except where marked **open**.
 

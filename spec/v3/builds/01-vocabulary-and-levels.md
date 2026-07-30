@@ -66,9 +66,10 @@ destroys either the interview's own record or the owner's declared groupings.
 This is the class of decision `INTERVIEW.md` §8 calls a hole rather than a convention: answered
 differently, it changes the specification of every task below.
 
-**And `stage` is not a free word.** `GLOSSARY.md` bans it as an identifier today, enforced by a
-test that parses the ban line out of that file. So does `project`. Un-retiring `stage` is
-therefore the *first* task of this change, not a consequence of it — see 1A.0.
+**And `stage` is not a free word today.** `GLOSSARY.md` bans it as an identifier, enforced by a
+test that parses the ban line out of that file. So does `project`. Clearing that check is
+therefore the *first* task of this change, not a consequence of it — see 1A.0, where it is done by
+deleting the check rather than by editing the document.
 
 ## 3.5 How this change lands, and why it is one pull request
 
@@ -84,6 +85,9 @@ be green on its own, and the three are not accidents of ordering:
   callers in the methodology module do not exist until 1E.
 - 1F is a test asserting that everything above landed. It cannot pass before it does.
 
+**1F lost its first task on 2026-07-30 and now holds only schema parity** — see 1F.1's replacement
+note. That does not change this argument: 1F.2 is still a test of what the packets above it did.
+
 **Rejected: reordering so each packet is green.** It is achievable and it costs more than it
 saves — the level surgery would have to precede the rename that makes the level's machinery
 dead, so the migration gets written twice and several identifiers get renamed twice, once to an
@@ -98,36 +102,43 @@ be read a packet at a time even though it lands together.
 
 Schema version 7 → 8. Nothing else in this change can start until this lands.
 
-### Task 1A.0 — the vocabulary rule itself
+### Task 1A.0 — delete `tests/test_vocabulary.py`
 
-**Signature.** None — `GLOSSARY.md` is a document, and it is the single source the enforcement
-test parses.
+**Rewritten 2026-07-30. This task previously edited `GLOSSARY.md`'s ban line so the live check
+would permit `stage`.** The owner then ruled that `GLOSSARY.md` is **a transitional document used
+to help write v3**, and that **v3 code reads only the `terms` table** — twice in one conversation,
+and again when a later session put the question back to him. A test that parses a markdown file to
+police identifiers is exactly the thing he struck. The full argument and its consequences are in
+`04-glossary-and-labels.md` §4.1; change 4's own deletion list no longer carries this file, because
+by then it is gone.
+
+**Signature.** None — a file is deleted.
 
 **Behaviours**
 
 | | behaviour |
 |---|---|
-| 1 | The ban line loses `stage` and gains `package`, `subtask`, `sub_task`, `obligation` and `slice`. |
-| 2 | The approved-constants line loses `PACKAGE` and `SUBTASK`; the approved-columns line loses `package_id` and `subtask_id`. |
-| 3 | The clause blessing `subtask` as one word in identifiers is deleted. |
-| 4 | The vocabulary-exceptions fence is emptied. |
-| 5 | `project` stays banned. |
+| 1 | `tests/test_vocabulary.py` is deleted whole: all three tests, and the two helpers that parse `GLOSSARY.md`. |
+| 2 | Nothing replaces it. No v3 module and no v3 test opens `GLOSSARY.md`. |
+| 3 | `tests/test_schema_vocabulary.py` is untouched — it reads `engine/schema.py`, not a document, and changes 2 and 4 both depend on it. |
+| 4 | `GLOSSARY.md` itself is left on disk, unedited, as the transitional reading aid it now is. |
 
-**This lands first, and that is the whole point of naming it a task.** Every other packet writes
-an identifier the current rule forbids, and the rule is enforced by a live test. Without 1A.0
-the first commit of 1A fails the suite on `stage`, and the failure looks like a mistake rather
-than the sequencing it is.
+**This still lands first, and for the same reason the old 1A.0 did.** Every packet after it writes
+an identifier the current check forbids. Deleting the check first means the first commit of 1A does
+not fail the suite on `stage`, and the failure that would have looked like a mistake never happens.
 
-**Behaviour 4 removes a citation to nothing.** One of the two recorded exceptions is
-`engine/briefs.py:PartsDontCover` — and there is no identifier by that name in `briefs.py`. The
-name survives only inside a docstring, quoting what the frozen plan called the error before it
-was renamed. The exception has been protecting a symbol that does not exist, which means the
-count of live exceptions has been wrong for as long as it has been recorded. The other,
-`parts` in the gap engine, disappears with the code that holds it, as `VOCABULARY.md` predicted.
+**What is given up, stated plainly: nothing mechanical then enforces v3's own identifier naming,
+and that is the decision rather than an oversight.** The argument is `04-glossary-and-labels.md`
+§2.2 — the failure this discipline exists to prevent is a synonym that shares no letters with the
+word it duplicates, and no scan of any kind sees it. What replaces the check is the glossary being
+read into context at the moment of naming.
 
-**Behaviour 5 is worth stating because the reporting layer wants to break it.** `project` is a
-tempting name for the surviving top attachment scope. It stays retired and the level stays
-`plan` — see 1D.
+**Two things the old task did that now simply do not happen.** The vocabulary-exceptions fence is
+not emptied, it is abandoned with the file; one of its two entries had been protecting
+`engine/briefs.py:PartsDontCover`, an identifier that does not exist in `briefs.py` and survives
+only inside a docstring. And `project` is not re-banned. It is a tempting name for the surviving
+top attachment scope, it stays out of use, and **the level stays `plan` (see 1D) with nothing but
+this sentence and `VOCABULARY.md` holding the line.**
 
 ### Task 1A.1 — `Storage._migration_steps`, the 7→8 branch
 
@@ -597,7 +608,8 @@ recorded defect, and a specification that says "returns a `TaskGraph`" repeats i
 error; `briefs.py` says so in a docstring and names the class `ObligationsNotCovered`, with a
 mirror `ObligationsNotOwned` and a third, `NothingToSplit`, that the draft never mentioned. One
 error named that is not there, three real ones unnamed — and the same phantom is the subject of a
-`GLOSSARY.md` vocabulary exception, which 1A.0 deletes. The three are **deleted, never renamed**,
+`GLOSSARY.md` vocabulary exception — which now simply stops mattering, since 1A.0 deletes the check
+that reads those exceptions and leaves the document unedited. The three are **deleted, never renamed**,
 so 1B's rename does not touch them.
 
 **Behaviour 3 is the part that reaches outside this packet.** `guard_live` exists so a superseded
@@ -701,7 +713,8 @@ dying word, and a migration to improve a comment is not a trade this change shou
 
 **The draft was wrong about this module in three ways and they compound.** It said the levels
 were "project / package / task": the top level is **`plan`**, not `project` — and `project` is a
-retired word that stays retired (1A.0 behaviour 5) — there are **four** levels and not three, and
+retired word that stays retired, now by this sentence rather than by a check (1A.0) — there are
+**four** levels and not three, and
 **two** of them lose their anchor rather than one, because the old `task` level keyed the `tasks`
 table that 1A drops. Three of the four levels change meaning or die, and the draft named one.
 
@@ -795,45 +808,34 @@ eleven-stage rewrite, and it keeps its position and its reasoning.
 already keyed by `stage`, from before v2 retired the word. This is a revert to a spelling the
 repository has used before, not an invention.
 
-## 9. Packet 1F — the banned-word enforcement
+## 9. Packet 1F — schema parity
 
 Depends on all of the above. Last, because it is the thing that proves the rest landed.
 
-### Task 1F.1 — the vocabulary test
+### Task 1F.1 — struck 2026-07-30
 
-**Behaviours**
+**This was the banned-word enforcement test, rewritten to scan `engine/` and `tests/` for
+`package`, `subtask` and `obligation`, taking its word list from `GLOSSARY.md`. It is not built.**
 
-| | behaviour |
-|---|---|
-| 1 | Fails if `package`, `subtask`, `sub_task` or `obligation` appears in any identifier under `engine/` **or `tests/`**. |
-| 2 | Fails if any of those words appears in a methodology asset under `rev4`, or in text the tool emits. |
-| 3 | Permits them in comments, in documents that record *why* a word was retired, and under `spec/v2/` and `engine/methodology/rev2/`, which are read-only. |
-| 4 | Takes its word list from `GLOSSARY.md`, and fails loudly if the rule line is missing. |
-| 5 | Its own fixture asserts the count it finds, so a pattern that silently narrows fails loudly. |
+The owner ruled that `GLOSSARY.md` is a transitional document used to help write v3 and that **v3
+code reads only the `terms` table**; a test parsing that file for a ban list is the mechanism he
+struck, not an exception to it. `04-glossary-and-labels.md` §4.1 carries the decision and its
+reasoning. 1A.0 now deletes the existing version of this test rather than rewriting it, and **no
+replacement is specified** — see 1A.0 for what is given up and why that is the decision.
 
-**Behaviour 1 keeps `tests/`, reversing the draft.** The draft scoped the check to `engine/`.
-The existing check scans `("engine", "tests")`, so narrowing it is the same move this task exists
-to prevent — and `tests/` is where 56 occurrences of the dying words live.
+**Three findings from this task's cold read are recorded here rather than lost, because each is a
+live trap the next mechanical check in this project will walk into:**
 
-**`sub_task` is dropped from the list as unimplementable, and the reason matters.** The check
-tokenises: `sub_task` splits to `{sub, task}` and the string `sub_task` is never a token, so
-banning it as a *word* can never fire. `task` alone must stay legal — it is the surviving level.
-Banning `subtask` covers `subtask_id`, `SubTask` and `subtasks`; the hyphenated prose form is
-prose. A rule that cannot fire is the disease this whole file is about, and the draft shipped one
-in the behaviour table of the test that exists to catch it.
-
-**Behaviour 3 is the hard one and the draft named it hard without giving it a mechanism.** The
-mechanism is a path rule, not a cleverer pattern: `spec/v2/` and `engine/methodology/rev2/` are
-read-only quotations and are excluded by path, recorded once; everything else is scanned;
-comments and docstrings are out of scope because the scanner reads identifiers. Trying to
-distinguish "a document that records why a word was retired" by content is a judgment, and this
-project does not put judgment in a check.
-
-**Behaviour 5 is not the same guard as behaviour 4.** Behaviour 4 stops the *list* going missing;
-behaviour 5 stops the *scanner* going blind. The existing `test_the_check_can_actually_fail` does
-the second by asserting on known tokens; this one adds a floor on the number of identifiers found
-under each scanned directory, because the failure to beat is a check that ran green while seeing
-four names where there were twenty-two.
+- **`sub_task` cannot be banned as a word.** The check tokenises, `sub_task` splits to
+  `{sub, task}`, and `task` must stay legal because it is the surviving level. A rule that cannot
+  fire is the disease this whole change is about, and the draft shipped one inside the behaviour
+  table of the test meant to catch it.
+- **Read-only quotations are excluded by path, never by content.** `spec/v2/` and
+  `engine/methodology/rev2/` are quotations; deciding by content whether a document "records why a
+  word was retired" is a judgment, and this project does not put judgment in a check.
+- **A list going missing and a scanner going blind are two guards, not one.** The second is the
+  failure to beat: a check that ran green while seeing four names where there were twenty-two.
+  Any future scanner needs a floor on what it found, asserted by its own fixture.
 
 ### Task 1F.2 — schema parity
 
