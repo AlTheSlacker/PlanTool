@@ -863,7 +863,8 @@ Depends on 4A. 4D.0 lands with 4A; 4D.4 lands before 4C.
 | 1 | `Attachment` — `id: int`, `word: str`, `target_root: RowRef \| None`, `task_id: int \| None`, `detached_at: str \| None`, `created_at: str`, with an `is_live` property. |
 | 2 | `LabelUsage` — the word, its definition, and its live attachment count split into rows and tasks. |
 | 3 | `LabelReport` — the usages, the two denominators, the count of live terms with no attachment, and, when one word was asked for, its targets. |
-| 4 | There is no `Candidate`, no `TermComparison`, no `LabelResult` and no `Label`. |
+| 4 | `RowPage` gains `labels: dict[RowRef, tuple[str, ...]]`, defaulting to an empty dict. |
+| 5 | There is no `Candidate`, no `TermComparison`, no `LabelResult` and no `Label`. |
 
 **Every field is listed because a return type's fields are not a convention.** They differ per task,
 so a type named and not defined is a hole in every task that consumes it — the recorded v2 defect is
@@ -966,6 +967,54 @@ defect; it is the constraint change 3 recorded for function entries. Plan-row ta
 | 8 | It composes with every other selector dimension by intersection, and returns a row once however many attachments it has. |
 | 9 | `total` counts the filtered set; `limit` and `offset` apply after the filter. |
 | 10 | An unknown word returns an empty page with `total = 0` rather than raising. |
+| 11 | **`RowPage` gains `labels: dict[RowRef, tuple[str, ...]]`**, keyed by the ref of each row in the page, holding that row's live labels alphabetically — populated whether or not a label filter was used. |
+| 12 | The labels for a whole page are fetched in **one** query keyed on the page's lineage roots, never one query per row. |
+| 13 | A row with no labels appears in the mapping with an empty tuple, rather than being absent from it. |
+
+**Behaviour 11 answers the question the owner asked on 2026-07-30 — can a reference carry more than
+one label — and it is the read this change had specified an index for and no caller.** A reference
+carries as many labels as are attached to it: the live index is unique on *(word, target)*, so a
+second word on the same target is a different key and is permitted, and only the same word twice on
+one target is refused. There is no cap, and there is deliberately no warning above some number,
+because a rule saying five is fine and six is not is a threshold (behaviour 6).
+
+**The defect this behaviour repairs, stated plainly because it is this project's own recurring
+shape.** 4A.1 creates `idx_label_attachments_target` and its DDL comment says it exists *"when a row
+is rendered with the labels it carries"* — and no task performed that read. `labels(word)` runs
+word → targets. Nothing ran target → words. So a row could carry six labels and the only way to
+discover them was to call `labels()` once per word in the glossary, while the index built for exactly
+that read sat with no consumer. An index with no reader and a read with no index are the same defect
+seen from two sides, and this change had one of each.
+
+**Behaviour 11 puts the labels on the page and not on `PlanRow`, and that is a modelling decision
+rather than a convenience.** A `labels` field on `PlanRow` is the obvious shape and it is wrong twice.
+
+*It misstates what a label is attached to.* A `PlanRow` is **one version** of a row; a label is
+attached to the row's **lineage root**, so every version shares one set. A field on the version says
+labels are a property of that version, which is the thing `target_root` was chosen to avoid — the
+whole reason attachments key on the root is so a label neither re-surfaces nor silently detaches when
+a row is superseded.
+
+*And it would make an empty tuple mean two different things.* `PlanRow` is hydrated on many paths;
+only this one would populate the field. A row fetched anywhere else would carry `()` and be
+indistinguishable from a row that genuinely has no labels — a value that is only true where something
+refreshed it, which is the defect F50 already cost this build once, when `plan_status` nagged about a
+term that had just been settled. On the page, the mapping's presence *is* the statement that
+somebody looked.
+
+**Behaviour 13 closes the same hole from the other side.** If unlabelled rows were simply absent from
+the mapping, a caller could not tell "this row has no labels" from "this page did not fetch them",
+and would write `labels.get(ref, ())` — restoring the ambiguity the mapping exists to remove.
+
+**Behaviour 12 is where this goes wrong if it is written per row.** A page is up to a few hundred
+rows, and a label lookup per row is a few hundred queries to render one page — the read that made the
+index worth having becomes the reason the page is slow. The correct form is the same shape as
+behaviour 7's filter, in reverse: collect the page's lineage roots, select every live attachment whose
+`target_root` is in that set, and group in memory.
+
+**Behaviour 13 matters because the alternative is silent.** A null would make every consumer test for
+it before iterating, and the one that forgets fails on precisely the rows that carry no labels — which
+is most of them early in a plan, and none of them in the fixture somebody writes to test labelling.
 
 **Behaviour 2 is the half a builder drops**, because a count reads as complete on its own. It is not:
 a label on all 687 rows and a label on one are both useless for filtering, and only the denominator
@@ -1003,6 +1052,7 @@ of the results.
 | 2 | Added: `remove_term`, `attach_label`, `detach_label`, `labels` — to the registry **and** to `ADDED`, each with the reason it exists. |
 | 3 | `define_term` and `redefine_term` keep their registry rows; `define_term` loses its `names_ref` parameter. |
 | 4 | `read_rows` gains a `label` parameter, and the contract row and docstring enumeration are amended. |
+| 4a | The rendered form of a page shows each row's labels, and `contracts:10` — the contract `RowPage` answers to — is amended to say the page carries them. |
 | 5 | The registry rows land **before** any refusal whose text names the call. |
 | 6 | Payload parsing for the label calls is registered once, under one name. |
 
@@ -1097,6 +1147,9 @@ lifecycle stamp.
 | 7 | `replacement` and `detach_all` together are refused. |
 | 8 | `read_rows(label=w)` returns each row once, `total` matches the filtered set, and paging is correct across a boundary. |
 | 9 | `read_rows(label=<unknown>)` returns an empty page rather than raising. |
+| 10 | A row carrying three labels comes back from `read_rows` with all three, and a row carrying none appears in the mapping with an empty tuple. |
+| 11 | Reading a page of N labelled rows issues a **fixed** number of queries, not one per row. |
+| 12 | A label attached before a row was superseded is still reported against the live version. |
 
 **Behaviour 3 is a one-line test for a defect that is invisible until a caller passes a flag.**
 
