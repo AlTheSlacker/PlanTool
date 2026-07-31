@@ -78,7 +78,7 @@ class Gap:
     key: str
     rule_key: str
     priority: int
-    package: int | None
+    stage: int | None
     ask: str
     target: RowRef | None
     root: RowRef | None
@@ -93,7 +93,7 @@ class GapCluster:
 
     gaps: tuple[Gap, ...]
     total_open: int
-    package: int
+    stage: int
     grouped_by: str | None = None
     recommend_gate: bool = False
     guidance: str = ""
@@ -198,7 +198,7 @@ class GapEngine:
             key=self._key(rule.id, root, extra_key),
             rule_key=rule.id,
             priority=rule.priority,
-            package=rule.package,
+            stage=rule.stage,
             ask=rule.ask.format(name=self._name(row) if row else "", **fmt),
             target=row.ref if row else None,
             root=root,
@@ -277,7 +277,7 @@ class GapEngine:
         """The plan has content and has never agreed what a single word means.
 
         Conditioned on there being rows, so it does not fire into an empty workspace where
-        the package-1 rule is already saying the same thing in more useful words. It asks
+        the stage-1 rule is already saying the same thing in more useful words. It asks
         once and is dismissible: a plan whose vocabulary is genuinely uncontentious is a
         legitimate answer, and one recorded on the owner's say-so rather than by silence.
         """
@@ -340,21 +340,21 @@ class GapEngine:
             for r in self.storage.query("SELECT * FROM gap_overlay")
         }
 
-    def open_gaps(self, package: int | None = None) -> list[Gap]:
+    def open_gaps(self, stage: int | None = None) -> list[Gap]:
         """Every open gap, prioritized — the whole list, not a cluster.
 
         next_gaps returns a cluster sized for one exchange; gate-engine needs the
         unabridged set to raise a warning per gap (requirements:21), because a gate
         reporting only the first five would be passing the rest over silently.
 
-        `package=None` means every package rather than the current one. Passing a package
-        keeps that package's rules plus the package-agnostic ones (open assumptions,
+        `stage=None` means every stage rather than the current one. Passing a stage
+        keeps that stage's rules plus the stage-agnostic ones (open assumptions,
         reference coverage), which are never scoped out.
         """
         overlay = self._overlay()
         gaps: list[Gap] = []
         for rule in self.methodology.rules:
-            if package is not None and rule.package is not None and rule.package != package:
+            if stage is not None and rule.stage is not None and rule.stage != stage:
                 continue
             for gap in self._derive(rule):
                 entry = overlay.get(gap.key)
@@ -366,11 +366,11 @@ class GapEngine:
 
     # --- contracts:19 ---
 
-    def next_gaps(self, limit: int = CLUSTER_MAX, package: int | None = None) -> GapCluster:
+    def next_gaps(self, limit: int = CLUSTER_MAX, stage: int | None = None) -> GapCluster:
         """A prioritized cluster of related gaps, each with surrounding row context.
 
         requirements:13 — related, with context, so a cold session needs no other
-        warm-up. requirements:12 — when the package has no open gaps, recommend running
+        warm-up. requirements:12 — when the stage has no open gaps, recommend running
         the gate.
         """
         integrity = self.storage.integrity_check()
@@ -380,14 +380,14 @@ class GapEngine:
                 unreadable=list(integrity.unreadable),
             )
 
-        current = package if package is not None else self.current_package()
-        derived = self.open_gaps(package=current)
+        current = stage if stage is not None else self.current_stage()
+        derived = self.open_gaps(stage=current)
         clustered = self._cluster(derived, limit)
 
         return GapCluster(
             gaps=tuple(clustered),
             total_open=len(derived),
-            package=current,
+            stage=current,
             grouped_by=self._grouping(clustered),
             recommend_gate=not derived,
             guidance=self._guidance(current, bool(derived)),
@@ -396,7 +396,7 @@ class GapEngine:
     def _cluster(self, gaps: list[Gap], limit: int) -> list[Gap]:
         """Group by same target table, then same rule, so the batch is coherent.
 
-        v1's grouping key was entity -> table -> package. v2 keeps the spirit: a cluster
+        v1's grouping key was entity -> table -> stage. v2 keeps the spirit: a cluster
         the owner can answer as one conversation, not a scattering.
         """
         if not gaps:
@@ -427,28 +427,28 @@ class GapEngine:
         rules = {g.rule_key for g in gaps}
         return rules.pop() if len(rules) == 1 else None
 
-    def _guidance(self, package: int, has_gaps: bool) -> str:
+    def _guidance(self, stage: int, has_gaps: bool) -> str:
         """The per-cluster nudge.
 
         v1's guidance was proposal-first only. decisions:36 recorded that this
         under-pushed the owner — the agent authored every use case and the owner "did
-        not feel pushed that hard to add any". So on elicit packages the divergence round
+        not feel pushed that hard to add any". So on elicit stages the divergence round
         comes first, and proposal-first applies only after it.
         """
         if not has_gaps:
             return (
-                "No open gaps in this package. Run the package gate — and before you do, "
-                "work the package script's self-review checklist: gates verify "
+                "No open gaps in this stage. Run the stage gate — and before you do, "
+                "work the stage script's self-review checklist: gates verify "
                 "completeness, self-review is where quality lives."
             )
         try:
-            entry = self.methodology.package(package)
+            entry = self.methodology.stage(stage)
         except KeyError:
             entry = None
 
         if entry is not None and entry.is_elicit:
             return (
-                "Elicit package: the owner is the source of truth. Run the divergence "
+                "Elicit stage: the owner is the source of truth. Run the divergence "
                 "round BEFORE drafting — ask what scenarios are already in their head, "
                 "then probe the negative space (which actor has no scenario? what must "
                 "the system refuse to do?). Only once their candidates are on the table "
@@ -458,25 +458,25 @@ class GapEngine:
                 "one batch with provenance."
             )
         return (
-            "Synthesize package: you are the source — the owner cannot answer 'what are "
+            "Synthesize stage: you are the source — the owner cannot answer 'what are "
             "the contracts?'. Design it, present it with rationale, and let them "
             "adjudicate. Form proposals and ask for objection rather than asking open "
             "questions. Address this cluster as one coherent exchange and submit as one "
             "batch with provenance."
         )
 
-    def current_package(self) -> int:
-        """The lowest package that still has open gaps, else the highest package.
+    def current_stage(self) -> int:
+        """The lowest stage that still has open gaps, else the highest stage.
 
-        The plan never states how the current package is determined (DEFECTS.md F6).
+        The plan never states how the current stage is determined (DEFECTS.md F6).
         """
-        for entry in self.methodology.packages:
+        for entry in self.methodology.stages:
             for rule in self.methodology.rules:
-                if rule.package != entry.number:
+                if rule.stage != entry.number:
                     continue
                 if self._derive(rule):
                     return entry.number
-        return self.methodology.package_range[1]
+        return self.methodology.stage_range[1]
 
     # --- contracts:66 ---
 
@@ -551,7 +551,7 @@ class GapEngine:
         if allow_missing:
             root = gap_key.split("|")[1]
             return Gap(
-                key=gap_key, rule_key=rule_key, priority=9, package=None,
+                key=gap_key, rule_key=rule_key, priority=9, stage=None,
                 ask="(gap no longer derived from current plan state)",
                 target=None,
                 root=RowRef.parse(root) if root and root != "-" else None,

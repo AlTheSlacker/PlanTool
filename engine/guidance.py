@@ -1,9 +1,9 @@
 """guidance (components:4).
 
-Serves the engineer's mandate and per-package interview scripts, including the mandatory
-divergence rounds for elicit packages.
+Serves the engineer's mandate and per-stage interview scripts, including the mandatory
+divergence rounds for elicit stages.
 
-Contracts: contracts:17 get_mandate, contracts:65 get_package_script.
+Contracts: contracts:17 get_mandate, contracts:65 get_stage_script.
 
 This component holds no methodology of its own — it serves the vendored content assets
 (decisions:61). If it ever starts generating guidance, findings:4 has come back.
@@ -30,13 +30,13 @@ class GuidanceUnreadable(PlanToolError):
     """
 
 
-class UnknownPackage(PlanToolError):
-    """contracts:65 — package outside the defined set; names the valid range."""
+class UnknownStage(PlanToolError):
+    """contracts:65 — stage outside the defined set; names the valid range."""
 
 
 @dataclass(frozen=True, slots=True)
-class PackageScript:
-    package: int
+class StageScript:
+    stage: int
     name: str
     mode: str
     text: str
@@ -78,35 +78,35 @@ class Guidance:
 
     # --- contracts:65 ---
 
-    def get_package_script(self, package: int) -> PackageScript:
-        """The interview script for a package.
+    def get_stage_script(self, stage: int) -> StageScript:
+        """The interview script for a stage.
 
-        For elicit packages this includes the mandatory divergence rounds — context-free
+        For elicit stages this includes the mandatory divergence rounds — context-free
         questions, negative-space probes, owner-generated candidates solicited *before*
         agent-authored drafts (requirements:16). That ordering is the countermeasure to
         the friction recorded in decisions:36, where the owner "did not feel pushed that
         hard" and every use case ended up agent-authored.
         """
-        low, high = self.methodology.package_range
+        low, high = self.methodology.stage_range
         try:
-            entry = self.methodology.package(package)
+            entry = self.methodology.stage(stage)
         except KeyError as exc:
-            raise UnknownPackage(
-                "no such package", package=package, valid_range=f"{low}-{high}"
+            raise UnknownStage(
+                "no such stage", stage=stage, valid_range=f"{low}-{high}"
             ) from exc
 
         try:
             text = self.methodology.read(entry.script_file)
         except MethodologyUnavailable as exc:
             raise GuidanceUnreadable(
-                "the package script could not be read; refusing to answer from partial "
+                "the stage script could not be read; refusing to answer from partial "
                 "methodology",
-                package=package,
+                stage=stage,
                 cause=str(exc),
             ) from exc
 
-        return PackageScript(
-            package=entry.number,
+        return StageScript(
+            stage=entry.number,
             name=entry.name,
             mode=entry.mode,
             text=text,
@@ -119,7 +119,7 @@ class Guidance:
         """Supplementary scripts, e.g. the red-team brief for use_cases:8."""
         filename = self.methodology.auxiliary.get(name)
         if filename is None:
-            raise UnknownPackage(
+            raise UnknownStage(
                 "no such auxiliary script",
                 name=name,
                 available=sorted(self.methodology.auxiliary),

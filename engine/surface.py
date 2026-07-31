@@ -23,7 +23,7 @@ five revision-service contracts were `DEFERRED` until M7 and are now built and e
 `DEFERRED` is empty. `EXCLUDED` is what the coverage test subtracts, so nothing is
 unaccounted for and nothing is silently missing.
 
-**Six tools are here that the frozen plan does not send here** — the mandate, the package
+**Six tools are here that the frozen plan does not send here** — the mandate, the stage
 script, the active warnings, the journal, the gate history and `compose_brief` (DEVIATIONS
 D18). They are exposed because `plan_status` tells a resuming planner to call them. The
 alternative was to reword the digest so it only names what happens to be exposed, which
@@ -212,7 +212,7 @@ def as_submission(field_name: str, value: Any) -> RowSubmission:
     """
     got = as_dict(field_name, value)
     unknown = set(got) - {
-        "table", "content", "name", "provenance", "assumption_kind", "links", "package",
+        "table", "content", "name", "provenance", "assumption_kind", "links", "stage",
         "spike",
     }
     if unknown:
@@ -239,7 +239,7 @@ def as_submission(field_name: str, value: Any) -> RowSubmission:
             _as_link(f"{field_name}.links[{i}]", link)
             for i, link in enumerate(got.get("links") or [])
         ],
-        package=got.get("package"),
+        stage=got.get("stage"),
         # D16 — a world-assumption is filed with the spike that will attack it; row-service
         # requires it there and refuses it anywhere else, so the decoder just carries it.
         spike=(
@@ -269,7 +269,7 @@ def as_submissions(field_name: str, value: Any) -> list[RowSubmission]:
 def as_selector(field_name: str, value: Any) -> RowSelector:
     got = as_dict(field_name, value)
     unknown = set(got) - {
-        "ids", "table", "package", "provenance", "live_only", "neighbourhood_of",
+        "ids", "table", "stage", "provenance", "live_only", "neighbourhood_of",
         "limit", "offset",
     }
     if unknown:
@@ -280,7 +280,7 @@ def as_selector(field_name: str, value: Any) -> RowSelector:
     return RowSelector(
         ids=as_refs(f"{field_name}.ids", got["ids"]) if got.get("ids") else None,
         table=got.get("table"),
-        package=got.get("package"),
+        stage=got.get("stage"),
         provenance=Provenance(provenance) if provenance else None,
         live_only=bool(got.get("live_only", False)),
         neighbourhood_of=(
@@ -455,7 +455,7 @@ REGISTRY: dict[str, Tool] = {
            writes=True),
         _t("read_rows", "rows", "read_rows", "contracts:10",
            "Read the rows a selector picks out, a page at a time.",
-           Param("selector", "selector", note="which rows: by address, table, package, "
+           Param("selector", "selector", note="which rows: by address, table, stage, "
                                               "provenance, liveness or neighbourhood")),
         _t("resolve_assumption", "rows", "resolve_assumption", "contracts:11",
            "Upgrade an open assumption in place, quoting the owner's answer.",
@@ -486,8 +486,8 @@ REGISTRY: dict[str, Tool] = {
         _t("next_gaps", "gaps", "next_gaps", "contracts:19",
            "The next cluster of gaps to work, newest deficiency first.",
            Param("limit", "int", required=False, note="how many to return"),
-           Param("package", "int", required=False,
-                 note="restrict to one package; omit for the current one")),
+           Param("stage", "int", required=False,
+                 note="restrict to one stage; omit for the current one")),
         _t("dismiss_gap", "gaps", "dismiss_gap", "contracts:66",
            "Set a gap aside with a recorded reason; it stops re-surfacing.",
            Param("gap_key", "str", note="the gap being dismissed"),
@@ -500,8 +500,8 @@ REGISTRY: dict[str, Tool] = {
            writes=True),
         # --- gate-engine (components:6) ---
         _t("run_gate", "gates", "run_gate", "contracts:22",
-           "Run a package's mechanical gate and record the verdict with its holes.",
-           Param("package", "int", note="which package to gate"),
+           "Run a stage's mechanical gate and record the verdict with its holes.",
+           Param("stage", "int", note="which stage to gate"),
            writes=True),
         # --- warning-service (components:7) ---
         _t("suppress_warning", "warns", "suppress_warning", "contracts:24",
@@ -560,7 +560,7 @@ REGISTRY: dict[str, Tool] = {
            Param("severity", "str", note="how badly it matters"),
            Param("name", "str", note="what the finding says, in a few words"),
            Param("resolve_by", "int",
-                 note="the package gate this must be resolved by — its deadline, made a gate"),
+                 note="the stage gate this must be resolved by — its deadline, made a gate"),
            writes=True),
         _t("resolve_finding", "findings", "resolve_finding", "contracts:34",
            "Take a finding to a terminal outcome; an accepted risk stays visible at handoff.",
@@ -572,7 +572,7 @@ REGISTRY: dict[str, Tool] = {
            "Defer an open finding to a later gate, on the record. The one alternative to "
            "resolving it at its own gate.",
            Param("finding_id", "int", note="the open finding being deferred"),
-           Param("resolve_by", "int", note="the later package gate it now answers to"),
+           Param("resolve_by", "int", note="the later stage gate it now answers to"),
            Param("reason", "str", note="why it belongs there instead — the owner reads this"),
            writes=True),
         # --- task-graph (components:11) ---
@@ -622,17 +622,17 @@ REGISTRY: dict[str, Tool] = {
            "Where the work got to — the one call a cold planner makes first."),
         _t("journal", "resume", "journal", "contracts:48",
            "The journal notes, in full.",
-           Param("package", "int", required=False, note="restrict to one package")),
+           Param("stage", "int", required=False, note="restrict to one stage")),
         _t("gate_runs", "resume", "gate_runs", "contracts:22",
            "Every gate verdict recorded, newest first."),
         # --- guidance (components:4) ---
         _t("get_mandate", "guidance", "get_mandate", "contracts:17",
            "The engineer's mandate the methodology serves."),
-        _t("get_package_script", "guidance", "get_package_script", "contracts:65",
-           "The script for one planning package.",
-           Param("package", "int", note="which package's script")),
+        _t("get_stage_script", "guidance", "get_stage_script", "contracts:65",
+           "The script for one planning stage.",
+           Param("stage", "int", note="which stage's script")),
         _t("get_auxiliary", "guidance", "get_auxiliary", DEVIATION,
-           "A script that belongs to no single package — the red team's, for one.",
+           "A script that belongs to no single stage — the red team's, for one.",
            Param("name", "str", note="which auxiliary script")),
         # --- the glossary (components:2, by deviation) ---
         _t("define_term", "terms", "define_term", DEVIATION,
@@ -748,7 +748,7 @@ EXCLUDED: tuple[Absence, ...] = (
             "contracts, not by the graph dividing a node after the fact"),
 )
 
-#: Not built yet, each bound to the build package that owes it — the outstanding-problem
+#: Not built yet, each bound to the build stage that owes it — the outstanding-problem
 #: rule: an unresolved item is fixed now or bound to a named gate, never floating.
 DEFERRED: tuple[Absence, ...] = (
 )
@@ -759,13 +759,13 @@ DEFERRED: tuple[Absence, ...] = (
 #: catches. Each entry names the deviation that decided it.
 ADDED: tuple[Absence, ...] = (
     Absence(DEVIATION, "render_plan",
-            "the plan scoped plan rendering out, and the last planning package ends by "
+            "the plan scoped plan rendering out, and the last planning stage ends by "
             "skimming a rendered plan with the owner (D21)"),
     Absence(DEVIATION, "get_auxiliary",
             "the red-team script is a content asset requirements:71 ships and no contract "
             "served it, so the red team could not fetch its own brief (D21)"),
     Absence(DEVIATION, "define_term",
-            "the eight planning packages never ask what the words mean, so a plan could "
+            "the eight planning stages never ask what the words mean, so a plan could "
             "not say — and a vocabulary nothing records is the one F27 broke (D23)"),
     Absence(DEVIATION, "approve_term",
             "a definition the tool took from a planning session and filed as settled is "
@@ -941,7 +941,7 @@ class Surface:
         # never reports one a mutation has already cleared (DEFECTS.md F50). Same late-bind
         # shape as `terms.rows = rows` above.
         self.warns.live_warning_keys = self.gaps.live_warning_keys
-        # Findings are built before the gate that reads them: the package-7 criteria go
+        # Findings are built before the gate that reads them: the stage-7 criteria go
         # through the finding service now, not through plan_rows (D22).
         self.findings = FindingService(storage, self.rows)
         self.gates = GateEngine(

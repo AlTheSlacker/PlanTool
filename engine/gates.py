@@ -1,7 +1,7 @@
 """gate-engine (components:6).
 
-Evaluates deterministic, mechanical-only package gates, reporting row-level holes and
-raising warnings, including elicit-package coverage cross-checks.
+Evaluates deterministic, mechanical-only stage gates, reporting row-level holes and
+raising warnings, including elicit-stage coverage cross-checks.
 
 Contract: contracts:22 run_gate.
 
@@ -56,13 +56,13 @@ from engine.warnings import (
 
 #: D15 — the criterion_id the gate hard-lock reports its holes under. It is a word, not a
 #: `gate_criteria.yaml` id, and deliberately so: the lock applies to every gate of every
-#: plan whatever methodology is loaded, so it is not a per-package methodology criterion at
+#: plan whatever methodology is loaded, so it is not a per-stage methodology criterion at
 #: all. A plausible criterion id here would be a citation to a row that checks something
 #: else — the surface's `DEVIATION` sentinel makes the same honesty visible for tools.
 RESOLVE_BY_LOCK = "d15_resolve_by_lock"
 
 
-class UnknownPackage(PlanToolError):
+class UnknownStage(PlanToolError):
     """contracts:22 — names the valid range."""
 
 
@@ -96,13 +96,13 @@ class GateResult:
     """contracts:22 — deterministic pass/fail with row-level holes and explicit
     warnings."""
 
-    package: int
+    stage: int
     passed: bool
     holes: tuple[Hole, ...]
     warnings: tuple[Warning, ...]
     #: requirements:17 — which coverage cross-checks ran, so their absence is visible.
     cross_checks_run: tuple[str, ...] = ()
-    next_package: int | None = None
+    next_stage: int | None = None
 
     @property
     def clean(self) -> bool:
@@ -138,51 +138,51 @@ class GateEngine:
 
     # --- contracts:22 ---
 
-    def run_gate(self, package: int) -> GateResult:
-        low, high = self.methodology.package_range
-        if isinstance(package, bool) or not isinstance(package, int) or not low <= package <= high:
-            raise UnknownPackage(
-                f"package must be an integer in {low}-{high}", package=repr(package)
+    def run_gate(self, stage: int) -> GateResult:
+        low, high = self.methodology.stage_range
+        if isinstance(stage, bool) or not isinstance(stage, int) or not low <= stage <= high:
+            raise UnknownStage(
+                f"stage must be an integer in {low}-{high}", stage=repr(stage)
             )
 
         integrity = self.storage.integrity_check()
         if integrity.unreadable:
             raise PlanUnreadable(
                 "a gate never evaluates partial state; recover first",
-                package=package,
+                stage=stage,
                 unreadable=list(integrity.unreadable),
             )
 
-        blocking = self.conflicts.blocking_conflicts(self.scope(package))
+        blocking = self.conflicts.blocking_conflicts(self.scope(stage))
         if blocking:
             raise BlockedByConflict(
                 "open conflicts contest rows this gate depends on",
-                package=package,
+                stage=stage,
                 conflicts=[c.id for c in blocking],
                 contested=sorted({str(r) for c in blocking for r in c.refs}),
                 reasons=[c.blockage_reason() for c in blocking],
             )
 
-        criteria = self.methodology.criteria_for(package)
+        criteria = self.methodology.criteria_for(stage)
         holes: list[Hole] = []
         for criterion in criteria:
             holes.extend(self._evaluate(criterion))
-        holes.extend(self._resolve_by_lock(package))
+        holes.extend(self._resolve_by_lock(stage))
 
-        warnings = self._raise_warnings(package)
+        warnings = self._raise_warnings(stage)
         passed = not holes
-        self._record_run(package, passed, len(holes), len(warnings))
+        self._record_run(stage, passed, len(holes), len(warnings))
         return GateResult(
-            package=package,
+            stage=stage,
             passed=passed,
             holes=tuple(holes),
             warnings=tuple(warnings),
             cross_checks_run=tuple(c.id for c in criteria if c.cross_check),
-            next_package=package + 1 if passed and package < high else None,
+            next_stage=stage + 1 if passed and stage < high else None,
         )
 
     def _record_run(
-        self, package: int, passed: bool, hole_count: int, warning_count: int
+        self, stage: int, passed: bool, hole_count: int, warning_count: int
     ) -> None:
         """Write the verdict to the gate history a resuming planner reads.
 
@@ -190,40 +190,40 @@ class GateEngine:
         nothing stored one until M6 (DEFECTS.md F30) — the verdict was computed, returned
         and forgotten, so the promise had a reader and no writer.
 
-        The key is discriminated by how many runs this package already has, which is the
+        The key is discriminated by how many runs this stage already has, which is the
         "attempt number" `engine/idempotency.py` asks for. Running the same gate twice is
         a legitimate repeat that must produce two rows: history that collapsed re-runs
-        would show a package passing without ever showing that it had failed first.
+        would show a stage passing without ever showing that it had failed first.
         """
         sequence = self.storage.query(
-            "SELECT COUNT(*) AS n FROM gate_runs WHERE package = ?", (package,)
+            "SELECT COUNT(*) AS n FROM gate_runs WHERE stage = ?", (stage,)
         )[0]["n"]
         self.storage.write_atomic(
             [Op("insert", "gate_runs", {
-                "package": package,
+                "stage": stage,
                 "passed": 1 if passed else 0,
                 "hole_count": hole_count,
                 "warning_count": warning_count,
                 "created_at": now(),
             })],
-            key("gate_run", package, sequence),
+            key("gate_run", stage, sequence),
         )
 
-    def scope(self, package: int) -> GateScope:
+    def scope(self, stage: int) -> GateScope:
         """The rows this gate depends on (contracts:28's GateScope).
 
-        Every table the package's criteria read, plus the tables the manifest assigns to
-        the package. Package 8 folds in every earlier package, because it re-runs them.
+        Every table the stage's criteria read, plus the tables the manifest assigns to
+        the stage. Stage 8 folds in every earlier stage, because it re-runs them.
         """
-        packages = (
-            [s.number for s in self.methodology.packages]
-            if self._is_terminal(package)
-            else [package]
+        stages = (
+            [s.number for s in self.methodology.stages]
+            if self._is_terminal(stage)
+            else [stage]
         )
         tables: set[str] = set()
-        for number in packages:
+        for number in stages:
             try:
-                tables.update(self.methodology.package(number).tables)
+                tables.update(self.methodology.stage(number).tables)
             except KeyError:
                 pass
             for criterion in self.methodology.criteria_for(number):
@@ -241,30 +241,30 @@ class GateEngine:
             tables.update(spec.get(key) or ())
         return tables
 
-    def _is_terminal(self, package: int) -> bool:
-        return package == self.methodology.package_range[1]
+    def _is_terminal(self, stage: int) -> bool:
+        return stage == self.methodology.stage_range[1]
 
     # --- D15 the hard-lock (M6_PLAN.md §2.6) ---
 
-    def _resolve_by_lock(self, package: int) -> list[Hole]:
+    def _resolve_by_lock(self, stage: int) -> list[Hole]:
         """A gate does not pass while an open finding is allocated to it.
 
         Engine-level, beside the conflict block and not in `gate_criteria.yaml`: the rule
         holds for every gate of every plan, whatever methodology is loaded, so it cannot be
-        a per-package methodology asset. It reports a *hole* rather than raising (unlike the
+        a per-stage methodology asset. It reports a *hole* rather than raising (unlike the
         conflict block) because the plan is perfectly readable — there is simply an
-        outstanding item carrying this gate's name — so it composes with the package's other
+        outstanding item carrying this gate's name — so it composes with the stage's other
         holes into one report the same way a criterion does.
 
         Skipped at any gate that already carries a `findings_resolved` criterion (the
-        adversarial package does), because that criterion refuses *every* open finding
+        adversarial stage does), because that criterion refuses *every* open finding
         regardless of allocation, so the lock there would only name the same finding twice.
         The two are not redundant elsewhere — this one fires at the earlier gate the finding
         was bound to, which is the pile-up-at-the-catch-all that D15 exists to prevent. The
-        catch-all is still the backstop: package 8 re-runs it through `prior_gates_green`, so
+        catch-all is still the backstop: stage 8 re-runs it through `prior_gates_green`, so
         a finding allocated to any gate cannot reach a frozen plan open.
         """
-        if any(c.type == "findings_resolved" for c in self.methodology.criteria_for(package)):
+        if any(c.type == "findings_resolved" for c in self.methodology.criteria_for(stage)):
             return []
         return [
             Hole(
@@ -280,12 +280,12 @@ class GateEngine:
                 ),
                 ref=finding.ref,
             )
-            for finding in self.findings.open_allocated_to(package)
+            for finding in self.findings.open_allocated_to(stage)
         ]
 
     # --- warnings (requirements:21, decisions:31) ---
 
-    def _raise_warnings(self, package: int) -> list[Warning]:
+    def _raise_warnings(self, stage: int) -> list[Warning]:
         """Every open gap and unresolved assumption, raised as an explicit warning.
 
         Raising is idempotent on the warning key, so a deficiency that survives three
@@ -294,14 +294,14 @@ class GateEngine:
         owner suppressed stays suppressed and does not come back here; it comes back at
         the critical points instead (requirements:23).
 
-        Scoped to the package being gated (plus the package-agnostic rules, which
-        open_gaps includes at any package). The unscoped reading of requirements:21 —
+        Scoped to the stage being gated (plus the stage-agnostic rules, which
+        open_gaps includes at any stage). The unscoped reading of requirements:21 —
         every open gap in the plan — was built first and driven end to end, and it
-        reported "no components yet" as a warning on the package-1 gate of a plan that
-        had not reached package 6. Ten of twelve warnings were of that kind. A warning
-        list that says "the plan is not finished yet" to someone who is three packages
+        reported "no components yet" as a warning on the stage-1 gate of a plan that
+        had not reached stage 6. Ten of twelve warnings were of that kind. A warning
+        list that says "the plan is not finished yet" to someone who is three stages
         from finishing is noise, and gap_rules.yaml already records why that matters:
-        "a meter that cries wolf stops being read". Warnings raised at their own package
+        "a meter that cries wolf stops being read". Warnings raised at their own stage
         persist in the ledger and keep re-presenting, so nothing is passed over
         silently — see DEFECTS.md F10.
         """
@@ -315,7 +315,7 @@ class GateEngine:
         assumption_rules = {
             rule.id for rule in self.methodology.rules if rule.type == "open_assumption"
         }
-        for gap in self.gaps.open_gaps(package=package):
+        for gap in self.gaps.open_gaps(stage=stage):
             if gap.rule_key in assumption_rules:
                 continue
             self.warnings.raise_warning(
@@ -351,7 +351,7 @@ class GateEngine:
         """Retire warnings whose underlying condition no longer holds.
 
         Without this, the ledger only ever grows: the first drive showed a
-        "nothing recorded yet" warning still active on a package-1 gate that passed.
+        "nothing recorded yet" warning still active on a stage-1 gate that passed.
         A warning that outlives its cause trains the reader to ignore warnings, which
         is the exact failure decisions:31's keep-pushing policy is trying to avoid.
 
@@ -449,7 +449,7 @@ class GateEngine:
     # --- criteria that read the finding service, not plan_rows (D22) ---
     #
     # These two have a type each instead of a `table:` naming the store, and that is the
-    # repair for F38 rather than an implementation detail. The package-7 criteria used to
+    # repair for F38 rather than an implementation detail. The stage-7 criteria used to
     # say `type: non_empty, table: findings`, which read plan_rows — where findings have
     # never been written — so the gate reported "no adversarial findings recorded" no
     # matter how many the red team filed, and could not be passed by the route the
@@ -503,7 +503,7 @@ class GateEngine:
         escape = criterion.spec.get("escape_table")
         if escape and self._live(escape):
             # An explicit "there are none, and here is why" row is a real answer, not a
-            # missing one. Package 5's no-dependencies decision is the vendored case.
+            # missing one. Stage 5's no-dependencies decision is the vendored case.
             return []
         return [self._hole(criterion)]
 
@@ -640,7 +640,7 @@ class GateEngine:
         world-assumption cannot be *filed* without a spike registered atomically
         (row-service enforces that), so "has no spike at all" is now unrepresentable and
         there is nothing for it to find on that count. What it checks instead is that the
-        spike was actually run — a spike still sitting in `registered` at the package-6
+        spike was actually run — a spike still sitting in `registered` at the stage-6
         gate means the experiment was queued and forgotten — and, because confirmed and
         refuted both *close* the assumption (so it never reaches this loop), that the only
         outcomes reaching here, inconclusive and blocked, carry the owner's explicit
@@ -683,15 +683,15 @@ class GateEngine:
         return sorted(holes, key=lambda h: (h.ref.table, h.ref.ordinal))
 
     def _c_prior_gates_green(self, criterion: Criterion) -> list[Hole]:
-        """Package 8 folds in every earlier gate.
+        """Stage 8 folds in every earlier gate.
 
         It re-runs their *criteria* rather than calling run_gate, deliberately: run_gate
         would re-raise warnings and re-check conflicts eight times over, and a
-        BlockedByConflict from an inner gate would surface as the wrong package's error.
+        BlockedByConflict from an inner gate would surface as the wrong stage's error.
         """
         holes = []
-        for entry in self.methodology.packages:
-            if entry.number >= criterion.package:
+        for entry in self.methodology.stages:
+            if entry.number >= criterion.stage:
                 continue
             inner = [
                 hole
@@ -703,7 +703,7 @@ class GateEngine:
                     criterion_id=criterion.id,
                     table="gates",
                     problem=criterion.problem.format(
-                        package=entry.number, count=len(inner)
+                        stage=entry.number, count=len(inner)
                     ),
                     fix=criterion.fix,
                 ))

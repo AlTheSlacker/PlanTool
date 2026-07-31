@@ -18,7 +18,7 @@ planner leaves behind so that call has something true to say.
 Three rules shape the digest, and each of them is a defect countermeasure rather than a
 preference:
 
-  **It carries no document text.** The mandate and the current package script are named,
+  **It carries no document text.** The mandate and the current stage script are named,
   never included (DEVIATIONS.md **D17**). They need to reach a planner once, and only the
   caller knows whether they already have. `requirements:62` is the row that agrees: a full
   dump is never the default rehydration path.
@@ -80,7 +80,7 @@ class Fetch:
     label: str
     call: str
     #: `None` means this is a reference to one named thing rather than a count of many —
-    #: the mandate and the current package script, which are pointed at rather than counted.
+    #: the mandate and the current stage script, which are pointed at rather than counted.
     count: int | None = None
 
     def present(self) -> str:
@@ -95,7 +95,7 @@ class JournalNote:
     """contracts:48 — a timestamped informal learning that is not a formal plan row."""
 
     id: int
-    package: int
+    stage: int
     note: str
     created_at: str
     task_ref: RowRef | None = None
@@ -130,7 +130,7 @@ class Checkpoint:
 class GateRun:
     """One recorded gate verdict (DEFECTS.md F30)."""
 
-    package: int
+    stage: int
     passed: bool
     hole_count: int
     warning_count: int
@@ -138,7 +138,7 @@ class GateRun:
 
     def present(self) -> str:
         verdict = "passed" if self.passed else f"failed on {self.hole_count} holes"
-        return f"package {self.package} {verdict} at {self.created_at}"
+        return f"stage {self.stage} {verdict} at {self.created_at}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -186,8 +186,8 @@ class PlanStatus:
     tier: str
     state: str
     version: int
-    package: int
-    package_name: str
+    stage: int
+    stage_name: str
     methodology_revision: str
     mandate: Fetch
     script: Fetch
@@ -235,14 +235,14 @@ class PlanStatus:
         """
         lines: list[str | Verbatim] = [
             f"Plan '{self.name}' ({self.tier}), {self.state}, version {self.version}",
-            f"Package {self.package} — {self.package_name} "
+            f"Stage {self.stage} — {self.stage_name} "
             f"(methodology {self.methodology_revision})",
             self.mandate.present(),
             self.script.present(),
         ]
         if self.gate_history:
             lines.append(
-                "Gate history, latest per package: "
+                "Gate history, latest per stage: "
                 + "; ".join(g.present() for g in self.gate_history)
             )
         else:
@@ -280,7 +280,7 @@ class PlanStatus:
                 "plan, and every row after it is written in those words"
             )
         if self.journal:
-            lines.append(f"Journal, this package ({len(self.journal)}):")
+            lines.append(f"Journal, this stage ({len(self.journal)}):")
             # The planner's own words, Verbatim for the same reason, with the composed task
             # ref named through `display` (F49).
             lines.extend(Verbatim(f"  - {n.line(display)}") for n in self.journal)
@@ -316,7 +316,7 @@ class ResumeService:
         `requirements:56`/`60` — never batched to the end of a planner's life, because the
         whole premise is that the planner's life ends without warning. One row, one write.
 
-        The note is stamped with the package current when it was written, and that is what
+        The note is stamped with the stage current when it was written, and that is what
         later bounds the digest to the working set (`requirements:62`) instead of to the
         whole history of the plan.
 
@@ -325,24 +325,24 @@ class ResumeService:
         key incapable of ever detecting a repeat — F29 exactly, reproduced in the module
         written the same afternoon as its defect entry, and caught by the driver rather than
         by the author. The question a key answers is *is this the same act?*, and the same
-        learning filed twice against the same package and task is one act reported twice, not
+        learning filed twice against the same stage and task is one act reported twice, not
         two learnings. A planner who genuinely wants the same sentence recorded again has
-        learned something at a different moment, which means a different package, a different
+        learned something at a different moment, which means a different stage, a different
         task, or different words.
         """
         text = note.strip()
         if not text:
             raise PlanToolError("a journal note with no text records nothing")
-        package = self.gaps.current_package()
+        stage = self.gaps.current_stage()
         task_ref = RowRef.coerce(task) if task is not None else None
         receipt = self.storage.write_atomic(
             [Op("insert", "journal_notes", {
-                "package": package,
+                "stage": stage,
                 "note": text,
                 "task_ref": str(task_ref) if task_ref else None,
                 "created_at": now(),
             })],
-            key("journal_note", package, task_ref, text),
+            key("journal_note", stage, task_ref, text),
         )
         return self._note_from(receipt)
 
@@ -390,14 +390,14 @@ class ResumeService:
                 unreadable=list(integrity.unreadable),
             )
 
-        package = self.gaps.current_package()
-        script = self.guidance.get_package_script(package)
-        # Scoped to the current package, not every package (DEFECTS.md F47). The count is
-        # labelled `open gap — next_gaps()`, and next_gaps() reports the *current* package's
+        stage = self.gaps.current_stage()
+        script = self.guidance.get_stage_script(stage)
+        # Scoped to the current stage, not every stage (DEFECTS.md F47). The count is
+        # labelled `open gap — next_gaps()`, and next_gaps() reports the *current* stage's
         # total; counting all eight here made the headline number irreconcilable with the
         # call the digest sends the reader to (D17: a count names the call that fetches it).
-        open_gaps = self.gaps.open_gaps(package=package)
-        notes, earlier = self._journal(package)
+        open_gaps = self.gaps.open_gaps(stage=stage)
+        notes, earlier = self._journal(stage)
         latest_gates, earlier_gates = self._gate_history()
         next_action, source = self._next_action(open_gaps)
 
@@ -406,12 +406,12 @@ class ResumeService:
             tier=handle["tier"],
             state=handle["state"],
             version=handle["version"],
-            package=package,
-            package_name=script.name,
+            stage=stage,
+            stage_name=script.name,
             methodology_revision=script.revision_stamp,
             mandate=Fetch("the engineer's mandate", "get_mandate()"),
             script=Fetch(
-                f"the script for package {package}", f"get_package_script({package})"
+                f"the script for stage {stage}", f"get_stage_script({stage})"
             ),
             gate_history=latest_gates,
             earlier_gate_runs=earlier_gates,
@@ -448,14 +448,14 @@ class ResumeService:
 
     # --- reads ---
 
-    def journal(self, package: int | None = None) -> list[JournalNote]:
-        """Journal notes, newest last. `package=None` is the whole journal — the call the
+    def journal(self, stage: int | None = None) -> list[JournalNote]:
+        """Journal notes, newest last. `stage=None` is the whole journal — the call the
         digest's earlier-notes count points at."""
         sql = "SELECT * FROM journal_notes"
         params: tuple = ()
-        if package is not None:
-            sql += " WHERE package = ?"
-            params = (package,)
+        if stage is not None:
+            sql += " WHERE stage = ?"
+            params = (stage,)
         return [self._build_note(dict(r)) for r in self.storage.query(sql + " ORDER BY id", params)]
 
     def checkpoints(self) -> list[Checkpoint]:
@@ -466,16 +466,16 @@ class ResumeService:
 
     # --- internals ---
 
-    def _journal(self, package: int) -> tuple[tuple[JournalNote, ...], Fetch]:
-        """This package's notes by value; everything older as a count and a call.
+    def _journal(self, stage: int) -> tuple[tuple[JournalNote, ...], Fetch]:
+        """This stage's notes by value; everything older as a count and a call.
 
         The denominator, stated because check 3 of the pre-build audit demands it: the set is
-        *notes stamped with the current package*, it comes from `journal_notes.package`
+        *notes stamped with the current stage*, it comes from `journal_notes.stage`
         written at the moment each note was recorded, and it is fixed at read time. Read-time
         is correct here and wrong in a brief (F26): a status view reports where the plan *is*,
         while a brief's accounting must not move under the work it measures.
         """
-        current = tuple(self.journal(package))
+        current = tuple(self.journal(stage))
         total = self._count("journal_notes")
         return current, Fetch(
             "earlier journal note", "journal()", total - len(current)
@@ -502,10 +502,10 @@ class ResumeService:
         if last:
             return (
                 f"No next action was recorded and no gaps are open. Last journal entry: "
-                f"{last[-1].note}. Call run_gate() for the current package."
+                f"{last[-1].note}. Call run_gate() for the current stage."
             ), "derived"
         return (
-            "Nothing has been recorded in this plan yet. Call get_package_script() and "
+            "Nothing has been recorded in this plan yet. Call get_stage_script() and "
             "begin the interview."
         ), "derived"
 
@@ -529,19 +529,19 @@ class ResumeService:
         return ()
 
     def _gate_history(self) -> tuple[tuple[GateRun, ...], Fetch]:
-        """The newest verdict for each package, and a count of every earlier run.
+        """The newest verdict for each stage, and a count of every earlier run.
 
         The denominator again: a gate can be re-run any number of times, so the full history
         grows without bound and putting all of it in the digest would break the compactness
         `requirements:62` requires — the same problem as the journal, and it only became
-        visible when the driver printed one package's verdict twice. What a resuming planner
-        needs is *where each package stands*; what happened on the way there is history, and
+        visible when the driver printed one stage's verdict twice. What a resuming planner
+        needs is *where each stage stands*; what happened on the way there is history, and
         history is fetched.
         """
         runs = self.gate_runs()
         latest: dict[int, GateRun] = {}
         for run in runs:
-            latest[run.package] = run
+            latest[run.stage] = run
         newest = tuple(latest[p] for p in sorted(latest))
         return newest, Fetch(
             "earlier gate run", "gate_runs()", len(runs) - len(newest)
@@ -551,7 +551,7 @@ class ResumeService:
         """Every recorded gate verdict, oldest first (DEFECTS.md F30)."""
         return [
             GateRun(
-                package=r["package"],
+                stage=r["stage"],
                 passed=bool(r["passed"]),
                 hole_count=r["hole_count"],
                 warning_count=r["warning_count"],
@@ -602,7 +602,7 @@ class ResumeService:
     def _build_note(record: dict) -> JournalNote:
         return JournalNote(
             id=record["id"],
-            package=record["package"],
+            stage=record["stage"],
             note=record["note"],
             created_at=record["created_at"],
             task_ref=RowRef.parse(record["task_ref"]) if record["task_ref"] else None,

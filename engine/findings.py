@@ -82,7 +82,7 @@ class InvalidTransition(PlanToolError):
 
 
 class InvalidAllocation(PlanToolError):
-    """D15 — `resolve_by` is not a package gate, or a reallocation does not move the
+    """D15 — `resolve_by` is not a stage gate, or a reallocation does not move the
     finding to a strictly later one; the allocation is unchanged."""
 
 
@@ -96,7 +96,7 @@ class Finding:
     description: str
     severity: str
     state: str
-    #: D15 — the package gate that must not pass while this finding is open. NOT NULL, set
+    #: D15 — the stage gate that must not pass while this finding is open. NOT NULL, set
     #: at filing. It is the answer to "by when", made mechanical: the gate is the deadline.
     resolve_by: int
     created_at: str
@@ -140,7 +140,7 @@ class FindingService:
     def __init__(self, storage: Storage, rows=None, methodology: Methodology | None = None):
         self.storage = storage
         self.rows = rows
-        #: The package set, so `resolve_by` can be validated against gates that exist and
+        #: The stage set, so `resolve_by` can be validated against gates that exist and
         #: an integrity finding can be allocated to the terminal one. Loaded, not hard-coded:
         #: the range is the methodology's to declare, not this module's to assume.
         self.methodology = methodology or load()
@@ -169,7 +169,7 @@ class FindingService:
         remove.
 
         `resolve_by` is D15 (M6_PLAN.md §2.6), also a deviation from `contracts:33`. It is
-        the package gate that must not pass while the finding is open, required here because
+        the stage gate that must not pass while the finding is open, required here because
         an item with no gate to answer to is one only finalization catches — the pile-up the
         allocation scheme exists to break up. Which gate is a judgement (`decisions:12`): the
         tool checks the gate exists and records the choice; it does not choose it.
@@ -190,19 +190,19 @@ class FindingService:
                 "and look it up — so the name is what gets shown and the address rides "
                 "alongside it"
             )
-        self._check_package(resolve_by, "resolve_by")
+        self._check_stage(resolve_by, "resolve_by")
         for ref in parsed:
             if not self._row_exists(ref):
                 raise RefNotFound("no such row; nothing filed", ref=str(ref))
 
         return self._insert(parsed, description, severity, name, resolve_by)
 
-    def _check_package(self, package: int, field: str) -> None:
-        low, high = self.methodology.package_range
-        if isinstance(package, bool) or not isinstance(package, int) or not low <= package <= high:
+    def _check_stage(self, stage: int, field: str) -> None:
+        low, high = self.methodology.stage_range
+        if isinstance(stage, bool) or not isinstance(stage, int) or not low <= stage <= high:
             raise InvalidAllocation(
-                f"{field} must be a package gate in {low}-{high}; nothing filed",
-                **{field: repr(package)},
+                f"{field} must be a stage gate in {low}-{high}; nothing filed",
+                **{field: repr(stage)},
             )
 
     def file_integrity_finding(
@@ -223,10 +223,10 @@ class FindingService:
         # The one finding the tool names itself, because the tool is the one filing it.
         # Allocated to the terminal gate: an unreadable plan already refuses every gate
         # (run_gate raises PlanUnreadable before evaluating), so the allocation is a formality
-        # — the terminal package is the honest home for "must be gone before freeze".
+        # — the terminal stage is the honest home for "must be gone before freeze".
         return self._insert(
             unreadable, description, "blocking", "plan state is unreadable",
-            self.methodology.package_range[1],
+            self.methodology.stage_range[1],
         )
 
     def _insert(
@@ -301,10 +301,10 @@ class FindingService:
     def reallocate_finding(
         self, finding_id: int, resolve_by: int, reason: str
     ) -> Finding:
-        """Move an open finding's gate allocation to a strictly later package, with a reason.
+        """Move an open finding's gate allocation to a strictly later stage, with a reason.
 
         The one legitimate alternative to resolving a finding at its gate: it genuinely
-        belongs to a later package sometimes. But deferral is exactly where "we'll get to
+        belongs to a later stage sometimes. But deferral is exactly where "we'll get to
         it" quietly becomes "we never did", so it costs a reason the owner reads and leaves
         a row in `finding_reallocations` — the accounting can move, never silently.
 
@@ -321,11 +321,11 @@ class FindingService:
                 finding_id=finding_id,
                 state=finding.state,
             )
-        self._check_package(resolve_by, "resolve_by")
+        self._check_stage(resolve_by, "resolve_by")
         if resolve_by <= finding.resolve_by:
             raise InvalidAllocation(
                 "a reallocation defers to a *later* gate; this finding is already "
-                f"allocated to package {finding.resolve_by}",
+                f"allocated to stage {finding.resolve_by}",
                 finding_id=finding_id,
                 current=finding.resolve_by,
                 requested=resolve_by,
@@ -342,8 +342,8 @@ class FindingService:
                    where={"id": finding_id}),
                 Op("insert", "finding_reallocations", {
                     "finding_id": finding_id,
-                    "from_package": finding.resolve_by,
-                    "to_package": resolve_by,
+                    "from_stage": finding.resolve_by,
+                    "to_stage": resolve_by,
                     "reason": reason,
                     "created_at": stamp,
                 }),
@@ -434,7 +434,7 @@ class FindingService:
         )
 
     def all_findings(self) -> list[Finding]:
-        """Every finding, oldest first. What the package-7 gate counts and checks."""
+        """Every finding, oldest first. What the stage-7 gate counts and checks."""
         return [
             self.get(r["id"])
             for r in self.storage.query("SELECT id FROM findings ORDER BY id")
@@ -458,8 +458,8 @@ class FindingService:
         )
         return [self.get(r["id"]) for r in rows]
 
-    def open_allocated_to(self, package: int) -> list[Finding]:
-        """D15 — open findings whose gate is `package`. What locks that gate.
+    def open_allocated_to(self, stage: int) -> list[Finding]:
+        """D15 — open findings whose gate is `stage`. What locks that gate.
 
         `is_open` is `state NOT IN (addressed, accepted_risk)`: an accepted risk is a
         settled decision the owner made and does not lock anything, which is what keeps
@@ -468,7 +468,7 @@ class FindingService:
         rows = self.storage.query(
             "SELECT id FROM findings "
             "WHERE resolve_by = ? AND state NOT IN (?, ?) ORDER BY id",
-            (package, ADDRESSED, ACCEPTED_RISK),
+            (stage, ADDRESSED, ACCEPTED_RISK),
         )
         return [self.get(r["id"]) for r in rows]
 
@@ -477,7 +477,7 @@ class FindingService:
         return [
             dict(r)
             for r in self.storage.query(
-                "SELECT from_package, to_package, reason, created_at "
+                "SELECT from_stage, to_stage, reason, created_at "
                 "FROM finding_reallocations WHERE finding_id = ? ORDER BY id",
                 (finding_id,),
             )
