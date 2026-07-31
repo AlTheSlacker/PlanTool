@@ -465,7 +465,7 @@ class GateEngine:
         """Every finding reached a terminal outcome and said why.
 
         Both halves, because `requirements:33`'s accepted risk is the case that matters: a
-        finding closed with no rationale is indistinguishable at handoff from one somebody
+        finding closed with no reason is indistinguishable at handoff from one somebody
         forgot about.
         """
         holes = []
@@ -473,8 +473,8 @@ class GateEngine:
             missing = []
             if finding.is_open:
                 missing.append("an outcome")
-            if not (finding.rationale or "").strip():
-                missing.append("a rationale")
+            if not (finding.reason or "").strip():
+                missing.append("a reason")
             if missing:
                 holes.append(
                     self._finding_hole(

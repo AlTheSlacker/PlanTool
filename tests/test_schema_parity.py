@@ -21,11 +21,13 @@ import sqlite3
 from engine import schema
 from engine.storage import Storage
 from tests.fixtures.schema_v7 import DDL_V7
+from tests.fixtures.schema_v8 import DDL_V8
 
-#: Each retained DDL, with the version it created and the version it migrates to. A second
-#: entry joins this when the next change lands; the parametrisation is what stops the check
-#: from silently covering one hop forever while the schema moves on.
-RETAINED = {7: DDL_V7}
+#: Each retained DDL, with the version it created and the version it migrates to. One entry
+#: joins this per schema change; the parametrisation is what stops the check from silently
+#: covering one hop forever while the schema moves on. The 7 entry now crosses *two* hops,
+#: which is what `Storage._chained_steps` exists for.
+RETAINED = {7: DDL_V7, 8: DDL_V8}
 
 
 def _structure(conn: sqlite3.Connection) -> dict:
@@ -112,7 +114,7 @@ def test_a_migrated_store_matches_a_fresh_one(tmp_path):
 
 def test_the_retained_ddl_is_the_version_it_claims(tmp_path):
     """A fixture that has quietly been edited to the current shape would make the check
-    above pass by comparing schema 8 against schema 8. So the fixture is asserted to still
+    above pass by comparing schema 9 against schema 9. So each fixture is asserted to still
     hold what the version it names actually had."""
     old = tmp_path / "v7"
     old.mkdir()
@@ -124,6 +126,53 @@ def test_the_retained_ddl_is_the_version_it_claims(tmp_path):
     conn.close()
     assert {"subtasks", "packages", "obligations"} <= tables
     assert "behaviours" not in tables
+
+    new = tmp_path / "v8"
+    new.mkdir()
+    _built_at(new / "plan.db", DDL_V8, 8)
+    conn = sqlite3.connect(new / "plan.db")
+    rows = {r[1] for r in conn.execute("PRAGMA table_info(plan_rows)")}
+    findings = {r[1] for r in conn.execute("PRAGMA table_info(findings)")}
+    conn.close()
+    # Schema 8 is after change 1 and before change 2: `stage` has landed, the decision
+    # context has not, and `findings` still carries the retired spelling.
+    assert "stage" in rows
+    assert not {"grounds", "alternatives", "supersede_reason"} & rows
+    assert "rationale" in findings and "reason" not in findings
+
+
+def test_the_8_to_9_step_backfills_nothing_and_renames_in_place(tmp_path):
+    """The migrated columns arrive NULL. No truth in the old store says what any row's
+    argument was, and a manufactured one would read as though somebody had checked — the
+    112 gaps that follow are the instrument's first reading, not a defect."""
+    old = tmp_path / "v8"
+    old.mkdir()
+    _built_at(old / "plan.db", DDL_V8, 8)
+    conn = sqlite3.connect(old / "plan.db")
+    conn.execute(
+        "INSERT INTO plan_rows (table_name, ordinal, name, named_for, content, "
+        "provenance, state, created_at) VALUES "
+        "('entities', 1, 'Order', 'fp', '{}', 'decided', 'active', 'then')"
+    )
+    conn.execute(
+        "INSERT INTO findings (name, description, severity, state, rationale, "
+        "resolve_by, created_at) VALUES ('f', 'd', 'high', 'addressed', "
+        "'the owner accepted it', 8, 'then')"
+    )
+    conn.commit()
+    conn.close()
+
+    with Storage(old) as store:
+        report = store.migrate(9)
+        assert report.to_version == 9
+        row = store.query("SELECT * FROM plan_rows WHERE ordinal = 1")[0]
+        assert row["grounds"] is None
+        assert row["alternatives"] is None
+        assert row["supersede_reason"] is None
+        # The rename carries the value across; it is the same column under its own word.
+        assert store.query("SELECT reason FROM findings")[0]["reason"] == (
+            "the owner accepted it"
+        )
 
 
 def test_the_migration_refuses_what_it_cannot_migrate_honestly(tmp_path):

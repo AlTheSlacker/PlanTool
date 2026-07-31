@@ -409,7 +409,7 @@ def test_an_unresolved_finding_is_a_hole_that_names_it(gate, rows, findings):
     assert len(holes) == 1
     # D19: the hole names the finding before it addresses it.
     assert "gate 4 passes with no tests (findings:1)" in holes[0].problem
-    assert "an outcome and a rationale" in holes[0].problem
+    assert "an outcome and a reason" in holes[0].problem
 
 
 def test_a_resolved_finding_leaves_no_hole(gate, rows, findings):
@@ -421,7 +421,7 @@ def test_a_resolved_finding_leaves_no_hole(gate, rows, findings):
     ]
 
 
-def test_an_accepted_risk_still_needs_its_rationale(gate, rows, findings):
+def test_an_accepted_risk_still_needs_its_reason(gate, rows, findings):
     """requirements:33 — the case the second half of the criterion exists for. A finding
     closed with no recorded acceptance is indistinguishable at handoff from one somebody
     forgot about."""

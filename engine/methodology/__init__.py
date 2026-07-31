@@ -27,7 +27,7 @@ from typing import Any
 import yaml
 
 ASSETS = Path(__file__).parent
-DEFAULT_REVISION = 4
+DEFAULT_REVISION = 5
 
 #: The oldest revision this loader will load. Earlier revisions are retained on disk as
 #: frozen provenance and are deliberately not loadable.

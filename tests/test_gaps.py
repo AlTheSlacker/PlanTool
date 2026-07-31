@@ -208,7 +208,8 @@ def test_dismissal_survives_supersession_of_its_row(gaps, rows):
     gaps.dismiss_gap(target.key, "deliberately untraced for now")
 
     rows.supersede_row(
-        "use_cases:1", RowSubmission("use_cases", {"title": "UC v2"}, name="UC v2"), "k2"
+        "use_cases:1", RowSubmission("use_cases", {"title": "UC v2"}, name="UC v2"),
+        "the flow changed at stage 2", "k2"
     )
     still_dismissed = [
         g for g in gaps.next_gaps(stage=3).gaps if g.rule_key == "use_case_untraced"
@@ -218,8 +219,10 @@ def test_dismissal_survives_supersession_of_its_row(gaps, rows):
 
 def test_lineage_root_walks_the_whole_chain(gaps, rows):
     rows.submit_rows([RowSubmission("decisions", {"title": "a"}, name="a")], "k1")
-    rows.supersede_row("decisions:1", RowSubmission("decisions", {"title": "b"}, name="b"), "k2")
-    rows.supersede_row("decisions:2", RowSubmission("decisions", {"title": "c"}, name="c"), "k3")
+    rows.supersede_row("decisions:1", RowSubmission("decisions", {"title": "b"}, name="b"),
+                       "sharpened", "k2")
+    rows.supersede_row("decisions:2", RowSubmission("decisions", {"title": "c"}, name="c"),
+                       "sharpened again", "k3")
     assert gaps.lineage_root("decisions:3") == RowRef("decisions", 1)
 
 
@@ -260,3 +263,122 @@ def test_unreadable_rows_route_to_recovery(gaps, rows, store):
 
     with pytest.raises(PlanUnreadable):
         gaps.next_gaps()
+
+
+# --- the decision context (v3 D11) ---
+
+
+def test_a_row_with_no_grounds_is_one_gap_at_the_stage_that_owns_its_table(gaps, rows):
+    """One gap, not two, and at the stage the manifest assigns `entities` — a gap
+    allocated to a stage that does not own its table fires where the planner cannot act
+    on it."""
+    rows.submit_rows(
+        [RowSubmission("entities", {"title": "Order"}, name="Order")], "k"
+    )
+    unreasoned = [
+        g for g in gaps.next_gaps(stage=4).gaps
+        if g.rule_key == "entity_without_grounds"
+    ]
+    assert len(unreasoned) == 1
+    assert unreasoned[0].target == RowRef("entities", 1)
+    assert unreasoned[0].stage == 4
+    assert unreasoned[0].priority == 2
+    # The ask names the row, what is missing, and the call that fixes it — in the order
+    # the rule declares the fields, not sorted, which would say "alternatives and grounds".
+    assert '"Order" records no grounds and alternatives' in unreasoned[0].ask
+    assert "record_grounds()" in unreasoned[0].ask
+
+
+def test_whitespace_grounds_are_the_same_gap_as_none(gaps, rows):
+    """The rule reads the column raw. Nothing but row-service writes `plan_rows`, so
+    stripping once at the write is the single point where a whitespace value is caught;
+    a second strip here would be the same decision made twice, and the two would drift."""
+    rows.submit_rows(
+        [RowSubmission("entities", {"title": "Order"}, name="Order",
+                       grounds="   ", alternatives="\n\t ")],
+        "k",
+    )
+    unreasoned = [
+        g for g in gaps.next_gaps(stage=4).gaps
+        if g.rule_key == "entity_without_grounds"
+    ]
+    assert len(unreasoned) == 1
+    assert "records no grounds and alternatives" in unreasoned[0].ask
+
+
+def test_a_row_filed_with_its_argument_is_not_a_gap(gaps, rows):
+    rows.submit_rows(
+        [RowSubmission("entities", {"title": "Order"}, name="Order",
+                       grounds="the order is the aggregate every line hangs off",
+                       alternatives="a line-item aggregate — rejected, it orphans totals")],
+        "k",
+    )
+    assert not [
+        g for g in gaps.next_gaps(stage=4).gaps
+        if g.rule_key == "entity_without_grounds"
+    ]
+
+
+def test_record_grounds_closes_the_gap_one_field_at_a_time(gaps, rows):
+    """The end-to-end path §3.5 is about: a gap exists, a call closes it, the call is
+    write-once *per field*. The last half is what a builder would skip, and it is the half
+    that would have caught the per-row dead end."""
+    rows.submit_rows(
+        [RowSubmission("entities", {"title": "Order"}, name="Order",
+                       grounds="the order is the aggregate every line hangs off")],
+        "k",
+    )
+    open_gap = [
+        g for g in gaps.next_gaps(stage=4).gaps
+        if g.rule_key == "entity_without_grounds"
+    ]
+    assert len(open_gap) == 1
+    assert "records no alternatives" in open_gap[0].ask
+
+    # Rewriting the field that is already set is refused; the one that is missing lands.
+    from engine.errors import GroundsAlreadyRecorded
+
+    with pytest.raises(GroundsAlreadyRecorded):
+        rows.record_grounds("entities:1", "a better argument", "none", "g0")
+    row = rows.record_grounds(
+        "entities:1", "", "a line-item aggregate — rejected, it orphans totals", "g1"
+    )
+    assert row.grounds == "the order is the aggregate every line hangs off"
+    assert row.alternatives.startswith("a line-item aggregate")
+    assert not [
+        g for g in gaps.next_gaps(stage=4).gaps
+        if g.rule_key == "entity_without_grounds"
+    ]
+
+
+def test_a_rule_naming_a_column_plan_rows_does_not_have_is_refused_at_load(store, rows):
+    """`getattr(row, f, None)` would turn a misspelt column into a gap on every live row —
+    a rule silently measuring something other than its name. Checked once per engine."""
+    from dataclasses import replace as replace_field
+
+    from engine.gaps import PlanUnreadable
+    from engine.methodology import Rule, load
+
+    loaded = load()
+    broken = replace_field(
+        loaded,
+        rules=(*loaded.rules, Rule(
+            id="entity_without_grounds_typo", priority=2, stage=4, type="unreasoned",
+            ask="{name} records no {missing}.",
+            spec={"table": "entities", "fields": ["grouds", "alternatives"]},
+        )),
+    )
+    with pytest.raises(PlanUnreadable) as exc:
+        GapEngine(store, rows, methodology=broken)
+    assert "grouds" in str(exc.value)
+    assert "entity_without_grounds_typo" in str(exc.value)
+
+    empty = replace_field(
+        loaded,
+        rules=(*loaded.rules, Rule(
+            id="entity_without_grounds_empty", priority=2, stage=4, type="unreasoned",
+            ask="{name} records no {missing}.", spec={"table": "entities", "fields": []},
+        )),
+    )
+    with pytest.raises(PlanUnreadable):
+        GapEngine(store, rows, methodology=empty)

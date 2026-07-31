@@ -1,0 +1,156 @@
+# Methodology content asset — the stage list, modes, and script bindings.
+#
+# requirements:71 — the methodology ships as versioned content assets carrying a
+# content-revision stamp, with an update path that migrates a plan from one revision to
+# the next. decisions:61 — the successor vendors the PlanTool rev-2 methodology rather
+# than inventing one at build time; findings:4 is the red-team finding that made this
+# necessary.
+#
+# Provenance: rev 2 (vendored verbatim from PlanTool v1, archive/v1/server/prompts/,
+# 2026-07-15) -> rev 3, which applied v2's vocabulary and retired `stage` in favour of
+# `package` -> this revision, which puts `stage` back. The round trip is the argument for
+# the whole exercise: `package` was doing two jobs, the interview's ordered step and the
+# owner's declared build grouping, and only one of them survived.
+#
+# The tool surface the scripts address was v1's until 2026-07-22, when the last of it was
+# replaced. What that came to, recorded because the sizes were nothing like equal:
+# `next_gap` -> `next_gaps` and `get_stage_prompt` -> `get_stage_script` were renames;
+# `get_plan_pack("full")` became a paged `read_rows` walk, which is a change in how the red
+# team reads rather than a rename; `freeze_plan` was v1's name for `finalize_plan`, but the
+# *meaning* moved with it — v1 froze the plan permanently and v2 reopens a finalized plan
+# through a recorded revision, so stage 8's prose was rewritten rather than renamed, and
+# the stage with it, since the glossary calls the moment finalization. `export_plan` was
+# the only one with nothing behind it: rendering had been scoped out of the build, and a
+# read-only render was added for it (DEVIATIONS D21). The red-team script had a second,
+# quieter version of the same hole — it is shipped here and nothing served it, so
+# `get_auxiliary` was exposed.
+#
+# **The stamp is the point of this file.** It identified itself as rev 2 until 2026-07-22
+# — revision and stamp both copied along with the content they exist to distinguish, so
+# every caller asking which methodology was in force got the wrong answer, and
+# requirements:71's migration path had no way to tell one revision from the other
+# (DEFECTS.md F31). Change the stamp whenever the content changes.
+
+# Two steps were added to the architecture stage on 2026-07-22, because the tool enforced
+# them and nothing led a planner to satisfy them: membership of a declared build grouping,
+# and D12's freezing of a contract's behaviour surface at finalization. **The first is gone
+# again in revision 4** — the grouping was removed with v3 D7 — and the second stays. A rule
+# with nothing leading anyone to satisfy it is how `finalize_plan` came to refuse every plan
+# authored through the surface (F39); a round leading a planner to make a call that no
+# longer exists is the same failure from the other end, and is why revision 4 exists.
+
+revision: 5
+# Revision 5, 2026-07-31 — v3 change 2, the decision context. Five `unreasoned` rules ask
+# for `grounds` and `alternatives` on the synthesize-stage tables whose rows are design
+# decisions, and the script lines that stated that obligation in prose are gone: stage 6
+# asked for "what you rejected and why, one line each" and no row in the plan it produced
+# ever carried one, which is the profile of a rule with no mechanism. What the scripts keep
+# is the half a rule cannot express — what makes an argument any good.
+#
+# Three sentences spoke a dialect nothing reads. Stage 5 told a planner to record "no
+# external dependencies" as a `decisions` row and stage 6 to defer a requirement by one;
+# the gate reads `no_dependencies_decision` and `deferrals`. There is no `decisions` table
+# in this vocabulary — it is v1's shape, and the manifest's own stage-1 comment records
+# when the last of it left the table list. A script that tells a planner to file where
+# nothing reads costs them the work twice.
+#
+# `rationale` is gone from these assets with the column that carried it (schema 9). Stage
+# 7 quoted the gate's own wording — "an outcome and a rationale" — which the gate stopped
+# saying, so the quotation had become false as well as retired.
+#
+# Minted rather than edited into rev 4, for the reason rev 4 was minted rather than edited
+# into rev 3: the stamp exists so a plan can say which methodology produced it, and editing
+# in place would retroactively change what already-run sessions were scripted with.
+#
+# This is *not* PLAN.md item 10, which is the eleven-stage rewrite. That was going to be
+# revision 5 and is now revision 6; it keeps its position at the end, to be written against
+# what was actually built. The number is not the lesson — every change that touches a stage
+# script costs a revision, so the plan should expect the number to climb once per such
+# change rather than treating a bump as an event.
+revision_stamp: "plantool-rev5-2026-07-31"
+vendored_from: "PlanTool v1 (archive/v1/server/prompts/)"
+mandate: mandate.md
+
+# The other content assets requirements:71 names. Both are loaded unconditionally by
+# engine/methodology/__init__.py; listed here so a revision is inspectable as a set.
+gap_rules: gap_rules.yaml
+gate_criteria: gate_criteria.yaml
+
+# Mode governs who is the source of truth, and therefore how the interview runs
+# (mandate clause 2). Elicit stages carry mandatory divergence rounds
+# (requirements:16, decisions:36).
+stages:
+  - number: 1
+    name: "Context & goals"
+    mode: elicit
+    script: stage1_context.md
+    # goals/non_goals/stack/actors — the tables the stage-1 gate and gap rules actually
+    # read (DEFECTS.md F48). This list said [decisions, requirements, entities] until
+    # 2026-07-26: the vendored v1 shape (goals-as-"Goal:"-prefixed-decisions) that F11
+    # migrated the *checks* off but left in the script and here, so a planner following the
+    # script filed where the gate could not see. F11's third and last act.
+    tables: [goals, non_goals, stack, actors]
+  - number: 2
+    name: "Use cases"
+    mode: elicit
+    script: stage2_use_cases.md
+    tables: [use_cases, uc_steps, uc_extensions]
+  - number: 3
+    name: "Requirements"
+    mode: elicit
+    script: stage3_requirements.md
+    tables: [requirements]
+  - number: 4
+    name: "Domain model"
+    mode: synthesize
+    script: stage4_domain.md
+    tables: [entities, crud_grid, state_machines, sm_cells]
+  - number: 5
+    name: "External dependencies & failure modes"
+    mode: synthesize
+    script: stage5_errors_deps.md
+    tables: [dependencies, dep_failure_modes]
+  - number: 6
+    name: "Architecture"
+    mode: synthesize
+    script: stage6_architecture.md
+    tables: [components, contracts]
+  - number: 7
+    name: "Adversarial findings"
+    mode: verify
+    script: stage7_adversarial.md
+    tables: [findings]
+  - number: 8
+    name: "Finalization"
+    mode: verify
+    script: stage8_finalization.md
+    tables: []
+
+# Containment: child row type -> its mandatory owning parent row type.
+#
+# In v1 each of these was a NOT NULL foreign key and the database refused an orphan. The
+# stage-6 flattening into generic `plan_rows`/`links` preserved every row and dropped
+# every relation; F20 (`contract_deps`) and F24 (`contracts.component_id`) were the two
+# found by accident. The M6 sweep of v1's schema found six more, listed here.
+#
+# This lives in the methodology and not in the engine on purpose. These row types belong
+# to *this* methodology — an engine that knows `uc_steps` has started to contain a
+# methodology of its own, which is findings:4. The engine enforces whatever a revision
+# declares here and knows none of these names.
+#
+# Enforced at submission by row-service as a single `belongs_to` edge, so an orphan is
+# rejected at the moment of writing rather than surfaced as a gate warning later. This is
+# well-formedness, not judgment: the row is meaningless without its parent, the same
+# reason provenance is mandatory. It is not a gate advisory and D7's warn-don't-block
+# stance is untouched.
+containment:
+  uc_steps: use_cases
+  uc_extensions: uc_steps
+  crud_grid: entities
+  state_machines: entities
+  sm_cells: state_machines
+  dep_failure_modes: dependencies
+
+# Served alongside the stage script when a red-team session opens (use_cases:8).
+auxiliary:
+  redteam: redteam.md

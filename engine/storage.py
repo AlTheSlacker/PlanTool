@@ -620,7 +620,16 @@ class Storage:
 
     def migrate(self, target_schema_version: int) -> MigrationReport:
         """decisions:45 — a snapshot is taken before any migration, and a failure
-        restores it. Silent migration is forbidden."""
+        restores it. Silent migration is forbidden.
+
+        **A multi-version target is walked one hop at a time.** `_migration_steps` only
+        knows adjacent pairs, and its docstring has claimed since schema 8 that `migrate`
+        chains — it did not, and v3 change 2 is the first change where that mattered: the
+        retained schema-7 fixture now has two hops to cross, and `migrate(9)` on it would
+        have raised "no migration path from 7 to 9" on a path that exists twice over. The
+        hops are collected before anything is written and applied inside the one
+        transaction, so a failure at the second hop leaves the store at neither.
+        """
         current = self.plan_handle()["schema_version"]
         if target_schema_version == current:
             return MigrationReport(current, current, (), self.snapshot_version(
@@ -630,7 +639,7 @@ class Storage:
             f"pre-migration {current} -> {target_schema_version}"
         )
         try:
-            steps = self._migration_steps(current, target_schema_version)
+            steps = self._chained_steps(current, target_schema_version)
             with self._immediate():
                 for sql in steps:
                     self.conn.execute(sql)
@@ -652,6 +661,21 @@ class Storage:
         return MigrationReport(
             current, target_schema_version, tuple(steps), snapshot_id
         )
+
+    def _chained_steps(self, current: int, target: int) -> list[str]:
+        """Every adjacent hop from `current` to `target`, in order.
+
+        A downgrade is handed to `_migration_steps` unchanged so that it raises rather than
+        returning an empty list: `range(current, target)` is empty when the target is lower,
+        and an empty step list applied to a store would be exactly the silent no-op
+        decisions:45 forbids — it would stamp the lower version and change nothing.
+        """
+        if target < current:
+            return self._migration_steps(current, target)
+        steps: list[str] = []
+        for version in range(current, target):
+            steps.extend(self._migration_steps(version, version + 1))
+        return steps
 
     def _migration_steps(self, current: int, target: int) -> list[str]:
         """The SQL that moves the store from one schema version to the next.
@@ -683,9 +707,26 @@ class Storage:
           `_guard_7_to_8`. Only adjacent pairs are handled here, so a store at 7 reaching 11
           is migrated one step at a time by `migrate`.
 
+          **8 -> 9** is v3 change 2: `plan_rows` gains `grounds`, `alternatives` and
+          `supersede_reason`, and `findings.rationale` takes the name `findings.reason`. It
+          backfills nothing, and that is the same test the others pass rather than an
+          exception to it: no truth in the old store says what any row's argument was, and
+          a manufactured one would read as though somebody had checked. The columns arrive
+          NULL and the gap engine reports them on the next derive.
+
         Anything else is an error and never a silent no-op (decisions:45) — including a
         downgrade, which would have to drop rows to succeed.
         """
+        if (current, target) == (8, 9):
+            # The three ADD COLUMNs are in the order `schema.DDL` declares them, and the
+            # DDL declares them last. `ADD COLUMN` appends, so any other pairing gives a
+            # migrated store the same columns at different `cid`s and fails schema parity.
+            return [
+                "ALTER TABLE plan_rows ADD COLUMN grounds TEXT",
+                "ALTER TABLE plan_rows ADD COLUMN alternatives TEXT",
+                "ALTER TABLE plan_rows ADD COLUMN supersede_reason TEXT",
+                "ALTER TABLE findings RENAME COLUMN rationale TO reason",
+            ]
         if (current, target) == (7, 8):
             self._guard_7_to_8()
             return self._steps_7_to_8()

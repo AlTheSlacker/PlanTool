@@ -55,6 +55,7 @@ def test_attachment_keys_on_lineage_root(attachments, rows):
     replacement = rows.supersede_row(
         original,
         RowSubmission(table="decisions", content={"text": "settling is 40ms"}, name="settling is 40ms"),
+        "the bench measured 40ms, not 20ms",
         "supersede",
     )
     root = rows.lineage_root(replacement["new"])

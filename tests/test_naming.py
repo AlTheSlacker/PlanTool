@@ -143,6 +143,7 @@ def test_a_superseded_rows_name_is_free_for_its_replacement(rows):
         "decisions:1",
         RowSubmission(table="decisions", content={"text": "SQLite, WAL mode"},
                       name="where plans are stored"),
+        "WAL was not in the original wording",
         "k2",
     )
 
@@ -252,6 +253,7 @@ def test_a_replacement_must_be_named(rows):
         rows.supersede_row(
             "decisions:1",
             RowSubmission(table="decisions", content={"text": "b"}, name=""),
+            "reworded",
             "k2",
         )
 

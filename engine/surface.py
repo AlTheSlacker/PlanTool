@@ -213,7 +213,7 @@ def as_submission(field_name: str, value: Any) -> RowSubmission:
     got = as_dict(field_name, value)
     unknown = set(got) - {
         "table", "content", "name", "provenance", "assumption_kind", "links", "stage",
-        "spike",
+        "spike", "grounds", "alternatives",
     }
     if unknown:
         raise _fail(field_name, f"a row; it has no field {sorted(unknown)[0]!r}", value)
@@ -245,6 +245,20 @@ def as_submission(field_name: str, value: Any) -> RowSubmission:
         spike=(
             as_spike_spec(f"{field_name}.spike", got["spike"])
             if got.get("spike") is not None
+            else None
+        ),
+        # v3 D11, and this parser is the whole of the client-facing route to them: a row
+        # filed through the surface without these keys can never carry its argument, and
+        # every live row stays a gap forever. One decoder serves both `rows` (submit_rows)
+        # and `row` (a supersede replacement), so the two cannot diverge.
+        grounds=(
+            as_str(f"{field_name}.grounds", got["grounds"])
+            if got.get("grounds") is not None
+            else None
+        ),
+        alternatives=(
+            as_str(f"{field_name}.alternatives", got["alternatives"])
+            if got.get("alternatives") is not None
             else None
         ),
     )
@@ -474,6 +488,9 @@ REGISTRY: dict[str, Tool] = {
            Param("replacement", "row", note="the row that replaces it; if it is a "
                                             "world-assumption it carries its spike, as at "
                                             "submission"),
+           Param("reason", "str", note="why the old row was abandoned — what was learned "
+                                       "that makes it wrong, which is not what the "
+                                       "replacement's grounds say"),
            Param("idempotency_key", "str", note="replaying this key returns the first result"),
            writes=True),
         _t("retire_row", "rows", "retire_row", "contracts:13",
@@ -481,6 +498,16 @@ REGISTRY: dict[str, Tool] = {
            Param("ref", "ref", note="the row to retire"),
            Param("reason", "str", note="why it no longer applies"),
            Param("idempotency_key", "str", note="replaying this key retires it once"),
+           writes=True),
+        _t("record_grounds", "rows", "record_grounds", DEVIATION,
+           "Give a row the reasoning behind it: why it says what it says, and what was "
+           "considered instead. Write-once per field.",
+           Param("ref", "ref", note="the live row the argument belongs to"),
+           Param("grounds", "str", note="why this row's content is what it is"),
+           Param("alternatives", "str", note="what else was considered and why it lost; "
+                                             "\"none, it follows from X\" is a complete "
+                                             "answer when it is true"),
+           Param("idempotency_key", "str", note="replaying this key returns the first result"),
            writes=True),
         # --- gap-engine (components:5) ---
         _t("next_gaps", "gaps", "next_gaps", "contracts:19",
@@ -566,7 +593,7 @@ REGISTRY: dict[str, Tool] = {
            "Take a finding to a terminal outcome; an accepted risk stays visible at handoff.",
            Param("finding_id", "int", note="the finding being closed"),
            Param("outcome", "str", note="how it was closed"),
-           Param("rationale", "str", note="the reasoning, which an accepted risk needs most"),
+           Param("reason", "str", note="the reasoning, which an accepted risk needs most"),
            writes=True),
         _t("reallocate_finding", "findings", "reallocate_finding", DEVIATION,
            "Defer an open finding to a later gate, on the record. The one alternative to "
@@ -787,6 +814,44 @@ ADDED: tuple[Absence, ...] = (
             "D15 gives a finding two exits, resolve or defer-to-a-later-gate; without a tool "
             "for the second, the gate lock could only ever be satisfied by resolving, and a "
             "finding that genuinely belongs later would have no honest move (D15, F39)"),
+    Absence(DEVIATION, "record_grounds",
+            "the plan never anticipated the decision-context fields, so it cannot have "
+            "anticipated the call; without one, the only way to give an existing row its "
+            "grounds is a full replacement submission and a supersede reason for an "
+            "abandonment that never happened (v3 D11)"),
+)
+
+#: What a contract's frozen text no longer says about the call that implements it.
+#:
+#: Five contracts changed shape in v3 change 2 — a new required parameter, a new refusal, a
+#: renamed one. `spec/v2/plan.md` is the frozen specification and has not been edited since
+#: it was frozen; every divergence from it since has been recorded at the code instead
+#: (`EXCLUDED`, `ADDED`, the frozen spellings in `errors.py`). This is the same mechanism
+#: for the same reason: a contract whose signature or error list is stale lies to its
+#: reader, and the cheapest honest answer is to say so where the reader is.
+#:
+#: **The build specification asked for these five rows to be *superseded* in the frozen
+#: plan instead** (`spec/v3/builds/02-decision-context.md` §7, task 2D.1 behaviour 5). That
+#: is a bigger act than it reads: superseding mints new ordinals, so every one of the ~50
+#: citations of these five addresses across the engine, the tests and the v3 documents would
+#: point at frozen history, `plan.md` would have to be re-rendered, and the coverage test's
+#: denominator moves. It is the owner's call to make and this list is the work order for it.
+AMENDED: tuple[Absence, ...] = (
+    Absence("contracts:9", "submit_rows",
+            "a submitted row may now carry `grounds` and `alternatives`, both optional; the "
+            "frozen payload shape predates them"),
+    Absence("contracts:11", "resolve_assumption",
+            "raises RetireNeedsReason: a rejection retires the row, and a blank reason "
+            "supplied for it is refused rather than replaced by the owner-rejected default"),
+    Absence("contracts:12", "supersede_row",
+            "the signature gains a required `reason` — why the old row was abandoned — and "
+            "it raises SupersedeNeedsReason when that is blank"),
+    Absence("contracts:13", "retire_row",
+            "raises RetireNeedsReason; the frozen contract takes a reason and never said a "
+            "blank one was refused, and until schema 9 it was not"),
+    Absence("contracts:34", "resolve_finding",
+            "the `rationale` parameter is now `reason`, with the column it writes; the word "
+            "was retired as a second spelling of one this store already had"),
 )
 
 #: `contracts:50`'s `NotWriter`, struck rather than implemented. Recorded here because an

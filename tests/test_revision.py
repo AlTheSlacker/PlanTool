@@ -93,7 +93,7 @@ def test_open_revision_refuses_a_second_concurrent_revision(rev, rows, tasks):
 def test_open_revision_refuses_a_superseded_target(rev, rows, tasks):
     refs = _contracts(rows, 2)
     tasks.finalize_plan()
-    rows.supersede_row(refs[0], _replacement(name="contract 0"), "sup")
+    rows.supersede_row(refs[0], _replacement(name="contract 0"), "moved on", "sup")
     with pytest.raises(Exception):
         rev.open_revision(ChangeRequest(targets=(refs[0],), intent="stale"))
 

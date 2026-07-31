@@ -504,20 +504,25 @@ class ValidationService:
         )
         return self.get_claim(receipt["results"][0]["id"])
 
-    def fence_claim(self, claim_id: int, rationale: str) -> TechnicalClaim:
+    def fence_claim(self, claim_id: int, evidence: str) -> TechnicalClaim:
         """requirements:4 — fence a red flag so dependent planning may proceed.
 
         The requirement offers "resolved or fenced" as the two ways to clear the block
         but names no contract for fencing. Recorded in DEFECTS.md F12.
+
+        The parameter was `rationale` until v3 change 2, which retired that word. It takes
+        the name of the column it writes rather than `reason`: what bounds the risk is what
+        was *found* when the claim was tested, and `reason` is this store's word for why an
+        act was performed. Only the parameter was ever misspelt.
         """
-        if not rationale.strip():
+        if not evidence.strip():
             raise ClaimNotFound(
                 "fencing a red flag records why the risk is bounded", claim_id=claim_id
             )
         claim = self.get_claim(claim_id)
         self.storage.write_atomic(
             [Op("update", "technical_claims",
-                {"fenced": 1, "evidence": rationale}, where={"id": claim.id})],
+                {"fenced": 1, "evidence": evidence}, where={"id": claim.id})],
             key("fence_claim", claim_id),
         )
         return self.get_claim(claim_id)

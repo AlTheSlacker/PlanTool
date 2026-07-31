@@ -91,6 +91,68 @@ class AlreadyRetired(PlanToolError):
     """contracts:13 — refused so the audit trail records exactly one retirement."""
 
 
+class SupersedeNeedsReason(PlanToolError):
+    """contracts:12 — superseding is an act, and an act records why it was performed.
+
+    Added by v3 change 2. Retiring a row already cost a reason and superseding one cost
+    nothing, which meant the two exits from "this row is no longer live" were treated
+    differently for no recorded reason. The replacement's own `grounds` say why the new
+    content is right; they do not say what was wrong with the old, and that is the sentence
+    a cold session needs in order not to re-propose the original.
+    """
+
+
+class RetireNeedsReason(PlanToolError):
+    """contracts:13 / contracts:11 — a retirement records why, and blank is not why.
+
+    Added by v3 change 2, which settled what a justification is and found the two sites
+    that were not checking: `retire_row` accepted a blank reason outright, and
+    `resolve_assumption` wrote whitespace into `retire_reason` on a rejection. Six of the
+    eight sibling sites already refused a blank; these are now the same.
+    """
+
+
+class RowNotLive(PlanToolError):
+    """The row is superseded or retired, and the act attempted needs a live one.
+
+    Names the state as well as the ref: "not live" is two different situations with two
+    different repairs, and the caller cannot pick one from a refusal that hides which.
+    """
+
+
+class GroundsAlreadyRecorded(PlanToolError):
+    """contracts:9 (v3 D11) — decision context is write-once per field.
+
+    Filling a field that was never recorded is not editing the row's claim; *re-writing*
+    one is revising history quietly, which is the one thing this store permits nowhere
+    else. Changing an argument therefore goes through supersession, with the audit trail
+    that already exists. Same shape as `AlreadySuperseded` — lineage is write-once — and
+    it names the field and the alternative, because a refusal that says only "no" is how a
+    planner invents a workaround.
+    """
+
+
+class GroundsNeedBoth(PlanToolError):
+    """v3 D11 — a row's grounds and its alternatives both end up recorded.
+
+    There is no exemption flag: a row with no alternative writes so, in the field. Allowing
+    `alternatives` to stay blank would restore the exemption in the one spelling nobody can
+    read — an empty string.
+    """
+
+
+class UnresolvedReference(PlanToolError):
+    """A stored text carried a `table:ordinal` that names no row; nothing written.
+
+    Refused at the write because of a mechanism, not a preference: `door.scan` raises
+    `BareAddress` on any address in an outgoing payload that is not accompanied by a name,
+    and an address naming no row cannot be accompanied by one. Combined with write-once,
+    an unresolvable ref inside `grounds` would make that row permanently unreadable through
+    the surface, repairable only by superseding a row whose content is fine. The write is
+    the one moment when it is still cheap.
+    """
+
+
 class ConflictRequired(PlanToolError):
     """contracts:9 / requirements:27 — a submitted row contradicts a stored row.
 

@@ -14,6 +14,12 @@ brief, audit a brief, split an oversized unit, report status, verify completion.
 forty-eight serve planning — filing rows, running gates, resolving gaps, glossary, findings,
 conflicts, revisions.
 
+**That is the count as v2 stood, and it is kept here because it is the diagnosis.** The number
+has moved since and will keep moving: change 1 removed three tools — the split among them, so
+the builder's six are five — and change 2 added `record_grounds`, leaving 51. Re-derive it from
+`len(engine.surface.REGISTRY)` rather than quoting this line; the ratio is what this section is
+about, and the ratio has not moved.
+
 That ratio is the drift, and it is the whole of scope item 4. **v2 became a plan database with
 CRUD tools hung off an MCP surface.** The execution half was an afterthought bolted to the side,
 and it has never run.
