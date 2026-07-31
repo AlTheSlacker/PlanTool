@@ -209,6 +209,33 @@ class TestCatalogueObject:
         message = str(exc.value)
         assert "RowService" in message and "RowCache" in message
 
+    def test_the_refusal_tells_the_session_a_shared_word_is_not_a_duplicate(
+        self, catalogue, component
+    ):
+        """The owner's ruling of 2026-07-31 (§13): the refusal is addressed to the planning
+        session, which goes and looks and answers, and only escalates what survives the
+        looking. Every plan starts with an empty catalogue and eligibility is any shared
+        word, so the first registrations in every project are matched against near-nonsense
+        — and a tool whose first act on a new plan is to raise a fake duplicate is D7's
+        cry-wolf meter.
+
+        So the refusal has to say that `unrelated` is the expected answer to a spurious
+        match, and it has to name **the words that actually matched**, which is what makes a
+        spurious one disposable at a glance.
+        """
+        catalogue.catalogue_object("Ledger", "keep a tally", "public", component, "k1")
+        with pytest.raises(NearMatchesUnadjudicated) as exc:
+            catalogue.catalogue_object(
+                "Parser", "read a token", "public", component, "k2"
+            )
+        message = str(exc.value)
+        assert "matched on: a" in message, (
+            "the words that matched must be named against the candidate, or the session "
+            "has to re-derive why it was stopped"
+        )
+        assert "shared word is not a duplicate" in message
+        assert "unrelated" in message
+
     def test_a_blank_comparison_reason_is_refused_before_the_database_sees_it(
         self, catalogue, component
     ):

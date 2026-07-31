@@ -820,7 +820,9 @@ REGISTRY: dict[str, Tool] = {
                  note="your judgment on each near match the search showed you, as "
                       "{matched, container, relationship, reason}. The candidate is named "
                       "by name and container, exactly as the refusal printed it. "
-                      "`same` and `contains` mean use what exists, and write no entry"),
+                      "`same` and `contains` mean use what exists, and write no entry. "
+                      "The search matches on any shared word, so read the candidate before "
+                      "answering — a spurious match is expected and `unrelated` settles it"),
            writes=True),
         _t("catalogue_function", "catalogue", "catalogue_function", DEVIATION,
            "Record a function or method the plan intends to exist, owned by a task. The "
@@ -841,7 +843,9 @@ REGISTRY: dict[str, Tool] = {
                       "location is never identity here"),
            Param("comparisons", "comparisons", required=False,
                  note="your judgment on each near match the search showed you, as "
-                      "{matched, container, relationship, reason}"),
+                      "{matched, container, relationship, reason}. The search matches on "
+                      "any shared word, so read the candidate before answering — a spurious "
+                      "match is expected and `unrelated` settles it"),
            writes=True),
         _t("retire_catalogue_entry", "catalogue", "retire_catalogue_entry", DEVIATION,
            "Withdraw an entry the design no longer calls for, with the reason on the "

@@ -35,6 +35,34 @@ compromise:
 the ones that matter most: if only merges are written down, the next planner runs the same
 search, sees the same candidate, and decides again — possibly the other way.
 
+**Who adjudicates, and it is not the owner** (Al, 2026-07-31, after change 3 was built):
+*"a word match provokes an investigation by you to check it is ok and only if you also agree
+there is a similarity problem do you ask the user."* The refusal is addressed to the
+**planning session**, which goes and looks at the candidate and answers. The owner hears
+about it only when the session has looked and agrees there is a real duplicate or a real
+naming collision.
+
+That matters most at the moment this reads worst. **Every plan starts with an empty
+catalogue**, and eligibility is any shared word — including `a` and `the` — so the first
+handful of registrations in every project are matched against near-nonsense. The rarity
+weight cannot help there: it is computed over the candidates, and with two entries in the
+table there is no crowd for a common word to be diluted against. At v2's 635 entries the
+noise is outranked and falls off a page of five; at three entries it *is* the page. Left to
+reach the owner, the tool's first act on every new plan would be to ask him about fake
+duplicates, and a meter that cries wolf stops being read (D7).
+
+**This does not put judgment in the tool** (`decisions:12`), and the distinction is the whole
+of it: the tool computes the ranking and refuses the write, and exercises no opinion about
+what similarity is worth acting on. The session judges — as it already does for every gap
+dismissal, every waiver and every other adjudication in v3. What is new is only that the
+session's judgment is named as the filter in front of the owner rather than being passed
+through to him.
+
+**And the session is not trusted, it is recorded.** The guard against rubber-stamping is that
+every verdict is stored with its reason and the owner can read the lot. That is the standard
+`dismiss_gap` and the waiver log already set, and it is what the section below means by *the
+remaining dishonesty is a lie in a record the owner can read*.
+
 **The ranking is lexical and there is no alternative.** There is no model and there never
 will be (`decisions:12`), and there are no embeddings. FTS5 was rejected on a measurement,
 not a preference: `engine/schema.py` ships a `source_fts` virtual table and `references.py`
@@ -610,15 +638,24 @@ class CatalogueService:
             ]
             if unjudged:
                 raise NearMatchesUnadjudicated(
-                    f"{name!r} was not written: the search found "
-                    f"{len(candidates)} near "
-                    f"{'match' if len(candidates) == 1 else 'matches'} already catalogued, "
-                    f"and the top of the ranking has to be judged before a new entry joins "
-                    f"them. Unjudged: {self._name_list(c.entry for c in unjudged)}. "
-                    f"Everything the search returned, best first: "
-                    f"{self._candidate_list(candidates)}. Answer each unjudged one with a "
-                    f"relationship and a reason — "
-                    f"{', '.join(f'{k} ({v})' for k, v in RELATIONSHIPS.items())}",
+                    f"{name!r} was not written until you have looked at "
+                    f"{'this' if len(unjudged) == 1 else 'these'} and said what you think. "
+                    f"Go and read {'it' if len(unjudged) == 1 else 'them'} before answering: "
+                    f"{self._unjudged_list(unjudged)}. "
+                    # The rest of the page is shown only when there is a rest of the page.
+                    # Repeating the same one line under two headings is noise in a message
+                    # whose whole job is to be read.
+                    + (
+                        f"The others the search returned, best first: "
+                        f"{self._candidate_list(c for c in candidates if c not in unjudged)}. "
+                        if len(candidates) > len(unjudged) else ""
+                    )
+                    + f"**A shared word is not a duplicate.** The search matches on any word "
+                    f"in common, including `a` and `the`, so a spurious match is expected "
+                    f"and `unrelated` with a one-line reason is the right answer to it — "
+                    f"look at what actually matched. What this asks is that somebody looked, "
+                    f"not that they argued. Answer each with a relationship and a reason: "
+                    f"{'; '.join(f'{k} — {v}' for k, v in RELATIONSHIPS.items())}",
                     name=name,
                     unjudged=[self._display(c.entry) for c in unjudged],
                 )
@@ -1066,6 +1103,20 @@ class CatalogueService:
     @classmethod
     def _name_list(cls, entries: Iterable[CatalogueEntry]) -> str:
         return ", ".join(cls._display(e) for e in entries)
+
+    @classmethod
+    def _unjudged_list(cls, candidates: Iterable[Candidate]) -> str:
+        """The ones that must be answered, each with the words that put it there.
+
+        The matched words are the whole of what makes a spurious match cheap to dispose of:
+        `matched on: a` is settled at a glance, and `matched on: supersession, lineage` is
+        not. Without them the reader has to re-derive why the tool stopped them.
+        """
+        return "; ".join(
+            f"{cls._display(c.entry)} — {c.entry.purpose!r} "
+            f"(matched on: {', '.join(c.matched)})"
+            for c in candidates
+        )
 
     @classmethod
     def _candidate_list(cls, candidates: Iterable[Candidate]) -> str:
