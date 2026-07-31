@@ -2,7 +2,7 @@ import pytest
 
 from engine.briefs import BriefComposer
 from engine.conflicts import ConflictService
-from engine.obligations import ObligationService
+from engine.behaviours import BehaviourService
 from engine.findings import FindingService
 from engine.gaps import GapEngine
 from engine.gates import GateEngine
@@ -77,8 +77,8 @@ def attachments(store, rows):
 
 
 @pytest.fixture
-def obligations(store):
-    return ObligationService(store)
+def behaviours(store):
+    return BehaviourService(store)
 
 
 @pytest.fixture

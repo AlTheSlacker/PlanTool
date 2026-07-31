@@ -25,6 +25,7 @@ from engine.door import (
     UnreachableCall,
     scan,
 )
+from engine.methodology import load
 from engine.storage import Storage
 from engine.surface import (
     ADDED,
@@ -89,17 +90,19 @@ class TestTheDenominator:
             f"the plan sends these to the surface and nothing accounts for them: {missing}"
         )
 
-    def test_thirty_six_are_required_once_the_writer_lock_is_taken_out(self):
+    def test_thirty_five_are_required_once_the_exclusions_are_taken_out(self):
+        """39 declared, less the three writer-lock contracts and the split, which went
+        with the level it divided in v3 change 1."""
         declared = contracts_for_the_surface()
         required = set(declared) - {absence.contract for absence in EXCLUDED}
-        assert len(required) == 36
+        assert len(required) == 35
 
     def test_every_absence_carries_a_reason(self):
         """An exclusion with no reason is an omission with better manners."""
         for absence in EXCLUDED + DEFERRED:
             assert absence.reason.strip(), absence.call
 
-    def test_every_deferral_names_the_package_that_owes_it(self):
+    def test_every_deferral_names_the_stage_that_owes_it(self):
         """The outstanding-problem rule: bound to a named gate, never floating."""
         for absence in DEFERRED:
             assert re.search(r"\bM\d\b", absence.reason), absence.call
@@ -149,7 +152,7 @@ class TestTheRegistry:
         door now fails any output naming a call that is not exposed — so if one of these
         is dropped, the digest stops working rather than quietly lying."""
         for call in (
-            "get_mandate", "get_package_script", "active_warnings",
+            "get_mandate", "get_stage_script", "active_warnings",
             "journal", "gate_runs", "compose_brief",
         ):
             assert call in REGISTRY
@@ -232,15 +235,22 @@ class TestTheMethodologyNamesReachableCalls:
     moves here, where it costs nothing and fires before anything ships.
     """
 
-    #: Named in rev 3 and not exposed, each with the reason and where it is owed. Same
-    #: shape as the registry's own absences, for the same reason: an exception with no
-    #: entry fails the suite, and an entry is a visible act with a sentence attached.
+    #: Named in the live revision and not exposed, each with the reason and where it is
+    #: owed. Same shape as the registry's own absences, for the same reason: an exception
+    #: with no entry fails the suite, and an entry is a visible act with a sentence
+    #: attached.
     NOT_YET: dict[str, str] = {}
 
-    def calls_named_in_rev3(self) -> dict[str, str]:
+    def calls_named_in_the_methodology(self) -> dict[str, str]:
+        """The revision the loader actually serves, not a directory named here.
+
+        It read `rev3` by name until v3 change 1 minted rev 4. A check pinned to a
+        revision keeps running and quietly measures the wrong one — it would have gone on
+        passing against a frozen archive while the served scripts named calls that no
+        longer exist, which is the exact failure it was written to catch.
+        """
         found: dict[str, str] = {}
-        rev3 = ENGINE / "methodology" / "rev3"
-        for path in sorted(rev3.rglob("*")):
+        for path in sorted(load().root.rglob("*")):
             if path.suffix not in (".md", ".yaml", ".yml"):
                 continue
             for lineno, line in enumerate(
@@ -251,7 +261,7 @@ class TestTheMethodologyNamesReachableCalls:
         return found
 
     def test_every_call_the_methodology_names_is_exposed_or_declared(self):
-        named = self.calls_named_in_rev3()
+        named = self.calls_named_in_the_methodology()
         unreachable = {
             name: where
             for name, where in named.items()
@@ -336,7 +346,7 @@ class TestDispatch:
         result = surface.dispatch(ToolCall("run_gate", {}))
         assert not result.ok
         assert result.error == "MalformedCall"
-        assert "which package to gate" in str(result.problem)
+        assert "which stage to gate" in str(result.problem)
 
     def test_an_unknown_argument_is_refused_by_name(self, surface):
         result = surface.dispatch(ToolCall("run_gate", {"packet": 1}))
@@ -344,9 +354,9 @@ class TestDispatch:
         assert "packet" in str(result.problem)
 
     def test_a_wrong_type_names_the_field(self, surface):
-        result = surface.dispatch(ToolCall("run_gate", {"package": "one"}))
+        result = surface.dispatch(ToolCall("run_gate", {"stage": "one"}))
         assert not result.ok
-        assert "package" in str(result.problem)
+        assert "stage" in str(result.problem)
 
     def test_a_malformed_address_is_refused_before_anything_is_filed(self, surface):
         result = surface.dispatch(ToolCall("retire_row", {
@@ -376,27 +386,38 @@ class TestDispatch:
         assert result.error == "RowNotFound"
 
 
-    def test_a_plan_can_be_packaged_through_the_surface(self, surface):
-        """DEFECTS.md F39. D13 makes package membership mandatory and finalization refuses
-        an unpackaged task; until this landed, no tool could declare a package or assign a
-        task, so the invariant was enforceable and not satisfiable and every plan authored
-        through the surface was unfinalizable."""
-        surface.dispatch(ToolCall("submit_rows", {
-            "batch": [{"table": "components", "content": {"title": "gap-engine"},
-                       "name": "gap-engine"}],
-            "idempotency_key": "comp",
+    def test_a_plan_can_be_finalized_through_the_surface(self, surface):
+        """DEFECTS.md F39's standing question, asked of what is left.
+
+        F39 was an invariant that was enforceable and not satisfiable: finalization
+        refused a plan whose tasks were in no group and no exposed call could put one
+        there, so every plan authored through this surface was permanently unfinalizable.
+        The grouping is gone (v3 change 1) and the three tools with it, which removes that
+        instance and not the class. So the test that survives is the one that asks the
+        question directly — can a plan authored here actually be finalized here? — because
+        the answer was 'no' for a month and nothing noticed.
+        """
+        submitted = surface.dispatch(ToolCall("submit_rows", {
+            "batch": [{
+                "table": "contracts",
+                "content": {"title": "compose_brief",
+                            "behaviours": ["records the selection"]},
+                "name": "compose_brief",
+            }],
+            "idempotency_key": "contract",
         }))
-        declared = surface.dispatch(ToolCall("declare_package", {"name": "the engine"}))
-        assert declared.ok
-        assigned = surface.dispatch(ToolCall("assign_task", {
-            "source_ref": "components:1", "package_id": declared.payload["id"],
-        }))
-        assert assigned.ok, assigned.problem
-        cut = surface.dispatch(ToolCall("packaging", {}))
-        assert cut.payload["unpackaged"] == []
-        assert cut.payload["packages"][0]["tasks"][0]["source_ref"] == (
-            "gap-engine (components:1)"
+        assert submitted.ok, submitted.problem
+
+        finalized = surface.dispatch(ToolCall("finalize_plan", {}))
+        assert finalized.ok, finalized.problem
+        assert finalized.payload["tasks"][0]["contract_ref"] == (
+            "compose_brief (contracts:1)"
         )
+        assert finalized.payload["unenumerated"] == []
+
+        served = surface.dispatch(ToolCall("next_task", {}))
+        assert served.ok, served.problem
+        assert served.payload["task"]["contract_ref"] == "compose_brief (contracts:1)"
 
 
 class TestTheDoorInPractice:
@@ -604,7 +625,7 @@ class TestTheGlossary:
 
     def test_terms_cannot_be_submitted_as_plan_rows(self, surface):
         result = surface.dispatch(ToolCall("submit_rows", {
-            "batch": [{"table": "terms", "name": "package", "content": {"term": "x"}}],
+            "batch": [{"table": "terms", "name": "stage", "content": {"term": "x"}}],
             "idempotency_key": "reserved-terms",
         }))
         assert result.ok  # the batch stands; the row alone is refused
@@ -649,22 +670,22 @@ class TestSettlingADefinition:
 
     def test_the_digest_puts_unsettled_proposals_in_front_of_the_planner(self, surface):
         surface.dispatch(ToolCall("define_term", {
-            "term": "package", "definition": "a declared grouping of tasks",
+            "term": "stage", "definition": "a declared grouping of tasks",
         }))
         digest = surface.dispatch(ToolCall("plan_status", {})).payload["summary"]
         assert "approve_term()" in digest
 
-        surface.dispatch(ToolCall("approve_term", {"term": "package"}))
+        surface.dispatch(ToolCall("approve_term", {"term": "stage"}))
         settled = surface.dispatch(ToolCall("plan_status", {})).payload["summary"]
         assert "approve_term()" not in settled
         assert "1 agreed term — glossary()" in settled
 
     def test_the_owner_s_own_wording_wins_and_the_proposal_survives(self, surface):
         surface.dispatch(ToolCall("define_term", {
-            "term": "package", "definition": "a declared grouping of tasks",
+            "term": "stage", "definition": "a declared grouping of tasks",
         }))
         result = surface.dispatch(ToolCall("approve_term", {
-            "term": "package", "definition": "the level where I say 'the GUI'",
+            "term": "stage", "definition": "the level where I say 'the GUI'",
         }))
         assert result.ok, result.problem
         assert result.payload["definition"] == "the level where I say 'the GUI'"
@@ -672,7 +693,7 @@ class TestSettlingADefinition:
 
     def test_the_manifest_says_which_definitions_are_still_proposals(self, surface):
         surface.dispatch(ToolCall("define_term", {
-            "term": "package", "definition": "a declared grouping of tasks",
+            "term": "stage", "definition": "a declared grouping of tasks",
         }))
         result = surface.dispatch(ToolCall("export_glossary", {}))
         assert "waiting on the owner" in result.payload["summary"]
@@ -697,7 +718,7 @@ class TestSettlingADefinition:
         surface.dispatch(ToolCall("define_term", {
             "term": "widget", "definition": "a unit under test",
         }))
-        surface.dispatch(ToolCall("run_gate", {"package": 1}))
+        surface.dispatch(ToolCall("run_gate", {"stage": 1}))
         raised = surface.dispatch(ToolCall("plan_status", {})).payload["summary"]
         assert "unsettled_term" in raised  # the gate put it in front of the planner
 
@@ -711,7 +732,7 @@ class TestSettlingADefinition:
         surface.dispatch(ToolCall("define_term", {
             "term": "widget", "definition": "the thing that settles",
         }))
-        result = surface.dispatch(ToolCall("next_gaps", {"package": 2}))
+        result = surface.dispatch(ToolCall("next_gaps", {"stage": 2}))
         assert result.ok, result.problem
         asks = [g["ask"] for g in result.payload["gaps"]]
         assert any("approve_term" in a and "widget" in a for a in asks)

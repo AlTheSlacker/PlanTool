@@ -16,13 +16,23 @@ requires resume to present "accumulated learnings" and nothing bounds the accumu
 as specified resume cost eventually scales with total session history — worse than the
 plan-size scaling `requirements:62` exists to kill. Every candidate bound (last N,
 since-last-gate) is arbitrary invention. Under scope levels, resume serves
-plan ∪ current-package ∪ current-task ∪ current-subtask, and the bound is structural. See
-DEFECTS.md F16.
+plan ∪ current-task, and the bound is structural. See DEFECTS.md F16.
 
-M5a builds the framework only. The allocation surface — deciding *what* to attach *where*
-during planning — is M5b. The schema has to come first because nothing may write an
-attachment before the scope column exists: retrofitting one means back-filling a level for
-every attachment ever made, a judgment nobody would be positioned to make retroactively.
+**Two levels since v3 change 1, and the cost is real and is recorded here rather than
+discovered.** There were four — plan, package, task, sub-task — and two of them lost their
+anchor when the build grouping and the middle level went (D7). The structural bound
+survives in form and is materially weaker in fact: everything that used to sit at a level
+between the plan and the served node now sits at **plan** scope, where it is served to
+*every* task. D8 §2.5 already recorded that forcing subsystem-wide attachments to plan
+scope is a silent "too high" failure; this makes it certain rather than possible.
+
+**That is the price of D7 and it is paid here.** The alternative is inventing a grouping to
+hold those attachments, which is re-introducing packages under another name. If briefs start
+arriving bloated, that is evidence against D7 and it should be logged as a finding, not
+fixed by quietly adding a level back. The instrument already exists and the failure is
+countable: `compose_brief` makes the composer omit an allocated row *with a reason*, in a
+log the owner reads, so a rising count of omission reasons on plan-scope rows is what this
+looks like when it happens.
 """
 
 from __future__ import annotations
@@ -36,25 +46,27 @@ from engine.idempotency import key
 from engine.storage import Op, Storage
 
 PLAN = "plan"
-PACKAGE = "package"
 TASK = "task"
-SUBTASK = "subtask"
 
-#: Broad to narrow. A sub-task's context is the union of its own attachments and those of
-#: every enclosing scope (M5_PLAN.md 2.3). See `GLOSSARY.md` — these four levels are the
-#: whole structural vocabulary, and DEVIATIONS.md D13 for why there are four.
+#: Broad to narrow. A task's context is the union of its own attachments and those of every
+#: enclosing scope (M5_PLAN.md 2.3) — which is now just the plan.
 #:
 #: A `session` level was in the owner's original phrasing and was dropped on review: these
 #: are plan structure, whereas a session is an episode of work — and session-scoped
 #: attachment is what the journal already is. Settled 2026-07-20.
-LEVELS = (PLAN, PACKAGE, TASK, SUBTASK)
+LEVELS = (PLAN, TASK)
 
 #: How broad each level is, for detecting promotion (M5_PLAN.md 2.5).
-_BREADTH = {PLAN: 3, PACKAGE: 2, TASK: 1, SUBTASK: 0}
+_BREADTH = {PLAN: 1, TASK: 0}
 
 
 class UnknownScopeLevel(PlanToolError):
-    """The level is not one of plan | package | task | subtask."""
+    """The level is not one of plan | task.
+
+    It names the two that survive rather than silently widening a caller who passed
+    `package` or `subtask`: a level that quietly becomes `plan` is the "too high" failure
+    arriving through the front door with nobody told.
+    """
 
 
 class PromotionNeedsReason(PlanToolError):
@@ -110,7 +122,7 @@ class AttachmentService:
                     raise PromotionNeedsReason(
                         f"promoting {root} from {existing.scope_level} to {scope_level} "
                         "broadens its reach; record why. A plan-level attachment is in "
-                        "every sub-task forever, and nobody notices a cost spread evenly.",
+                        "every task forever, and nobody notices a cost spread evenly.",
                         target=str(root),
                         from_level=existing.scope_level,
                         to_level=scope_level,
@@ -121,7 +133,7 @@ class AttachmentService:
         ops = []
         if existing is not None:
             # One live placement per target. Without this, narrowing is a no-op: the
-            # broader row stays live and the target is in every sub-task forever — the
+            # broader row stays live and the target is in every task forever — the
             # "too low"/"too high" asymmetry collapses because only one direction works.
             ops.append(Op("update", "scope_attachments", {"superseded_at": stamp},
                           where={"id": existing.id}))
@@ -141,27 +153,21 @@ class AttachmentService:
         # (decisions:43). Unreachable while the key carried a timestamp.
         return self.get(receipt["results"][-1]["id"])
 
-    def context_for(
-        self, subtask_key: str = "", task_key: str = "", package_key: str = ""
-    ) -> tuple[RowRef, ...]:
-        """M5_PLAN.md 2.3 — a sub-task's context is the union of its own attachments and
-        those of every enclosing scope: plan ∪ package ∪ task ∪ subtask.
+    def context_for(self, task_key: str = "") -> tuple[RowRef, ...]:
+        """M5_PLAN.md 2.3 — a task's context is the union of its own attachments and those
+        of every enclosing scope: plan ∪ task.
 
         This is the structural bound that replaces "last N" or "since last gate". Note it
         is a union of *recorded* allocations, not a computed relevance ranking: every row
         here is here because a planning session put it here.
 
-        Keys are row ids, never names (`GLOSSARY.md`): a name-keyed scope silently returns
-        an empty set on a typo, and a sub-task quietly missing its mid-level context is the
-        failure `decisions:14` measures.
+        Keys are row ids, never names: a name-keyed scope silently returns an empty set on
+        a typo, and a task quietly missing its context is the failure `decisions:14`
+        measures.
         """
         wanted = [(PLAN, "")]
-        if package_key:
-            wanted.append((PACKAGE, package_key))
         if task_key:
             wanted.append((TASK, task_key))
-        if subtask_key:
-            wanted.append((SUBTASK, subtask_key))
 
         refs: list[str] = []
         for level, key in wanted:

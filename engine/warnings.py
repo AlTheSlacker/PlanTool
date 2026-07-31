@@ -164,7 +164,7 @@ class WarningService:
     ) -> list[Warning]:
         """Unresolved warnings; at a critical point, suppressed ones come too.
 
-        requirements:22 — this is the call a package open and every gate invocation makes,
+        requirements:22 — this is the call a stage open and every gate invocation makes,
         which is what "re-present until resolved or suppressed" amounts to mechanically.
         """
         integrity = self.storage.integrity_check()

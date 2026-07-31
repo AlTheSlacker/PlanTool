@@ -242,7 +242,7 @@ class ReferenceService:
                 "provenance": str(Provenance.DECIDED),
                 "assumption_kind": None,
                 "state": "active",
-                "package": None,
+                "stage": None,
                 "created_at": now(),
             })
         )

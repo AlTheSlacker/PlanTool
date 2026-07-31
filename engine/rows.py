@@ -62,7 +62,7 @@ ContradictionDetector = Callable[[RowSubmission, "RowService"], str | None]
 #: none of them, which is what keeps `findings:4` from coming true. But open means a name
 #: already owned by another store can be claimed by accident, and one already had been:
 #: `findings` addresses both the finding service and, in v1's export, a set of plan rows, so
-#: a red team filing through `file_finding` wrote where the package-7 gate did not look
+#: a red team filing through `file_finding` wrote where the stage-7 gate did not look
 #: (DEFECTS.md F38). Deciding which store owns the word is only half a fix; without this the
 #: collision returns as data the first time somebody submits the obvious-looking row.
 #:
@@ -209,7 +209,7 @@ class RowService:
                         "provenance": str(submission.provenance),
                         "assumption_kind": submission.assumption_kind,
                         "state": str(submission.initial_state()),
-                        "package": submission.package,
+                        "stage": submission.stage,
                         "created_at": now(),
                     },
                 )
@@ -363,7 +363,7 @@ class RowService:
         """D16 — a world-assumption is filed WITH the spike that will attack it.
 
         The F28 move applied to assumptions: rather than let an unbacked world-assumption
-        be written and caught five packages later at the package-6 gate, the row and its
+        be written and caught five stages later at the stage-6 gate, the row and its
         first spike are one atomic act, so unbacked is unrepresentable. An assumption made
         in the first hour that turns out false is the milestone-time re-plan this tool
         exists to prevent, reproduced inside the tool — registering a spike is cheap even
@@ -479,7 +479,7 @@ class RowService:
         """A child row type must carry exactly one `belongs_to` edge to its parent.
 
         v1 spelled this as a NOT NULL foreign key and the database refused an orphan.
-        The package-6 flattening kept the rows and dropped the constraint, so an orphan
+        The stage-6 flattening kept the rows and dropped the constraint, so an orphan
         `uc_steps` row became writable, invisible and gate-clean. This is the general
         repair for that class; F20 and F24 were the two instances found by accident.
 
@@ -544,9 +544,9 @@ class RowService:
         if selector.table is not None:
             where.append("table_name = ?")
             params.append(selector.table)
-        if selector.package is not None:
-            where.append("package = ?")
-            params.append(selector.package)
+        if selector.stage is not None:
+            where.append("stage = ?")
+            params.append(selector.stage)
         if selector.provenance is not None:
             where.append("provenance = ?")
             params.append(str(selector.provenance))
@@ -672,7 +672,7 @@ class RowService:
             state=RowState(row["state"]),
             created_at=row["created_at"],
             assumption_kind=row["assumption_kind"],
-            package=row["package"],
+            stage=row["stage"],
             supersedes=RowRef.parse(row["supersedes"]) if row["supersedes"] else None,
             superseded_by=(
                 RowRef.parse(row["superseded_by"]) if row["superseded_by"] else None
@@ -833,7 +833,7 @@ class RowService:
                 "provenance": str(replacement.provenance),
                 "assumption_kind": replacement.assumption_kind,
                 "state": str(replacement.initial_state()),
-                "package": replacement.package,
+                "stage": replacement.stage,
                 "supersedes": str(old),
                 "created_at": stamp,
             },

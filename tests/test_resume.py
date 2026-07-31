@@ -140,7 +140,7 @@ def test_the_digest_carries_no_document_text(services):
     rendered = status.present()
     assert mandate not in rendered
     assert "get_mandate()" in rendered
-    assert f"get_package_script({status.package})" in rendered
+    assert f"get_stage_script({status.stage})" in rendered
 
 
 def test_every_count_names_the_call_that_fetches_it(services):
@@ -179,21 +179,21 @@ def test_the_digest_marks_quoted_prose_verbatim_and_composed_lines_plain(service
 
 def test_the_gap_count_matches_what_its_named_call_returns(services):
     """DEFECTS.md F47 — the count must equal what the call it names actually serves, not
-    just name a call. plan_status counted every package's gaps and labelled it next_gaps(),
-    which reports only the current package: on this part-built plan the digest headlined a
+    just name a call. plan_status counted every stage's gaps and labelled it next_gaps(),
+    which reports only the current stage: on this part-built plan the digest headlined a
     number the reader could not reach by following the pointer.
 
     F47's own root is F22's: the pre-existing pairing test asserted a call was *named*, never
     that the number matched it. This asserts the observable consequence."""
     storage, _, resume = services
-    # A row in package 4 (entities) so the current package is 1 but later packages carry
-    # their own not-started gaps: all-package and current-package counts genuinely differ.
+    # A row in stage 4 (entities) so the current stage is 1 but later stages carry
+    # their own not-started gaps: all-stage and current-stage counts genuinely differ.
     rows = RowService(storage)
     rows.submit_rows(
         [RowSubmission("entities", {"title": "Widget"}, name="Widget")], "k"
     )
     status = resume.plan_status()
-    assert status.package == 1
+    assert status.stage == 1
     assert status.gaps.count == resume.gaps.next_gaps().total_open
     # And it is genuinely the scoped number, not an accident of an empty later plan.
     assert status.gaps.count < len(resume.gaps.open_gaps())
@@ -204,19 +204,19 @@ def test_the_digest_ends_by_naming_the_next_action(services):
     assert resume.plan_status().present().splitlines()[-1].startswith("Next action")
 
 
-def test_the_journal_in_the_digest_is_bounded_to_the_current_package(services):
+def test_the_journal_in_the_digest_is_bounded_to_the_current_stage(services):
     """requirements:62 — resume cost scales with the working set, not the whole plan.
 
     The older notes do not vanish; they become a count and the call that reads them.
     """
     storage, _, resume = services
-    resume.journal_note("belongs to an earlier package")
-    storage.conn.execute("UPDATE journal_notes SET package = 0")
+    resume.journal_note("belongs to an earlier stage")
+    storage.conn.execute("UPDATE journal_notes SET stage = 0")
     storage.conn.commit()
-    resume.journal_note("belongs to the current package")
+    resume.journal_note("belongs to the current stage")
 
     status = resume.plan_status()
-    assert [n.note for n in status.journal] == ["belongs to the current package"]
+    assert [n.note for n in status.journal] == ["belongs to the current stage"]
     assert status.earlier_journal.count == 1
     assert "journal()" in status.earlier_journal.present()
     assert len(resume.journal()) == 2
@@ -232,13 +232,13 @@ def test_a_gate_run_survives_the_call_that_produced_it(services):
     result = gates.run_gate(1)
     history = resume.gate_runs()
     assert len(history) == 1
-    assert history[0].package == 1
+    assert history[0].stage == 1
     assert history[0].passed is result.passed
     assert history[0].hole_count == len(result.holes)
 
 
 def test_re_running_a_gate_records_a_second_verdict(services):
-    """History that collapsed re-runs would show a package passing without ever showing
+    """History that collapsed re-runs would show a stage passing without ever showing
     that it failed first."""
     _, gates, resume = services
     gates.run_gate(1)
@@ -246,13 +246,13 @@ def test_re_running_a_gate_records_a_second_verdict(services):
     assert len(resume.gate_runs()) == 2
 
 
-def test_the_digest_shows_the_latest_verdict_per_package_and_counts_the_rest(services):
+def test_the_digest_shows_the_latest_verdict_per_stage_and_counts_the_rest(services):
     _, gates, resume = services
     gates.run_gate(1)
     gates.run_gate(1)
     gates.run_gate(2)
     status = resume.plan_status()
-    assert [g.package for g in status.gate_history] == [1, 2]
+    assert [g.stage for g in status.gate_history] == [1, 2]
     assert status.earlier_gate_runs.count == 1
 
 
@@ -332,7 +332,7 @@ def _store_baseline(storage, fingerprint: dict) -> None:
         [Op("insert", "workspace_fingerprints", {
             "occasion": "finalization",
             "plan_version": 1,
-            "subtask_id": None,
+            "task_id": None,
             "fingerprint": json.dumps(fingerprint, sort_keys=True),
             "created_at": now(),
         })],
@@ -356,7 +356,7 @@ def test_the_digest_counts_the_agreed_terms(services):
     from engine.terms import TermService
 
     storage, _, resume = services
-    TermService(storage).define_term("package", "a declared grouping of tasks")
+    TermService(storage).define_term("stage", "a declared grouping of tasks")
     digest = resume.plan_status()
     assert digest.glossary.count == 1
     assert "1 agreed term — glossary()" in digest.present()

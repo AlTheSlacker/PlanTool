@@ -1,11 +1,11 @@
 """The plan's glossary — what the words mean, and which ones are out.
 
-Not in the frozen plan (DEVIATIONS.md D23). The eight planning packages interview for use
+Not in the frozen plan (DEVIATIONS.md D23). The eight planning stages interview for use
 cases, entities, contracts, decisions and failure modes, and never once ask *what do you
 call things, and what do those words mean?* — DEFECTS.md F40.
 
 **F27 is why this exists, and its cause shapes the design.** A binding vocabulary was
-written down and broken the next build package. Not through carelessness: the one document
+written down and broken the next build stage. Not through carelessness: the one document
 where retired words legitimately survive is also the document read immediately before
 writing each function, so ranked by proximity to the moment of typing the exception beats
 the rule. And naming happens at the point of *least* attention — the thinking goes into the
@@ -39,8 +39,8 @@ that here and the banned list goes empty, so the check runs, finds nothing to ba
 reports success — F23's missing denominator, reappearing inside the mechanism built to
 prevent F27. So a retired word is `ban_scope IS NOT NULL`, never a row that disappears.
 
-**Scope is plan-level, deliberately.** A word meaning two things in two packages is the
-failure being prevented, so there is no package-level override.
+**Scope is plan-level, deliberately.** A word meaning two things in two stages is the
+failure being prevented, so there is no stage-level override.
 
 **Un-banning is a redefinition, and needs no call of its own.** A word that comes back comes
 back with a meaning, which is exactly what `redefine_term` records; the banned row keeps its
@@ -82,7 +82,7 @@ BAN_SCOPES = (PROSE, IDENTIFIER, BOTH)
 ADDRESS = re.compile(r"\b[a-z][a-z0-9_]*:[1-9][0-9]*\b")
 
 #: A word, in prose or inside an identifier. `_` and case boundaries split identifiers, so
-#: `subTaskId` and `sub_task_id` tokenise the same way.
+#: `planRowId` and `plan_row_id` tokenise the same way.
 WORD = re.compile(r"[A-Z]?[a-z]+|[A-Z]+(?![a-z])|[0-9]+")
 
 

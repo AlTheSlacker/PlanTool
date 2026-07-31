@@ -57,8 +57,8 @@ from engine.models import RowRef
 #: (`10:39`) and ratios out of the net.
 ADDRESS = re.compile(r"\b[a-z][a-z0-9_]*:[1-9][0-9]*\b")
 
-#: A call name as our output writes one: `next_gaps()`, `get_package_script(1)`,
-#: `get_package_script(N)`. An identifier, an open bracket, and then either the close or an
+#: A call name as our output writes one: `next_gaps()`, `get_stage_script(1)`,
+#: `get_stage_script(N)`. An identifier, an open bracket, and then either the close or an
 #: argument position — never a letter. The letter is what keeps English out: prose is full
 #: of `row(s)`, `hole(s)` and `assumed(intent)`, and an earlier version of this pattern
 #: matched all of them. A false rejection here fails a call that was working, which is a

@@ -257,25 +257,35 @@ word pollutes reasoning later no matter how narrowly its scope is documented.
 
 ---
 
-## What changes in code at build time
+## What changed in code — built 2026-07-31, change 1
 
-- Constants become `PLAN`, `TASK`, `BEHAVIOUR`. `PACKAGE` and `SUBTASK` go.
-- Columns: `task_id`, `behaviour_id`. `package_id` and `subtask_id` go.
-- The eight methodology assets are renamed `stage1_context.md` … `stage8_finalization.md`,
-  which is a methodology content change and therefore owes a **new revision stamp**.
-- The enforcement test's banned list loses `stage`, and gains `package`, `subtask`,
-  `obligation`, `slice`. **Not `sub_task`** — the check tokenises identifiers, so `sub_task`
-  splits to `sub` and `task` and the string itself is never a token. A banned word that can never
-  match is a rule that runs and means nothing, which is the disease this list exists to treat.
-  `subtask` covers `subtask_id`, `SubTask` and `subtasks`; the hyphenated form is prose.
-- The two standing vocabulary exceptions should empty — but only one of them is what it appears
-  to be. `parts` in the gap engine is a real identifier and disappears with the code that holds
-  it. **`PartsDontCover` is not an identifier at all**: `briefs.py` names that class
-  `ObligationsNotCovered` and mentions `PartsDontCover` only inside a docstring, quoting what the
-  frozen plan called the error. The exception has been protecting a symbol that does not exist,
-  so the recorded count of live exceptions has been wrong for as long as it has been recorded.
-- Retired words survive **only** as quotations inside `spec/v2/` and `engine/methodology/rev2/`,
-  both read-only.
+- Constants are `PLAN`, `TASK` and the behaviour kinds. `PACKAGE` and `SUBTASK` are gone, and
+  `attachments.py` **refuses** either rather than widening a caller who passes one.
+- Columns: `task_id`, `behaviour_id`. `package_id` and `subtask_id` are gone — including the
+  two nobody had listed, `briefs.subtask_id` and `workspace_fingerprints.subtask_id`.
+- The eight methodology assets are renamed `stage1_context.md` … `stage8_finalization.md` in
+  **revision 4**, minted rather than edited in place. rev3 joins rev2 as frozen provenance and
+  is deliberately not loadable: it is keyed `packages:` and its stage-6 script names three
+  tools that no longer exist.
+- **There is no enforcement test.** This section used to specify its new banned list. The
+  owner ruled that `GLOSSARY.md` is a transitional document and that v3 code reads only the
+  `terms` table, so the check that parsed a markdown ban list is deleted rather than
+  rewritten (`builds/04-glossary-and-labels.md` §4.1). Nothing mechanical enforces v3's own
+  identifier naming, and that is the decision rather than an oversight — the failure the
+  discipline exists to prevent is a synonym sharing no letters with the word it duplicates,
+  which no scan of any kind sees.
 
-This is a large mechanical rename touching most of the engine. It is real build work with a
-migration, not a find-and-replace, and it belongs to a build package of its own.
+  The three findings that check's own cold read produced are kept in
+  `builds/01-vocabulary-and-levels.md` §9, because each is a live trap for the next
+  mechanical check this project writes — chiefly that `sub_task` could never have been
+  banned, since the check tokenised and `task` has to stay legal.
+- Both standing vocabulary exceptions are gone with the file that held them. One had been
+  protecting `PartsDontCover`, which is not an identifier anywhere in the repository — it
+  appears only inside a docstring quoting the frozen plan's name for an error whose class was
+  called something else. An exception protecting a symbol that does not exist had been
+  counted as live for as long as it was recorded.
+- Retired words survive **only** as quotations inside `spec/v2/`, `engine/methodology/rev2/`
+  and now `engine/methodology/rev3/`, all read-only.
+
+It was a large mechanical rename touching most of the engine, with a migration under it —
+six commits, one pull request, 533 tests green at the end and green nowhere in the middle.
