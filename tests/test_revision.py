@@ -38,8 +38,8 @@ def _contracts(rows, n, deps=None):
             table="contracts",
             content={
                 "title": f"c{i}",
-                "obligations": [
-                    {"key": "behaviour", "kind": "behaviour", "statement": f"c{i} works"},
+                "behaviours": [
+                    {"key": "effect", "kind": "effect", "statement": f"c{i} works"},
                     {"key": "NotFound", "kind": "error", "statement": f"c{i} missing id"},
                 ],
             },
@@ -54,8 +54,8 @@ def _contracts(rows, n, deps=None):
 def _replacement(name="contract 0", title="c0 tightened"):
     return RowSubmission(
         table="contracts",
-        content={"title": title, "obligations": [
-            {"key": "behaviour", "kind": "behaviour", "statement": "narrower"}]},
+        content={"title": title, "behaviours": [
+            {"key": "effect", "kind": "effect", "statement": "narrower"}]},
         name=name,
     )
 

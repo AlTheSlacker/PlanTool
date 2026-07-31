@@ -40,7 +40,7 @@ from dataclasses import dataclass, field
 
 from engine.errors import PlanToolError
 from engine.models import RowRef
-from engine.obligations import ObligationService
+from engine.behaviours import BehaviourService
 from engine.clock import now
 from engine.idempotency import key
 from engine.storage import FromOp, Op, Storage
@@ -188,12 +188,12 @@ class BriefAudit:
 
 class BriefComposer:
     def __init__(self, storage: Storage, tasks, graph=None, attachments=None,
-                 obligations=None, terms=None):
+                 behaviours=None, terms=None):
         self.storage = storage
         self.tasks = tasks
         self.graph = graph
         self.attachments = attachments
-        self.obligations = obligations or ObligationService(storage)
+        self.behaviours = behaviours or BehaviourService(storage)
         self.terms = terms or TermService(storage)
 
     # --- contracts:68 ---
@@ -425,7 +425,7 @@ class BriefComposer:
 
         # Raises when the surface was never enumerated: a split measured against an empty
         # denominator passes vacuously, which is F23 itself.
-        self.obligations.require_enumerated(subtask_id, "a split")
+        self.behaviours.require_enumerated(subtask_id, "a split")
 
         assignment = {i: ids for i, (_, ids) in enumerate(into)}
         uncovered = self.obligations.uncovered(subtask_id, assignment)

@@ -37,14 +37,14 @@ def _contracts(rows, n, deps=None):
         subs.append(
             RowSubmission(
                 table="contracts",
-                # The obligation surface a planning session declares on a contract
+                # The behaviour surface a planning session declares on a contract
                 # (DEVIATIONS.md D12). Without it the sub-task has no accounting
                 # denominator and verify_completion refuses — which is F23's fix
                 # working, not a test-fixture detail.
                 content={
                     "title": f"contract {i}",
-                    "obligations": [
-                        {"key": "behaviour", "kind": "behaviour",
+                    "behaviours": [
+                        {"key": "effect", "kind": "effect",
                          "statement": f"contract {i} does what it says"},
                         {"key": "NotFound", "kind": "error",
                          "statement": f"contract {i} names a missing id"},
@@ -169,9 +169,9 @@ def test_rework_flagged_becomes_ready_again(tasks, rows):
     assert tasks.readiness_of(reworked) == READY
 
 
-def _evidence(tasks, subtask_id, artifact="pytest -q passed"):
-    """One evidence item per *obligation* (D12), not per contract."""
-    return {o.ref: artifact for o in tasks.obligations.for_subtask(subtask_id)}
+def _evidence(tasks, task_id, artifact="pytest -q passed"):
+    """One evidence item per *behaviour* (D12), not per contract."""
+    return {b.ref: artifact for b in tasks.behaviours.for_task(task_id)}
 
 
 def _drive_to_done(tasks, subtask_id):
@@ -376,8 +376,8 @@ def test_task_membership_survives_as_a_typed_link(tasks, rows):
     task = tasks.assign_task("components:1", package.id)
     rows.submit_rows([RowSubmission(
         table="contracts",
-        content={"title": "compose_brief", "obligations": [
-            {"key": "behaviour", "statement": "composes"}]},
+        content={"title": "compose_brief", "behaviours": [
+            {"key": "effect", "statement": "composes"}]},
         name="compose_brief",
         links=[LinkSpec(target="components:1", edge_type="belongs_to")],
     )], "contract")

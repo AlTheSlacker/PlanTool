@@ -37,7 +37,7 @@ from engine.door import label
 from engine.errors import PlanToolError
 from engine.fingerprint import capture as fingerprint_capture
 from engine.models import RowRef
-from engine.obligations import ObligationService
+from engine.behaviours import BehaviourService
 from engine.clock import now
 from engine.idempotency import key
 from engine.storage import FromOp, Op, Storage
@@ -287,7 +287,7 @@ class TaskGraph:
     #: requirements:23 — finalization is a critical point, so suppressed warnings
     #: resurface here rather than staying quiet.
     resurfaced_warnings: tuple[str, ...] = ()
-    #: Contracts whose obligation surface the planning session never declared (D12).
+    #: Contracts whose behaviour surface the planning session never declared (D12).
     #: Reported rather than invented: the tool will not guess a denominator. These
     #: sub-tasks cannot be split or verified until the enumeration exists, and saying so
     #: at finalization is the loud failure F23's silent one has to become.
@@ -340,14 +340,14 @@ class AllBlockedReport:
 class TaskGraphService:
     def __init__(
         self, storage: Storage, rows, graph=None, gates=None, findings=None,
-        obligations=None,
+        behaviours=None,
     ):
         self.storage = storage
         self.rows = rows
         self.graph = graph
         self.gates = gates
         self.findings = findings
-        self.obligations = obligations or ObligationService(storage)
+        self.behaviours = behaviours or BehaviourService(storage)
 
     # --- the package/task levels (DEVIATIONS.md D13, GLOSSARY.md) ---
 
@@ -490,18 +490,18 @@ class TaskGraphService:
                 "created_at": stamp,
                 "updated_at": stamp,
             }))
-            # D12 — the obligation surface is frozen here, in the same transaction that
-            # creates the sub-task, and before any split that will be measured against it.
-            # Freezing later would let the party being audited pick its own denominator
-            # (DEFECTS.md F23); freezing in a second batch would leave a window in which a
-            # sub-task exists with no accounting at all.
-            obligation_specs = (
-                self.obligations.enumerate_from_row(content)
-                if self.obligations is not None else []
+            # D12 — the behaviour surface is frozen here, in the same transaction that
+            # creates the task, and before anything is measured against it. Freezing later
+            # would let the party being audited pick its own denominator (DEFECTS.md F23);
+            # freezing in a second batch would leave a window in which a task exists with no
+            # accounting at all.
+            behaviour_specs = (
+                self.behaviours.enumerate_from_row(content)
+                if self.behaviours is not None else []
             )
-            if obligation_specs:
-                ops.extend(self.obligations.freeze_ops(
-                    str(ref), obligation_specs, FromOp(node, "id"), base_index=len(ops)
+            if behaviour_specs:
+                ops.extend(self.behaviours.freeze_ops(
+                    str(ref), behaviour_specs, FromOp(node, "id"), base_index=len(ops)
                 ))
             else:
                 unenumerated.append(ref)
@@ -559,7 +559,7 @@ class TaskGraphService:
         """decisions:63 — one sub-task per live contract row.
 
         The row's content travels with the spec because finalization also freezes the
-        obligation surface the session declared on it (D12).
+        behaviour surface the session declared on it (D12).
         """
         rows = self.storage.query(
             "SELECT table_name, ordinal, name, content FROM plan_rows "
@@ -855,7 +855,7 @@ class TaskGraphService:
                 state=subtask.state,
             )
 
-        scope = self._scope_obligations(subtask)
+        scope = self._scope_behaviours(subtask)
         unaccounted = tuple(sorted(o for o in scope if not evidence.get(o)))
         verdict = "fail" if unaccounted else "pass"
 
@@ -883,14 +883,14 @@ class TaskGraphService:
             evidence=dict(evidence),
         )
 
-    def _scope_obligations(self, subtask: SubTask) -> tuple[str, ...]:
-        """What this sub-task must produce evidence for: the obligations it owns (D12).
+    def _scope_behaviours(self, subtask: SubTask) -> tuple[str, ...]:
+        """What this sub-task must produce evidence for: the behaviours it owns (D12).
 
         This replaces M5a's placeholder, which returned the sub-task's single contract ref.
         The placeholder was correct for an unsplit graph and wrong the moment `split_subtask`
         existed: a split's sub-tasks all carry the *same* contract ref, so evidence for one
         sub-task's slice would discharge the parent's whole contract. `contracts:62`'s "each
-        contract in the sub-task's scope" is read as each *obligation* in it, which is the
+        contract in the sub-task's scope" is read as each *behaviour* in it, which is the
         only reading under which a sub-task cannot claim its siblings' work.
 
         A sub-task with no enumerated surface raises rather than returning an empty scope.
@@ -898,7 +898,7 @@ class TaskGraphService:
         exactly, and the one outcome this whole surface exists to prevent.
         """
         return tuple(
-            o.ref for o in self.obligations.require_enumerated(subtask.id, "evidence")
+            b.ref for b in self.behaviours.require_enumerated(subtask.id, "evidence")
         )
 
     def passing_verdict(self, subtask: SubTask) -> VerificationVerdict | None:

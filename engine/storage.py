@@ -820,6 +820,12 @@ class Storage:
             # change is spending 710 lines to remove.
             "UPDATE behaviours SET kind = 'effect' WHERE kind = 'behaviour'",
             "UPDATE behaviours SET key = 'effect' WHERE key = 'behaviour'",
+            # The generated key for the second and later entries of a bare string list was
+            # `o1`, `o2` — an `o` for a word that no longer exists. `enumerate_from_row` now
+            # generates `b1`, `b2`, so the stored ones move with it; leaving them would have
+            # the store and the code disagreeing about the key of the same behaviour, which
+            # is what UNIQUE (contract_ref, key) is there to make impossible.
+            "UPDATE behaviours SET key = 'b' || substr(key, 2) WHERE key GLOB 'o[0-9]*'",
             # The `obligations` array inside contract rows' free-form JSON content.
             # `enumerate_from_row` reads it by that key and the stage-6 script instructs the
             # planner to write it by that key, so the key moves and the value does not.

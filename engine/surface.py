@@ -84,7 +84,7 @@ from engine.models import (
     RowSelector,
     RowSubmission,
 )
-from engine.obligations import ObligationService
+from engine.behaviours import BehaviourService
 from engine.render import PlanRender
 from engine.resume import ResumeService
 from engine.revision import RevisionService
@@ -990,13 +990,13 @@ class Surface:
             storage, self.rows, self.graph, self.conflicts
         )
         self.attachments = AttachmentService(storage, self.rows)
-        self.obligations = ObligationService(storage)
+        self.behaviours = BehaviourService(storage)
         self.tasks = TaskGraphService(
             storage, self.rows, graph=self.graph, findings=self.findings
         )
         self.briefs = BriefComposer(
             storage, self.tasks, graph=self.graph, attachments=self.attachments,
-            obligations=self.obligations, terms=self.terms,
+            behaviours=self.behaviours, terms=self.terms,
         )
         self.revision = RevisionService(
             storage, self.graph, self.rows, self.findings, self.warns, self.conflicts

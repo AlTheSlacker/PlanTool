@@ -23,7 +23,7 @@ from engine.obligations import NotEnumerated
 from engine.tasks import DONE, IN_PROGRESS, PENDING, SubTaskSuperseded
 
 OBLIGATIONS = [
-    {"key": "behaviour", "kind": "behaviour", "statement": "does the thing"},
+    {"key": "effect", "kind": "effect", "statement": "does the thing"},
     {"key": "NotFound", "kind": "error", "statement": "names the missing id"},
 ]
 
@@ -42,7 +42,7 @@ def _plan(rows, extra_rows=0, obligations=OBLIGATIONS):
     rows.submit_rows(
         [RowSubmission(
             table="contracts",
-            content={"title": "the contract", "obligations": obligations},
+            content={"title": "the contract", "behaviours": obligations},
             links=links,
          name="the contract")],
         "contract",
@@ -319,12 +319,12 @@ def test_dependants_are_rewired_to_the_new_subtasks(briefs, tasks, rows):
     behind a node that will never complete."""
     rows.submit_rows(
         [RowSubmission(table="contracts",
-                       content={"title": "provider", "obligations": OBLIGATIONS}, name="provider")],
+                       content={"title": "provider", "behaviours": OBLIGATIONS}, name="provider")],
         "provider",
     )
     rows.submit_rows(
         [RowSubmission(table="contracts",
-                       content={"title": "consumer", "obligations": OBLIGATIONS},
+                       content={"title": "consumer", "behaviours": OBLIGATIONS},
                        links=[LinkSpec(target="contracts:1", edge_type="depends_on")], name="consumer")],
         "consumer",
     )
@@ -351,12 +351,12 @@ def test_new_subtasks_inherit_the_originals_dependencies(briefs, tasks, rows):
     escape the dependency order requirements:34 exists to preserve."""
     rows.submit_rows(
         [RowSubmission(table="contracts",
-                       content={"title": "provider", "obligations": OBLIGATIONS}, name="provider")],
+                       content={"title": "provider", "behaviours": OBLIGATIONS}, name="provider")],
         "provider",
     )
     rows.submit_rows(
         [RowSubmission(table="contracts",
-                       content={"title": "consumer", "obligations": OBLIGATIONS},
+                       content={"title": "consumer", "behaviours": OBLIGATIONS},
                        links=[LinkSpec(target="contracts:1", edge_type="depends_on")], name="consumer")],
         "consumer",
     )

@@ -395,7 +395,7 @@ def test_the_brief_carries_the_glossary_outside_the_accounting(briefs, tasks, ro
     rows.submit_rows(
         [RowSubmission(
             table="contracts",
-            content={"title": "the contract", "obligations": ["does the thing"]},
+            content={"title": "the contract", "behaviours": ["does the thing"]},
             name="the contract",
         )],
         "contract",
@@ -423,7 +423,7 @@ def test_the_glossary_in_a_brief_is_the_one_in_force_now(briefs, tasks, rows, te
     rows.submit_rows(
         [RowSubmission(
             table="contracts",
-            content={"title": "the contract", "obligations": ["does the thing"]},
+            content={"title": "the contract", "behaviours": ["does the thing"]},
             name="the contract",
         )],
         "contract",
