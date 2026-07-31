@@ -710,7 +710,7 @@ in schema 9"*. That is what a supersession reason is for. Worth saying out loud,
 question arises at every later change that alters a contracted call.
 
 **No `why(ref)` tool is added.** It would be a pleasant thing to have and a second route to data
-`read_rows` already returns; the planning surface is 54 tools and each one is a thing to keep true.
+`read_rows` already returns; the planning surface is 51 tools and each one is a thing to keep true.
 **The draft argued this from "the build surface is six calls", which is the wrong surface** — six
 is the *builder*-facing surface in `BUILD_SURFACE.md`, and `record_grounds` is a planning call. No
 `Absence` entry is filed either: an absence entry records a call that **exists** and is
@@ -940,7 +940,7 @@ third reader, also with zero tool uses. It found:
   down once.
 - **The argument against a `why(ref)` tool cited the wrong surface.** "The build surface is six
   calls" is `BUILD_SURFACE.md`'s builder-facing surface; this is a planning call, and the planning
-  surface is 54 tools.
+  surface is 51 tools (54 when the cold read ran; change 1 removed three).
 - **`uphold_finding` is not on the surface at all**, so listing its parameter in the registry task
   would have sent a builder hunting a row that does not exist.
 - **Two miscounts of my own text**: "nine places under three words" took its places from the end
