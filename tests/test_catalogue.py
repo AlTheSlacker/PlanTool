@@ -556,6 +556,61 @@ class TestTheSearchAndTheReport:
             {"RowStore", "hold_rows"} <= {e.name for e in c.members} for c in clusters
         )
 
+    def test_a_stop_word_cluster_sinks_below_a_real_one(self, catalogue, component):
+        """The second site of the same escape, found by the owner asking where else it was
+        relied on (§13.6). The ranking got a rarity weight and the report got none — and the
+        report needed it more: ordered by count of shared words, stop words win outright,
+        because they are common *and* they travel together, so they form both the widest
+        clusters and the longest shared lists.
+
+        Measured over these ten before the fix, the top six were `the` (all ten), `a`
+        (nine), `from`, `of` — with `record`, the one grouping worth reading, sitting sixth.
+        """
+        purposes = [
+            ("Ledger", "keep a tally of the entries"),
+            ("Parser", "read a token from the stream"),
+            ("Writer", "write a record to the store"),
+            ("Reader", "read a record from the store"),
+            ("Cache", "hold a copy of the record"),
+            ("Clock", "give the current time"),
+            ("Router", "send a request to the handler"),
+            ("Logger", "append a line to the log"),
+            ("Sorter", "order a list of the results"),
+            ("Filter", "remove a row from the results"),
+        ]
+        for i, (name, purpose) in enumerate(purposes):
+            shown = catalogue.search_catalogue(f"{name} {purpose}")
+            catalogue.catalogue_object(
+                name, purpose, "public", component, f"k{i + 1}",
+                comparisons=tuple(
+                    Comparison(c.entry.name, "unrelated", "different job",
+                               c.entry.container)
+                    for c in shown
+                ),
+            )
+
+        report = catalogue.catalogue_clusters()
+        top = report[0]
+        assert set(top.shared) == {"result", "results"}, (
+            f"the report's first cluster is {list(top.shared)}; a grouping resting on a "
+            f"word most entries share must not outrank one resting on a word two share"
+        )
+
+        placing = {
+            word: i
+            for i, cluster in enumerate(report)
+            for word in cluster.shared
+        }
+        assert placing["record"] < placing["a"] < placing["the"], (
+            "the entries all handling a *record* are the grouping worth reading; `a` and "
+            "`the` are noise and must sort below it"
+        )
+
+        # Nothing is excluded, because exclusion would be a stop-word list and a stop-word
+        # list is an opinion about which words do not matter, frozen where review cannot
+        # see it. The junk is still in the report; it is merely last.
+        assert "the" in placing
+
     def test_a_cluster_names_the_words_it_is_grouped_on(self, catalogue, component, task):
         catalogue.catalogue_object("RowStore", "hold plan rows on disk", "public", component, "k1")
         catalogue.catalogue_function(

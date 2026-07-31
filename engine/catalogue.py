@@ -845,17 +845,44 @@ class CatalogueService:
                 continue  # a word one entry uses shares nothing with anybody
             grouped.setdefault(tuple(e.id for e in members), set()).add(word)
 
+        # A shared word counts in inverse proportion to how many live entries contain it —
+        # the same rule the ranking uses, applied to the report, which was built without it
+        # and needed it more. Measured over ten ordinary purpose lines, the report's top six
+        # were `the` (all ten entries), `a` (nine), `from` and `of`, with the one genuinely
+        # interesting cluster — three entries all handling a *record* — sitting sixth, below
+        # `of`. Ordered by count of shared words, stop words win: they are common *and* they
+        # travel together, so they form the widest clusters and the longest shared lists.
+        #
+        # **The denominator is every live entry, and that differs from the ranking's on
+        # purpose.** `rank` weighs a word against the *candidate set*, because its question
+        # is which of these candidates is the better match, and a word every candidate shares
+        # cannot discriminate between them however rare it is elsewhere. The report's
+        # question is which grouping in the whole table is worth reading, so the whole table
+        # is the population. The two are not a duplication to be unified later; they are one
+        # rule over the two different denominators its two questions have.
+        #
+        # This is not a threshold and no stop-word list exists. Nothing is excluded, no
+        # cut-off decides what counts, and a reader who scrolls to the bottom still finds the
+        # `the` cluster. The weight only orders — which is the whole of what a report needs,
+        # because a ranked report nobody reads past the first screen is answered by putting
+        # the right thing on the first screen.
+        def rarity(word: str) -> float:
+            return 1.0 / len(by_word[word])
+
         by_id = {e.id: e for e in entries}
         clusters = [
             Cluster(
-                shared=tuple(sorted(words)),
+                # Rarest word first, so the eye lands on what makes the grouping worth
+                # looking at rather than on the alphabetically-first preposition.
+                shared=tuple(sorted(words, key=lambda w: (-rarity(w), w))),
                 members=tuple(by_id[i] for i in ids),
+                weight=sum(rarity(w) for w in words),
             )
             for ids, words in grouped.items()
         ]
-        # Ordered by how much they share: the number of shared words first, then how many
-        # entries share them, then the words themselves so the order is total and stable.
-        clusters.sort(key=lambda c: (-len(c.shared), -len(c.members), c.shared))
+        # Ordered by how much they share, weighted: then by how many entries share it, then
+        # by the words themselves so the order is total and stable across calls.
+        clusters.sort(key=lambda c: (-c.weight, -len(c.members), c.shared))
         return tuple(clusters[:limit])
 
     # --- internals ---
