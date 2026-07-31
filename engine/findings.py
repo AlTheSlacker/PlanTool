@@ -101,7 +101,7 @@ class Finding:
     resolve_by: int
     created_at: str
     outcome: str | None = None
-    rationale: str | None = None
+    reason: str | None = None
     dispute: str | None = None
     resolved_at: str | None = None
 
@@ -268,12 +268,12 @@ class FindingService:
     # --- contracts:34 ---
 
     def resolve_finding(
-        self, finding_id: int, outcome: str, rationale: str
+        self, finding_id: int, outcome: str, reason: str
     ) -> Finding:
         """Move a finding to a terminal outcome.
 
         requirements:33 — accepted_risk stays visible at implementation handoff, which
-        is why `rationale` carries the owner's explicit acceptance rather than being
+        is why `reason` carries the owner's explicit acceptance rather than being
         optional. An accepted risk with no recorded acceptance is indistinguishable at
         handoff from an issue somebody forgot about.
         """
@@ -283,7 +283,7 @@ class FindingService:
                 finding_id=finding_id,
                 outcome=outcome,
             )
-        if not rationale.strip():
+        if not reason.strip():
             raise InvalidTransition(
                 "resolving a finding records why; for accepted_risk, the owner's "
                 "explicit acceptance (requirements:33)",
@@ -293,7 +293,7 @@ class FindingService:
         return self._transition(
             finding_id,
             _OUTCOME_EVENT[outcome],
-            {"outcome": outcome, "rationale": rationale, "resolved_at": now()},
+            {"outcome": outcome, "reason": reason, "resolved_at": now()},
         )
 
     # --- D15's second exit: defer to a later gate, on the record ---
@@ -368,19 +368,19 @@ class FindingService:
             )
         return self._transition(finding_id, "dispute", {"dispute": argument})
 
-    def uphold_finding(self, finding_id: int, rationale: str) -> Finding:
+    def uphold_finding(self, finding_id: int, reason: str) -> Finding:
         """Fire `uphold` (sm_cells:96): the dispute failed; the finding stands.
 
         Not in the frozen plan — see dispute_finding. Returns the finding to `filed`,
         where it can be addressed, accepted or (having now been disputed once) withdrawn.
         """
-        if not rationale.strip():
+        if not reason.strip():
             raise InvalidTransition(
                 "upholding a finding records why the dispute failed",
                 finding_id=finding_id,
             )
         return self._transition(
-            finding_id, "uphold", {"dispute": None, "rationale": rationale}
+            finding_id, "uphold", {"dispute": None, "reason": reason}
         )
 
     def _transition(
@@ -428,7 +428,7 @@ class FindingService:
             resolve_by=r["resolve_by"],
             created_at=r["created_at"],
             outcome=r["outcome"],
-            rationale=r["rationale"],
+            reason=r["reason"],
             dispute=r["dispute"],
             resolved_at=r["resolved_at"],
         )

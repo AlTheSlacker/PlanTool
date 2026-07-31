@@ -208,7 +208,8 @@ def test_dismissal_survives_supersession_of_its_row(gaps, rows):
     gaps.dismiss_gap(target.key, "deliberately untraced for now")
 
     rows.supersede_row(
-        "use_cases:1", RowSubmission("use_cases", {"title": "UC v2"}, name="UC v2"), "k2"
+        "use_cases:1", RowSubmission("use_cases", {"title": "UC v2"}, name="UC v2"),
+        "the flow changed at stage 2", "k2"
     )
     still_dismissed = [
         g for g in gaps.next_gaps(stage=3).gaps if g.rule_key == "use_case_untraced"
@@ -218,8 +219,10 @@ def test_dismissal_survives_supersession_of_its_row(gaps, rows):
 
 def test_lineage_root_walks_the_whole_chain(gaps, rows):
     rows.submit_rows([RowSubmission("decisions", {"title": "a"}, name="a")], "k1")
-    rows.supersede_row("decisions:1", RowSubmission("decisions", {"title": "b"}, name="b"), "k2")
-    rows.supersede_row("decisions:2", RowSubmission("decisions", {"title": "c"}, name="c"), "k3")
+    rows.supersede_row("decisions:1", RowSubmission("decisions", {"title": "b"}, name="b"),
+                       "sharpened", "k2")
+    rows.supersede_row("decisions:2", RowSubmission("decisions", {"title": "c"}, name="c"),
+                       "sharpened again", "k3")
     assert gaps.lineage_root("decisions:3") == RowRef("decisions", 1)
 
 

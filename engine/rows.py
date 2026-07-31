@@ -14,14 +14,21 @@ import json
 from collections.abc import Callable
 from typing import Any
 
+from engine.door import ADDRESS
 from engine.errors import (
     AlreadyRetired,
     AlreadySuperseded,
     ConflictRequired,
+    GroundsAlreadyRecorded,
+    GroundsNeedBoth,
     InvalidSelector,
     NotAssumed,
+    RetireNeedsReason,
     RowNotFound,
+    RowNotLive,
     SpikeRequired,
+    SupersedeNeedsReason,
+    UnresolvedReference,
     UpgradeFailed,
 )
 from engine.models import (
@@ -85,6 +92,40 @@ RESERVED_TABLES = {
 
 def _no_contradictions(submission: RowSubmission, service: RowService) -> str | None:
     return None
+
+
+def stored_text(value: str | None) -> str | None:
+    """Strip on store: a text value is trimmed before it is written, and a value that
+    strips to empty is stored NULL, never `''`.
+
+    One function rather than a `.strip()` at each write, because the two answers drift:
+    `''` and NULL both read as absent to a person and differently to a gap rule, and the
+    rule reads the column raw. `supersede_row` already did this by hand for `name`; the
+    decision-context columns are the third and fourth text fields to need it, which is
+    when it stops being a habit and becomes a function.
+    """
+    if value is None:
+        return None
+    return value.strip() or None
+
+
+def unresolved_refs(text: str | None, exists: Callable[[RowRef], bool]) -> list[str]:
+    """Address tokens in `text` that name no row at all, in the order they appear.
+
+    Uses the door's own `ADDRESS` pattern rather than a second one: the door scans every
+    outgoing payload with it, so a token this misses is a token that fails the *render*
+    of the row later, when the only repair left is superseding a row whose content is fine.
+
+    Superseded and retired rows resolve — the door renders them with their successor, and
+    citing what a decision replaced is exactly what an argument does.
+    """
+    if not text:
+        return []
+    return [
+        token
+        for token in dict.fromkeys(ADDRESS.findall(text))
+        if not exists(RowRef.parse(token))
+    ]
 
 
 class RowService:
@@ -211,6 +252,12 @@ class RowService:
                         "state": str(submission.initial_state()),
                         "stage": submission.stage,
                         "created_at": now(),
+                        # v3 D11. Both optional: a submission with neither is accepted, and
+                        # the absence is a gap rather than a rejection. Refusing here would
+                        # make every synthesize stage a negotiation with the tool and would
+                        # buy padding, which is worse than absence because absence counts.
+                        "grounds": stored_text(submission.grounds),
+                        "alternatives": stored_text(submission.alternatives),
                     },
                 )
             )
@@ -681,6 +728,9 @@ class RowService:
             retired_at=row["retired_at"],
             retire_reason=row["retire_reason"],
             links=links,
+            grounds=row["grounds"],
+            alternatives=row["alternatives"],
+            supersede_reason=row["supersede_reason"],
         )
 
     # --- contracts:11 ---
@@ -738,6 +788,17 @@ class RowService:
                 "the owner's answer must be quoted verbatim (requirements:18)",
                 ref=str(ref),
             )
+        # A rejection retires the row, so it is a retirement and costs a reason like any
+        # other. Supplying a blank one is refused rather than quietly replaced by the
+        # default below: the default says the *owner* rejected it, and validation-service
+        # closing a world-assumption from spike evidence would be recording a falsehood
+        # (F14). Not supplying one at all is the documented way to take the default.
+        if resolution == "reject" and retire_reason is not None and not retire_reason.strip():
+            raise RetireNeedsReason(
+                f"rejecting {row['name']} ({ref}) retires it, which records why. Pass the "
+                f"reason, or omit it entirely to record that the owner rejected it",
+                ref=str(ref),
+            )
 
         if resolution == "revise" and (not name or not name.strip()):
             raise UpgradeFailed(
@@ -773,7 +834,9 @@ class RowService:
         }
         if resolution == "reject":
             values["retired_at"] = now()
-            values["retire_reason"] = retire_reason or "assumption rejected by the owner"
+            values["retire_reason"] = (
+                stored_text(retire_reason) or "assumption rejected by the owner"
+            )
 
         op = Op("update", "plan_rows", values,
                 where={"table_name": ref.table, "ordinal": ref.ordinal})
@@ -789,11 +852,21 @@ class RowService:
         self,
         old: RowRef | str,
         replacement: RowSubmission,
+        reason: str,
         idempotency_key: str,
     ) -> dict[str, Any]:
         """requirements:61 — the replacement is created with a supersedes pointer, the
         old row is stamped once with superseded_by and a timestamp, and content is
-        never edited."""
+        never edited.
+
+        `reason` is why the *old* row was abandoned, and it is required (v3 change 2). It
+        is a positional parameter with no default on purpose: a default of `""` would leave
+        every existing caller compiling and every existing caller wrong, silently.
+
+        It is stamped on the old row, exactly as `retire_reason` is, and it answers a
+        different question from the replacement's `grounds`. The grounds say why the new
+        content is right; the reason says what was learned that made the old content wrong.
+        """
         old = RowRef.coerce(old)
         row = self._row(old)
         if row is None:
@@ -803,6 +876,15 @@ class RowService:
                 "lineage is write-once; supersede the live replacement instead",
                 ref=str(old),
                 superseded_by=row["superseded_by"],
+            )
+        # After the two lineage guards and before the name check: a blank reason on a ref
+        # that does not exist should report the missing row, which is the thing most wrong.
+        if not reason or not reason.strip():
+            raise SupersedeNeedsReason(
+                f"superseding {row['name']} ({old}) records why it was abandoned — what "
+                f"was learned that makes the old content wrong. The replacement's own "
+                f"grounds say why the new content is right, which is a different sentence",
+                ref=str(old),
             )
 
         if not replacement.name or not replacement.name.strip():
@@ -836,6 +918,11 @@ class RowService:
                 "stage": replacement.stage,
                 "supersedes": str(old),
                 "created_at": stamp,
+                # The replacement writes its own decision context and inherits none: an
+                # argument for the old content attached to new content is worse than an
+                # empty field, because it reads as though somebody had checked.
+                "grounds": stored_text(replacement.grounds),
+                "alternatives": stored_text(replacement.alternatives),
             },
         )
         # All three writes ride one transaction, in this order, and the order is load-
@@ -847,10 +934,15 @@ class RowService:
         #
         # It was two separate write_atomic calls until 2026-07-22, which meant a crash
         # between them left the old row live and unstamped beside its own replacement.
+        #
+        # `supersede_reason` rides the first op rather than an op of its own: that op
+        # already targets the old row, and a stamp in a second write is a stamp a crash can
+        # lose — which is the failure this batch was built to close.
         where_old = {"table_name": old.table, "ordinal": old.ordinal}
         batch = [
             Op("update", "plan_rows",
-               {"state": str(RowState.SUPERSEDED), "superseded_at": stamp},
+               {"state": str(RowState.SUPERSEDED), "superseded_at": stamp,
+                "supersede_reason": stored_text(reason)},
                where=where_old),
             insert,
             Op("update", "plan_rows",
@@ -884,12 +976,125 @@ class RowService:
                 ref=str(ref),
                 retired_at=row["retired_at"],
             )
+        if not reason or not reason.strip():
+            raise RetireNeedsReason(
+                f"retiring {row['name']} ({ref}) takes it out of every live read, so it "
+                f"records why — a later reader finding it gone needs the sentence, not "
+                f"the timestamp",
+                ref=str(ref),
+            )
         op = Op(
             "update",
             "plan_rows",
             {"state": str(RowState.RETIRED), "retired_at": now(),
-             "retire_reason": reason},
+             "retire_reason": stored_text(reason)},
             where={"table_name": ref.table, "ordinal": ref.ordinal},
         )
         self.storage.write_atomic([op], idempotency_key)
+        return self.get(ref)
+
+    # --- no contract: v3 D11, and `surface.py`'s ADDED records why ---
+
+    def record_grounds(
+        self,
+        ref: RowRef | str,
+        grounds: str,
+        alternatives: str,
+        idempotency_key: str,
+    ) -> PlanRow:
+        """Give an existing row the decision context it was filed without.
+
+        **Why this exists at all.** Every row filed before schema 9 has no recorded
+        argument, and content is never edited: `submit_rows` files new rows,
+        `supersede_row` replaces one, `retire_row` retires. Without this call the only
+        route to closing the first reading would be superseding every row in the plan —
+        each needing a full replacement submission and a supersede reason for an
+        abandonment that never happened.
+
+        **Write-once per field.** Writing an argument that was never recorded is not
+        editing the row's claim; the content is untouched and the field was empty. But if
+        an argument can be rewritten, it becomes a place to revise history quietly, which
+        this store permits nowhere else — so changing an argument means superseding the
+        row, with the audit trail that already exists.
+
+        Per *field* rather than per row, because `submit_rows` makes both optional: a row
+        that arrived with grounds and no alternatives must still be able to acquire its
+        alternatives, and under a per-row rule the only remedy would be superseding a row
+        that nothing is wrong with.
+        """
+        ref = RowRef.coerce(ref)
+        replay = self.storage.replay(idempotency_key)
+        if replay is not None:
+            # decisions:43 — the key returns the original answer. Checked before the
+            # guards, because a replay of a call that succeeded would otherwise refuse
+            # with GroundsAlreadyRecorded against the write it made itself.
+            return self.get(ref)
+
+        row = self._row(ref)
+        if row is None:
+            raise RowNotFound("no such row; nothing written", ref=str(ref))
+        if row["superseded_by"] or row["state"] in (
+            RowState.SUPERSEDED, RowState.RETIRED
+        ):
+            raise RowNotLive(
+                f"{row['name']} ({ref}) is {row['state']}, and a frozen row's argument is "
+                f"history — improving it would improve the case for a decision that has "
+                f"already been replaced. Record the grounds on the live row instead",
+                ref=str(ref),
+                state=row["state"],
+            )
+
+        values: dict[str, Any] = {}
+        for field_name, value in (("grounds", grounds),
+                                  ("alternatives", alternatives)):
+            clean = stored_text(value)
+            if clean and row[field_name]:
+                raise GroundsAlreadyRecorded(
+                    f"{row['name']} ({ref}) already records its {field_name}, and an "
+                    f"argument is write-once. Changing what a row says — or why — is "
+                    f"what supersede_row() is for",
+                    ref=str(ref),
+                    field=field_name,
+                )
+            if not clean and not row[field_name]:
+                raise GroundsNeedBoth(
+                    f"{row['name']} ({ref}) needs its {field_name} as well. There is no "
+                    f"exemption: a row with no alternative writes so — \"none, this "
+                    f"follows directly from the requirement\" is a complete answer when "
+                    f"it is true",
+                    ref=str(ref),
+                    field=field_name,
+                )
+            if clean:
+                unresolved = unresolved_refs(clean, lambda r: self._row(r) is not None)
+                if unresolved:
+                    raise UnresolvedReference(
+                        f"{field_name} cites {', '.join(unresolved)}, which names no row. "
+                        f"An argument is written once and every reader of this row renders "
+                        f"it, so an address with nothing behind it would fail every read of "
+                        f"{row['name']} ({ref}) from here on. Note that a URL with a port "
+                        f"reads as an address — write it without one",
+                        ref=str(ref),
+                        field=field_name,
+                        unresolved=unresolved,
+                    )
+                values[field_name] = clean
+
+        if not values:
+            # Both fields are already recorded and the call supplied nothing new. There is
+            # no write to make, and reporting success for a call that changed nothing is
+            # how a planner comes to believe an argument landed when it did not.
+            raise GroundsAlreadyRecorded(
+                f"{row['name']} ({ref}) already records its grounds and its alternatives, "
+                f"and an argument is write-once. Changing what a row says — or why — is "
+                f"what supersede_row() is for",
+                ref=str(ref),
+                field="grounds and alternatives",
+            )
+
+        self.storage.write_atomic(
+            [Op("update", "plan_rows", values,
+                where={"table_name": ref.table, "ordinal": ref.ordinal})],
+            idempotency_key,
+        )
         return self.get(ref)

@@ -244,7 +244,8 @@ def test_supersede_sets_both_pointers_once(rows):
     """requirements:61 — stamped once, content never edited, lineage bidirectional."""
     rows.submit_rows([RowSubmission("decisions", {"text": "old"}, name="old")], "k1")
     result = rows.supersede_row(
-        "decisions:1", RowSubmission("decisions", {"text": "new"}, name="new"), "k2"
+        "decisions:1", RowSubmission("decisions", {"text": "new"}, name="new"),
+        "the old wording was wrong", "k2"
     )
     old = rows.get("decisions:1")
     new = rows.get(result["new"])
@@ -259,10 +260,12 @@ def test_supersede_sets_both_pointers_once(rows):
 
 def test_supersession_lineage_is_write_once(rows):
     rows.submit_rows([RowSubmission("decisions", {"text": "old"}, name="old")], "k1")
-    rows.supersede_row("decisions:1", RowSubmission("decisions", {"text": "a"}, name="a"), "k2")
+    rows.supersede_row("decisions:1", RowSubmission("decisions", {"text": "a"}, name="a"),
+                       "reworded", "k2")
     with pytest.raises(AlreadySuperseded):
         rows.supersede_row(
-            "decisions:1", RowSubmission("decisions", {"text": "b"}, name="b"), "k3"
+            "decisions:1", RowSubmission("decisions", {"text": "b"}, name="b"),
+            "reworded again", "k3"
         )
 
 
@@ -281,7 +284,8 @@ def test_live_only_excludes_superseded_and_retired(rows):
          RowSubmission("decisions", {"text": "b"}, name="b")],
         "k1",
     )
-    rows.supersede_row("decisions:1", RowSubmission("decisions", {"text": "a2"}, name="a2"), "k2")
+    rows.supersede_row("decisions:1", RowSubmission("decisions", {"text": "a2"}, name="a2"),
+                       "reworded", "k2")
     rows.retire_row("decisions:2", "gone", "k3")
 
     live = rows.read_rows(RowSelector(table="decisions", live_only=True))
@@ -308,7 +312,10 @@ def test_updated_at_is_derived_from_the_rows_own_lifecycle(rows):
     assert original.updated_at == original.created_at
 
     rows.supersede_row(
-        ref, RowSubmission(table="decisions", content={"title": "second thought"}, name="second thought"), "b"
+        ref,
+        RowSubmission(table="decisions", content={"title": "second thought"},
+                      name="second thought"),
+        "thought again", "b"
     )
 
     superseded = rows.get(ref)
@@ -323,10 +330,12 @@ def test_lineage_head_answers_where_a_decision_stands_now(rows):
         [RowSubmission(table="decisions", content={"title": "first"}, name="first")], "a"
     ).verdicts[0].ref
     second = rows.supersede_row(
-        ref, RowSubmission(table="decisions", content={"title": "second"}, name="second"), "b"
+        ref, RowSubmission(table="decisions", content={"title": "second"}, name="second"),
+        "thought again", "b"
     )["new"]
     third = rows.supersede_row(
-        second, RowSubmission(table="decisions", content={"title": "third"}, name="third"), "c"
+        second, RowSubmission(table="decisions", content={"title": "third"}, name="third"),
+        "and again", "c"
     )["new"]
 
     assert rows.lineage_head(ref) == third
@@ -341,7 +350,8 @@ def test_history_reads_the_whole_chain_with_each_versions_timestamp(rows):
         [RowSubmission(table="decisions", content={"title": "first"}, name="first")], "a"
     ).verdicts[0].ref
     rows.supersede_row(
-        ref, RowSubmission(table="decisions", content={"title": "second"}, name="second"), "b"
+        ref, RowSubmission(table="decisions", content={"title": "second"}, name="second"),
+        "thought again", "b"
     )
 
     chain = rows.history(ref)

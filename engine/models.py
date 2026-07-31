@@ -167,6 +167,18 @@ class RowSubmission:
     #: world-assumptions only). row-service writes it into the spikes table in the same
     #: transaction, borrowing the just-assigned row ref.
     spike: SpikeSpec | None = None
+    #: v3 D11 — the decision context. `grounds` is why this row's content is what it is;
+    #: `alternatives` is what else was considered and why it lost. Both optional at
+    #: submission: absence is a gap the gap engine reports, not a rejection, because
+    #: refusing a row without them would make every synthesize stage a negotiation with the
+    #: tool and would buy padding, which is worse than absence because absence is countable.
+    #: A row that already exists acquires them through `RowService.record_grounds`.
+    #:
+    #: Appended after every existing field, and that is deliberate: inserting them beside
+    #: the fields they read next to would silently rebind every positional construction of
+    #: this dataclass across the suite.
+    grounds: str | None = None
+    alternatives: str | None = None
 
     def initial_state(self) -> RowState:
         return (
@@ -194,6 +206,15 @@ class PlanRow:
     retired_at: str | None = None
     retire_reason: str | None = None
     links: tuple[LinkSpec, ...] = ()
+    #: The decision context (v3 D11), and why the old row was abandoned. `grounds` and
+    #: `alternatives` describe this row's content; `supersede_reason` is stamped on this row
+    #: when something replaces it, exactly as `retire_reason` is stamped when it is retired.
+    #: A replacement's own grounds say why the new content is right — they do not say what
+    #: was wrong with the old, which is what a cold session needs in order not to re-propose
+    #: the original.
+    grounds: str | None = None
+    alternatives: str | None = None
+    supersede_reason: str | None = None
 
     @property
     def is_live(self) -> bool:

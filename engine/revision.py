@@ -378,9 +378,13 @@ class RevisionService:
                 held_conflict=open_conflicts[0].id,
             )
 
+        # The owner's own words are why this row is being abandoned — recorded verbatim
+        # against the repercussion already, and now on the row itself. Composing a reason
+        # here would be the tool writing the wording, which D25 keeps it out of.
         result = self.rows.supersede_row(
             ref,
             decision.replacement,
+            decision.words,
             key("revision_modify", content_fingerprint({
                 "revision": rev["id"],
                 "position": current["position"],

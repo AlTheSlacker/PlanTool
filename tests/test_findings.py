@@ -202,7 +202,7 @@ def test_open_findings_fail_the_verification_gate(rows, findings):
     assert [f.id for f in findings.open_findings()] == [kept.id]
 
 
-def test_resolve_requires_a_rationale(rows, findings):
+def test_resolve_requires_a_reason(rows, findings):
     finding = findings.file_finding([_row(rows)], "a problem", "high", name="a problem", resolve_by=8)
     with pytest.raises(InvalidTransition):
         findings.resolve_finding(finding.id, "accepted_risk", "   ")
