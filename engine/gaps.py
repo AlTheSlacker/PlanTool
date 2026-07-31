@@ -279,8 +279,13 @@ class GapEngine:
                     self._make(
                         rule,
                         row,
+                        # The key is sorted so it is stable whatever order the rule
+                        # declares its fields in — a dismissal is recorded against it. The
+                        # *sentence* is not: sorting it says "records no alternatives and
+                        # grounds", which is the pair backwards. It reads in the order the
+                        # rule names them, which is the order they are written in.
                         extra_key=",".join(sorted(missing)),
-                        missing=" and ".join(sorted(missing)),
+                        missing=" and ".join(missing),
                     )
                 )
         return gaps

@@ -29,6 +29,7 @@ from engine.methodology import load
 from engine.storage import Storage
 from engine.surface import (
     ADDED,
+    AMENDED,
     DEFERRED,
     DEVIATION,
     EXCLUDED,
@@ -736,3 +737,90 @@ class TestSettlingADefinition:
         assert result.ok, result.problem
         asks = [g["ask"] for g in result.payload["gaps"]]
         assert any("approve_term" in a and "widget" in a for a in asks)
+
+
+class TestTheDecisionContext:
+    """v3 D11 through the surface, which is the only route a client has."""
+
+    def test_a_row_can_be_filed_with_its_argument(self, surface):
+        result = surface.dispatch(ToolCall("submit_rows", {
+            "batch": [{
+                "table": "entities", "name": "Order",
+                "content": {"text": "The aggregate every line hangs off."},
+                "grounds": "the order is what a customer thinks they placed",
+                "alternatives": "a line-item aggregate — rejected, it orphans totals",
+            }],
+            "idempotency_key": "argued",
+        }))
+        assert result.ok, result.problem
+        read = surface.dispatch(ToolCall("read_rows", {"selector": {"ids": ["entities:1"]}}))
+        assert read.payload["rows"][0]["grounds"].startswith("the order is what")
+
+    def test_a_non_string_argument_is_refused_by_name(self, surface):
+        result = surface.dispatch(ToolCall("submit_rows", {
+            "batch": [{"table": "entities", "name": "Order", "content": {"text": "x"},
+                       "grounds": ["a list"]}],
+            "idempotency_key": "bad-grounds",
+        }))
+        assert not result.ok
+        assert "grounds" in str(result.problem)
+
+    def test_a_replacement_can_carry_its_argument_too(self, surface):
+        """One decoder serves `submit_rows` and a supersede replacement. If it did not,
+        supersession would be the one path that loses the field — and `record_grounds`
+        deliberately refuses a superseded row, so nothing could repair it."""
+        a_row(surface, table="entities", name="Order")
+        result = surface.dispatch(ToolCall("supersede_row", {
+            "old": "entities:1",
+            "replacement": {
+                "table": "entities", "name": "Order",
+                "content": {"text": "The aggregate, with its lines."},
+                "grounds": "lines have no life outside the order",
+                "alternatives": "lines as their own aggregate — rejected, totals drift",
+            },
+            "reason": "stage 5 found the lines have no independent lifecycle",
+            "idempotency_key": "sup",
+        }))
+        assert result.ok, result.problem
+        read = surface.dispatch(ToolCall("read_rows", {"selector": {"ids": ["entities:1"]}}))
+        old = read.payload["rows"][0]
+        assert old["supersede_reason"].startswith("stage 5 found")
+        read = surface.dispatch(ToolCall("read_rows", {"selector": {"ids": ["entities:2"]}}))
+        assert read.payload["rows"][0]["grounds"] == "lines have no life outside the order"
+
+    def test_the_gap_names_a_call_the_surface_exposes(self, surface):
+        """The ask ends in `record_grounds()`, and the door fails any outgoing text naming
+        a call no tool exposes — so the tool has to be registered before the rule ships."""
+        a_row(surface, table="entities", name="Order")
+        result = surface.dispatch(ToolCall("next_gaps", {"stage": 4}))
+        assert result.ok, result.problem
+        asks = [g["ask"] for g in result.payload["gaps"]
+                if g["rule_key"] == "entity_without_grounds"]
+        assert asks and "record_grounds()" in asks[0]
+
+    def test_record_grounds_closes_the_gap_through_the_surface(self, surface):
+        a_row(surface, table="entities", name="Order")
+        result = surface.dispatch(ToolCall("record_grounds", {
+            "ref": "entities:1",
+            "grounds": "the order is what a customer thinks they placed",
+            "alternatives": "none, it follows from the use case",
+            "idempotency_key": "g1",
+        }))
+        assert result.ok, result.problem
+        after = surface.dispatch(ToolCall("next_gaps", {"stage": 4}))
+        assert not [g for g in after.payload["gaps"]
+                    if g["rule_key"] == "entity_without_grounds"]
+
+    def test_every_amended_contract_is_real_and_says_what_changed(self):
+        """`AMENDED` records what a contract's frozen text no longer says about the call
+        that implements it. An entry naming a contract the plan does not declare, or a call
+        no tool exposes, is a note nobody can act on."""
+        declared = contracts_for_the_surface()
+        for absence in AMENDED:
+            assert absence.contract in declared, absence.contract
+            # The frozen plan's own name for the contract, so an entry cannot drift onto
+            # the wrong row while still naming a call that exists.
+            assert declared[absence.contract] == absence.call, absence.contract
+            assert absence.call in REGISTRY, absence.call
+            assert absence.reason.strip(), absence.call
+        assert len(AMENDED) == 5

@@ -165,8 +165,14 @@ hundred gaps is the failure where a meter that cries wolf stops being read.
 | `state_machines` | 4 | 10 |
 | `dependencies` | 5 | 4 |
 | `components` | 6 | 15 |
-| `contracts` | 6 | 68 |
-| | | **112 day-one gaps** |
+| `contracts` | 6 | 53 |
+| | | **97 day-one gaps** |
+
+**Corrected at build time from 112, and the error is this document's own.** `contracts`
+said **68**, which is the table's *total* row count; 15 of those are superseded and the
+column header says *live*. The other four tables have no superseded rows, so total and live
+coincide there and the mistake had nothing to show it. Re-measured read-only against
+`spec/v2/plan.db` — see §12.
 
 **The stage allocation is cited, not chosen.** `manifest.yaml` assigns each table to exactly one
 stage — `entities` and `state_machines` to stage 4, `dependencies` to stage 5, `components` and
@@ -221,10 +227,10 @@ argument a cold session needs in order not to re-propose the original.
 
 ### 3.5 How an existing row acquires grounds — the hole the cold read found
 
-**The first draft had no answer and did not know it.** After 2A backfills nothing, all 112 rows in
+**The first draft had no answer and did not know it.** After 2A backfills nothing, all 97 rows in
 the starter set are gaps. But `content is never edited`; `submit_rows` files new rows;
 `supersede_row` replaces one; `retire_row` retires. **Nothing could write `grounds` onto a row
-that already exists**, so the only route to closing the first reading was to supersede all 112
+that already exists**, so the only route to closing the first reading was to supersede all 97
 rows — each needing a full replacement submission and, after 3.4, a `supersede_reason` explaining
 an abandonment that never happened. The draft called the mass gap "the instrument's first reading"
 while providing no instrument that could be read down.
@@ -285,7 +291,7 @@ Gains one branch.
 **Behaviour 4 is the decision in this task.** Every existing row has no recorded argument and
 there is no truth in the old store that says what it was. The standing migration rule is that a
 migrated value must be a truth the old store already implied, never one invented to satisfy a
-constraint — so the columns arrive NULL and the gap engine reports 112 live rows on the next run.
+constraint — so the columns arrive NULL and the gap engine reports 97 live rows on the next run.
 That is the instrument's first reading, not a defect, and §3.5 is what makes it possible to work
 down.
 
@@ -850,7 +856,7 @@ caught the per-row dead end the cold read found.
 gate reports them as holes. If that proves too weak the fix is a gate criterion, not a write-time
 refusal, and it is a later change with its own evidence.
 
-**It does not backfill**, and the 112 rows it lights up on the existing plan are the first honest
+**It does not backfill**, and the 97 rows it lights up on the existing plan are the first honest
 reading the instrument has taken.
 
 **It does not give grounds to elicit-stage rows, to grid cells, or to findings**, each for the
@@ -881,7 +887,7 @@ register and the source a builder would hold. Both reported zero tool uses.
   `alternatives` also resolves a second collision: `submit_rows` already "rejects" rows, so a
   column named `rejected` reads as a verdict on the row's own fate.
 - **There was no way to give an existing row its grounds.** Content is never edited, `submit_rows`
-  files new rows, `supersede_row` replaces. The draft created 112 gaps and no instrument to close
+  files new rows, `supersede_row` replaces. The draft created 97 gaps and no instrument to close
   them. `record_grounds` (§3.5, 2B.2) is the answer, and write-once is what keeps it honest.
 - **The `rows` payload parser was never mentioned**, which would have made every one of those gaps
   permanently unclosable from the surface.
@@ -900,7 +906,7 @@ register and the source a builder would hold. Both reported zero tool uses.
   have.
 - **"Three hundred gaps" was a guess.** Measured against the frozen plan, the rejected
   provenance-based rule would raise **644**; the starter set as drafted, **192**, of which 80 came
-  from `requirements` alone. Dropping the elicit-stage table takes it to **112**.
+  from `requirements` alone. Dropping the elicit-stage table takes it to **112** — itself corrected to **97** at build time, §12.
 - **The claim that there is no exemption flag was wrong**: `dismiss_gap` and `untraced`'s
   `unless_field` are both exemption mechanisms already shipped. `dismiss_gap` is now named as the
   route rather than denied.
@@ -958,3 +964,111 @@ trap is now named in the refusal.
 as owned by no packet. It is 2B.4 behaviour 4; the reader was given a summary of 2B rather than
 its text. Worth recording, because a cold read taken entirely at face value is its own failure —
 as is one taken as adversarial noise.
+
+## 12. What the build found, 2026-07-31
+
+Built in the landing order §3.6 gives — 2A, 2B, 2D, 2C, 2E — as one branch and one pull
+request, **561 tests green at the end** (533 before, 28 added). Twelve things the
+specification did not say, each with what it cost.
+
+**`migrate` did not chain, and this is the change where that stopped being survivable.**
+`_migration_steps` only matches adjacent pairs, and its docstring has claimed since schema 8
+that "a store at 7 reaching 11 is migrated one step at a time by `migrate`". It was not:
+`migrate` passed `(current, target)` straight through. Nothing had two hops to cross until
+the retained schema-7 fixture met schema 9, and `migrate(9)` on it raised "no migration path
+from 7 to 9" — a path that exists twice over. `Storage._chained_steps` walks the hops,
+collects them before anything is written, and applies them inside the one transaction. A
+downgrade is still handed to `_migration_steps` unchanged so that it raises: `range(current,
+target)` is empty when the target is lower, and an empty step list would stamp the lower
+version and change nothing, which is exactly the silent no-op decisions:45 forbids. **Change
+4's specification already settled that `migrate` must chain; it is built here because change
+2 needs it first.**
+
+**The day-one count was 112 and is 97.** §3.3's `contracts` figure of **68** is that table's
+*total* row count in the frozen plan; 15 are superseded and the column header says *live*.
+The other four tables have no superseded rows, so total and live coincide there and nothing
+showed the mistake. Measured read-only against `spec/v2/plan.db`: entities 15,
+state_machines 10, dependencies 4, components 15, contracts 53. **This is the third recorded
+instance of the same shape — a denominator measured over the wrong population and reported
+as the whole — and the first two were caught by a cold read rather than by the build.**
+
+**The two payload parsers are one parser.** 2D.1 behaviour 1 names `rows` and `row`
+separately, because the cold read found the draft naming only one. `as_submissions` delegates
+to `as_submission`, so both tool arguments decode through one function and the divergence the
+behaviour guards against cannot arise. The behaviour is satisfied by one edit; the test that a
+replacement carries its grounds is kept anyway, because "cannot arise" is a property of
+today's code.
+
+**Behaviour 3 of 2D.2 is the door's existing invariant and needed no work — but not in the
+form the specification describes.** It asks for refs inside the new fields to be "rendered as
+`name (ref)`". The door's settled rule is the opposite: *annotation never changes a value's
+shape* (D19), because a gap key is an identifier that happens to contain an address and a
+caller who reads one and passes it back must get the string they were given. Stored prose is
+served byte-for-byte and the resolution goes in the `cites` line beneath it. `grounds` and
+`alternatives` are dataclass fields on `PlanRow`, so they take that path automatically.
+
+**`record_grounds` had to check for a replay before its guards, and no behaviour said so.**
+Behaviour 7 asks it to replay like every other write, and every other write leaves that to
+`write_atomic`. That does not work here: a replayed call would hit `GroundsAlreadyRecorded`
+against the write it made itself. The replay check is first, and returns the row.
+
+**A call that would write nothing had no specified answer.** Both fields already recorded and
+both arguments blank falls through every guard in the pseudocode and reaches `write_atomic`
+with an empty update. It refuses with `GroundsAlreadyRecorded` naming both fields: reporting
+success for a call that changed nothing is how a planner comes to believe an argument landed
+when it did not.
+
+**The ask read "records no alternatives and grounds", found by driving it.** 2C.1's
+pseudocode sorts `missing` for both the key and the sentence. The *key* must be sorted — a
+dismissal is recorded against it and it has to be stable whatever order a rule declares its
+fields in. The sentence must not: sorted, it says the pair backwards. It now reads in the
+order the rule names them.
+
+**The load-time check for `unreasoned` fields cannot live in the loader.** 2C.3 puts it there
+and it raises `PlanUnreadable`, which is `gaps.py`'s error, and the check needs `PlanRow`'s
+field names — `engine/methodology` is imported *by* `gaps.py` and importing it back is a
+cycle. It runs once in `GapEngine.__init__` instead, which is what "at load, once, rather
+than per row per derive" was for.
+
+**2C.3 behaviour 1 was already true.** The loader folds the *whole* YAML entry into
+`rule.spec`, so `table` and `fields` arrive without anyone teaching it the keys.
+
+**Three script sentences spoke the dead `decisions` dialect, not one.** §3.3 names the
+stage-5 sentence. Stage 5 has a second — "cross-cutting judgments as linked `decisions`
+rows" — and stage 6 defers a requirement "by a linked decision with rationale". The gates
+read `no_dependencies_decision` and `deferrals`. All are corrected in rev5; a script that
+tells a planner to file where nothing reads costs them the work twice.
+
+**`rationale` had to leave the methodology assets as well as the schema, and one instance was
+a false quotation.** Stage 7 quoted the gate's own wording — "an outcome and a rationale" —
+which `gates.py` stopped saying in 2B.4. A quotation of our own output that our own output no
+longer produces is the failure the whole citation design exists to prevent, in the one place
+nothing checks.
+
+**`_by` was declared and unchecked, and making `SHAPES` drive its check found why it is
+weak.** `plan_rows.superseded_by` is a row ref (TEXT), `briefs.superseded_by` is a brief id
+(INTEGER), and `findings.resolve_by` is neither — it is a stage ordinal. The shape now
+declares both types with the reason; a check that admits both is weaker than one that admits
+one, and it is what is true. **The two spellings of `superseded_by` are a live inconsistency
+this change does not fix** — one word for a ref in one table and an id in another — and it
+belongs to whichever change touches briefs.
+
+**Not done, and it is the owner's call: the five contract rows are not superseded.** 2D.1
+behaviour 5 asks for `contracts:9`, `:11`, `:12`, `:13` and `:34` to be superseded in the
+frozen plan, on the argument that a contract whose signature or error list is stale lies to
+its reader. The argument is right and the act is bigger than the specification reckoned:
+superseding mints new ordinals, so **~50 live citations of those five addresses** across the
+engine, the tests and the v3 documents would point at frozen history; `spec/v2/plan.md` is a
+rendered export and would have to be regenerated; and `tests/test_surface.py`'s denominator is
+parsed out of that file. **`spec/v2/plan.db` and `plan.md` have not been touched since M0** —
+through seven build packages, four dogfood rounds and v3 change 1 — and every divergence since
+has been recorded at the code instead (`EXCLUDED`, `ADDED`, the frozen spellings in
+`errors.py`). `surface.AMENDED` records all five with what each contract's frozen text no
+longer says, and a test keeps each entry pointing at a contract the plan declares and a call
+the surface exposes. **It is the work order if the owner wants the supersession done.**
+
+**One thing v1 already had, worth recording because it is evidence for the design rather than
+against it.** Every table in the frozen plan's own v1-shaped database carries a
+`superseded_reason` column. v2's generic `plan_rows` dropped it, which is the asymmetry §3.4
+found from the other end. The spelling here is `supersede_reason`, matching `retire_reason` —
+the act, not the past participle.

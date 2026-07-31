@@ -141,6 +141,40 @@ def test_the_retained_ddl_is_the_version_it_claims(tmp_path):
     assert "rationale" in findings and "reason" not in findings
 
 
+def test_the_8_to_9_step_backfills_nothing_and_renames_in_place(tmp_path):
+    """The migrated columns arrive NULL. No truth in the old store says what any row's
+    argument was, and a manufactured one would read as though somebody had checked — the
+    112 gaps that follow are the instrument's first reading, not a defect."""
+    old = tmp_path / "v8"
+    old.mkdir()
+    _built_at(old / "plan.db", DDL_V8, 8)
+    conn = sqlite3.connect(old / "plan.db")
+    conn.execute(
+        "INSERT INTO plan_rows (table_name, ordinal, name, named_for, content, "
+        "provenance, state, created_at) VALUES "
+        "('entities', 1, 'Order', 'fp', '{}', 'decided', 'active', 'then')"
+    )
+    conn.execute(
+        "INSERT INTO findings (name, description, severity, state, rationale, "
+        "resolve_by, created_at) VALUES ('f', 'd', 'high', 'addressed', "
+        "'the owner accepted it', 8, 'then')"
+    )
+    conn.commit()
+    conn.close()
+
+    with Storage(old) as store:
+        report = store.migrate(9)
+        assert report.to_version == 9
+        row = store.query("SELECT * FROM plan_rows WHERE ordinal = 1")[0]
+        assert row["grounds"] is None
+        assert row["alternatives"] is None
+        assert row["supersede_reason"] is None
+        # The rename carries the value across; it is the same column under its own word.
+        assert store.query("SELECT reason FROM findings")[0]["reason"] == (
+            "the owner accepted it"
+        )
+
+
 def test_the_migration_refuses_what_it_cannot_migrate_honestly(tmp_path):
     """The two refusals, and that they leave the store where it was.
 
