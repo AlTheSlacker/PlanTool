@@ -575,10 +575,18 @@ class Cluster:
     The word `Cluster` is reused from `GapCluster` deliberately: one word for one role — a
     ranked grouping by affinity — applied to a second object. Two roles for one word would
     be the disease change 2 exists to treat; this is the opposite.
+
+    `shared` is ordered **rarest word first**, and `weight` is the summed rarity of those
+    words over every live entry — which is what the report is ordered by. It is carried
+    rather than left implicit so the ordering is inspectable: a reader who wonders why one
+    grouping sits above another can see the number, and a grouping resting entirely on `the`
+    announces itself. Without it the ordering is a fact about the code rather than about the
+    report.
     """
 
     shared: tuple[str, ...]
     members: tuple[CatalogueEntry, ...]
+    weight: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)

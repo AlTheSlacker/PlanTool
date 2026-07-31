@@ -1191,6 +1191,13 @@ is a judgment written as arithmetic so that review cannot see it; "three or more
 a similar method" encodes an opinion about what similarity is worth acting on, as a number nobody
 will ever revisit.
 
+> **Amended 2026-07-31 — §13.6.** "Orders by how much they share" was built as the raw count of
+> shared words, which puts stop-word clusters at the top: measured over ten ordinary purpose
+> lines, `the` and `a` were the first and second groupings in the report. It now orders by the
+> summed **rarity** of the shared words over every live entry — the rule task 3B.1 behaviour 10
+> already applies to the ranking, which this section should have carried and did not. Still no
+> cut-off and still no notification: nothing is excluded, and the weight only orders.
+
 **Behaviour 4 is a decision and the alternative is worse.** Excluding module-level entries because
 they have no container would hide the case where a module-level helper and a method do the same
 job — which is one of the two shapes duplication actually takes here.
@@ -1944,3 +1951,65 @@ catalogue round, and it must carry this ruling: investigate every match, answer 
 only what survives the investigation. Written in a document and not into the script it would
 be a rule without a mechanism, which is the failure this project keeps re-learning. §9's list
 of what change 5 inherits now names it.
+
+### 13.6 The same escape, relied on a second time — the cross-container report
+
+**The owner's next question, and it found one:** *"is there another place where you are making
+this same comparison and relying on the same escape (reduced importance of a/the) that we need
+to roll this fix into as well?"*
+
+**Audited, and there is exactly one: `catalogue_clusters`, in this same module.** The other
+lexical sites in the engine were checked and none relies on it — `references.search` is a
+substring scan over a query the planner *typed*, so noise is their own query's doing and
+nothing is ranked or raised; `rows._duplicate_name_problem` is exact name equality;
+`terms.violations` and `gates._retired_words` test membership against a word list the owner
+curates himself; and `conflicts.detector` is structural by design, firing only on a
+`contradicts` edge. No unbuilt specification plans another (`04-labels.md`'s near-match guard
+is the superseded draft's, deleted by `04-glossary-and-labels.md`).
+
+**The report was built with no rarity weight at all** — task 3B.1 behaviour 10 put one in the
+ranking and §3.8 said nothing, so the report ordered clusters by the raw count of shared words.
+**Measured over ten ordinary purpose lines**, its top six were:
+
+| | shared | entries |
+|---|---|---|
+| 1 | `result`, `results` | 2 — *genuine* |
+| 2 | **`the`** | **10 — every entry** |
+| 3 | **`a`** | **9** |
+| 4 | **`from`** | 3 |
+| 5 | **`of`** | 3 |
+| 6 | `record` | 3 — *the one worth reading* |
+
+**It is worse here than in the ranking, for two reasons.** Stop words are common *and* they
+travel together, so they form both the widest clusters and the longest shared-word lists —
+and the report was ordered by list length, which is the metric they win outright. And the
+ranking at least had a page of five squeezing junk off the bottom; a 20-cluster report has no
+such squeeze. This is the report change 5's stage-8 script will instruct a planner to read,
+so its first screen saying *these ten entries all contain "the"* is D7's cry-wolf meter
+again — and a report nobody reads is a query that may as well not exist (§3.8's own
+admission).
+
+**Fixed with the rule that was already here, over a different denominator.** A shared word
+counts in inverse proportion to how many **live entries** contain it. After it, `the` is off
+the first screen entirely, `a` is last, and the top three are all genuine.
+
+**The denominator differs from `rank`'s deliberately, and this is the sentence that stops
+someone unifying them later.** `rank` weighs a word against the **candidate set**, because its
+question is *which of these candidates is the better match* — and a word every candidate shares
+cannot discriminate between them however rare it is elsewhere. The report's question is *which
+grouping in the whole table is worth reading*, so the population is the whole table. One rule,
+two questions, two denominators. `Cluster` now carries the resulting `weight` so the ordering
+is inspectable rather than a fact about the code.
+
+**It is not a threshold and there is no stop-word list.** Nothing is excluded, no cut-off
+decides what counts, and the `the` cluster is still in the report — it is merely last. The
+weight only orders, which is the whole of what a ranked report needs.
+
+**What the fix does not remove, stated because it will be re-noticed.** At ten entries
+`from`, `of` and `to` tie with `record`, all four being shared by exactly three. Rarity alone
+cannot separate a preposition from a noun at equal frequency and **nothing lexical can** —
+the same honest limit the ranking has. It resolves itself at real size, where prepositions are
+shared by hundreds while `record` stays at three, and unlike the refusal that limit costs
+nothing here: the report is *pull*, read at a stage step, so a tie at position four refuses
+nobody and escalates nothing. That difference is why a weight is sufficient for the report
+where §13.2's ruling was needed for the refusal.
