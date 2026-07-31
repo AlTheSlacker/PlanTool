@@ -29,7 +29,7 @@ def _row(rows, text="the gate criteria are too weak", key=None):
 def test_file_finding_links_the_attacked_rows(rows, findings):
     ref = _row(rows)
     finding = findings.file_finding(
-        [ref], "package 4 gate passes with zero tests", "high",
+        [ref], "stage 4 gate passes with zero tests", "high",
         name="gate 4 passes with no tests", resolve_by=8,
     )
 
@@ -279,7 +279,7 @@ def test_findings_for_a_row(rows, findings):
 
 
 def test_a_finding_carries_the_gate_it_must_be_resolved_by(rows, findings):
-    """The deadline is a gate, not a date: `resolve_by` is the package whose gate must not
+    """The deadline is a gate, not a date: `resolve_by` is the stage whose gate must not
     pass while this finding is open."""
     finding = findings.file_finding(
         [_row(rows)], "a problem", "high", name="a problem", resolve_by=5
@@ -290,7 +290,7 @@ def test_a_finding_carries_the_gate_it_must_be_resolved_by(rows, findings):
 
 
 def test_resolve_by_must_be_a_real_gate(rows, findings):
-    """An allocation to a package that does not exist is one no gate can ever discharge."""
+    """An allocation to a stage that does not exist is one no gate can ever discharge."""
     ref = _row(rows)
     for bad in (0, 9, True, "8"):
         with pytest.raises(InvalidAllocation):
@@ -330,7 +330,7 @@ def test_reallocation_defers_to_a_later_gate_on_the_record(rows, findings):
     assert [f.id for f in findings.open_allocated_to(7)] == [finding.id]
     history = findings.reallocations_of(finding.id)
     assert len(history) == 1
-    assert history[0]["from_package"] == 5 and history[0]["to_package"] == 7
+    assert history[0]["from_stage"] == 5 and history[0]["to_stage"] == 7
     assert "red-team" in history[0]["reason"]
 
 

@@ -47,7 +47,6 @@ SCHEMA_OF: dict[str, dict[str, Any]] = {
     "selector": {"type": "object"},
     "spike": {"type": "object"},
     "selection": {"type": "object"},
-    "split": {"type": "array", "items": {"type": "object"}},
     "evidence": {"type": "object", "additionalProperties": {"type": "string"}},
     "change_request": {"type": "object"},
     "owner_decision": {"type": "object"},

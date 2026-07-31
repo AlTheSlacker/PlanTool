@@ -42,10 +42,10 @@ def _row(rows, content, name="a row", key=None):
 
 
 def test_a_term_records_what_a_word_means(terms):
-    term = terms.define_term("package", "a declared grouping of tasks")
-    assert term.term == "package"
+    term = terms.define_term("stage", "a declared grouping of tasks")
+    assert term.term == "stage"
     assert term.is_banned is False
-    assert terms.find("Package").definition == "a declared grouping of tasks"
+    assert terms.find("Stage").definition == "a declared grouping of tasks"
 
 
 # --- proposed by the planner, settled by the owner ---
@@ -54,29 +54,29 @@ def test_a_term_records_what_a_word_means(terms):
 def test_a_definition_arrives_as_a_proposal(terms):
     """A definition the tool took from a planning session and filed as settled would be the
     tool deciding what the owner's words mean while looking like a record of him deciding."""
-    term = terms.define_term("package", "a declared grouping of tasks")
+    term = terms.define_term("stage", "a declared grouping of tasks")
     assert term.is_approved is False
     assert terms.awaiting_approval() == (term,)
 
 
 def test_the_owner_can_accept_the_proposal_as_it_stands(terms):
-    terms.define_term("package", "a declared grouping of tasks")
-    settled = terms.approve_term("package")
+    terms.define_term("stage", "a declared grouping of tasks")
+    settled = terms.approve_term("stage")
     assert settled.is_approved is True
     assert settled.definition == "a declared grouping of tasks"
     assert terms.awaiting_approval() == ()
-    assert len(terms.history("package")) == 1
+    assert len(terms.history("stage")) == 1
 
 
 def test_the_owner_rewriting_keeps_what_was_proposed(terms):
     """The difference between the two is the most interesting line in a glossary's history:
     it is where the tool's reading of the plan and the owner's diverged."""
-    terms.define_term("package", "a declared grouping of tasks")
-    settled = terms.approve_term("package", "the level at which I say 'the GUI'")
+    terms.define_term("stage", "a declared grouping of tasks")
+    settled = terms.approve_term("stage", "the level at which I say 'the GUI'")
 
     assert settled.definition == "the level at which I say 'the GUI'"
     assert settled.is_approved is True
-    history = terms.history("package")
+    history = terms.history("stage")
     assert [t.definition for t in history] == [
         "a declared grouping of tasks", "the level at which I say 'the GUI'",
     ]
@@ -84,17 +84,17 @@ def test_the_owner_rewriting_keeps_what_was_proposed(terms):
 
 
 def test_approving_a_settled_definition_twice_is_refused(terms):
-    terms.define_term("package", "a declared grouping of tasks")
-    terms.approve_term("package")
+    terms.define_term("stage", "a declared grouping of tasks")
+    terms.approve_term("stage")
     with pytest.raises(AlreadyApproved) as exc:
-        terms.approve_term("package")
+        terms.approve_term("stage")
     assert "redefine_term" in str(exc.value)
 
 
 def test_approving_with_an_empty_definition_is_refused(terms):
-    terms.define_term("package", "a declared grouping of tasks")
+    terms.define_term("stage", "a declared grouping of tasks")
     with pytest.raises(DefinitionRequired):
-        terms.approve_term("package", "   ")
+        terms.approve_term("stage", "   ")
 
 
 def test_a_new_meaning_needs_settling_again(terms):
@@ -117,15 +117,15 @@ def test_the_owner_rewriting_does_not_put_a_retired_word_back_into_use(terms):
 
 def test_a_word_cannot_be_defined_twice(terms):
     """Two live entries for one word is the collision the whole table exists to catch."""
-    terms.define_term("package", "a declared grouping of tasks")
+    terms.define_term("stage", "a declared grouping of tasks")
     with pytest.raises(TermExists) as exc:
-        terms.define_term("package", "something else entirely")
+        terms.define_term("stage", "something else entirely")
     assert "redefine_term" in str(exc.value)
 
 
 def test_a_term_needs_a_definition(terms):
     with pytest.raises(DefinitionRequired):
-        terms.define_term("package", "   ")
+        terms.define_term("stage", "   ")
 
 
 def test_redefining_keeps_the_old_wording_as_history(terms):
@@ -141,15 +141,15 @@ def test_redefining_keeps_the_old_wording_as_history(terms):
 
 
 def test_redefining_carries_the_named_row_forward(terms, rows):
-    ref = _row(rows, {"text": "packages are declared"}).ref
-    terms.define_term("package", "a declared grouping", names_ref=ref)
-    later = terms.redefine_term("package", "a declared grouping of tasks")
+    ref = _row(rows, {"text": "stages are declared"}).ref
+    terms.define_term("stage", "a declared grouping", names_ref=ref)
+    later = terms.redefine_term("stage", "a declared grouping of tasks")
     assert later.names_ref == ref
 
 
 def test_redefining_a_word_nobody_defined_says_so(terms):
     with pytest.raises(TermNotFound) as exc:
-        terms.redefine_term("package", "a declared grouping")
+        terms.redefine_term("stage", "a declared grouping")
     assert "define_term" in str(exc.value)
 
 
@@ -305,9 +305,9 @@ def test_the_note_survives_an_idempotent_replay(rows, terms):
 def test_terms_is_not_a_plan_row_table(rows):
     """Deciding which store owns a word is half a fix; `plan_rows.table` is open by
     design, so without a refusal the collision returns as data."""
-    verdict = _row(rows, {"term": "package"}, name="package")
+    verdict = _row(rows, {"term": "stage"}, name="stage")
     receipt = rows.submit_rows(
-        [RowSubmission(table="terms", content={"term": "package"}, name="package")],
+        [RowSubmission(table="terms", content={"term": "stage"}, name="stage")],
         "reserved",
     )
     assert receipt.verdicts[0].accepted is False
@@ -350,11 +350,11 @@ def test_the_warning_settles_when_the_word_comes_back(rows, terms, gate):
 
 
 def test_the_export_publishes_the_words_and_the_bans(terms, rows, store):
-    ref = _row(rows, {"text": "packages are declared"}, name="packages are declared").ref
-    terms.define_term("package", "a declared grouping of tasks", names_ref=ref)
-    terms.define_term("milestone", "the old word for a package")
+    ref = _row(rows, {"text": "stages are declared"}, name="stages are declared").ref
+    terms.define_term("stage", "a declared grouping of tasks", names_ref=ref)
+    terms.define_term("milestone", "the old word for a stage")
     terms.retire_term(
-        "milestone", BOTH, "never an entity, only a phrase", use_instead="package",
+        "milestone", BOTH, "never an entity, only a phrase", use_instead="stage",
     )
 
     receipt = terms.export_glossary()
@@ -366,10 +366,10 @@ def test_the_export_publishes_the_words_and_the_bans(terms, rows, store):
         "term": "milestone",
         "scope": BOTH,
         "reason": "never an entity, only a phrase",
-        "use_instead": "package",
+        "use_instead": "stage",
     }]
     assert payload["terms"][1]["names"] == {
-        "ref": str(ref), "name": "packages are declared",
+        "ref": str(ref), "name": "stages are declared",
     }
 
 
@@ -377,7 +377,7 @@ def test_the_export_names_the_row_a_word_names(terms, store):
     """A manifest carrying a bare address hands its reader the lookup this design
     removed. With no row service to ask, it says so rather than inventing a name."""
     bare = TermService(store)
-    bare.define_term("package", "a declared grouping", names_ref="requirements:1")
+    bare.define_term("stage", "a declared grouping", names_ref="requirements:1")
     bare.export_glossary()
     payload = json.loads((store.workspace / "glossary.json").read_text(encoding="utf-8"))
     assert payload["terms"][0]["names"] == {"ref": "requirements:1", "name": None}
@@ -402,13 +402,13 @@ def test_the_brief_carries_the_glossary_outside_the_accounting(briefs, tasks, ro
     )
     tasks.finalize_plan()
     tasks.serve_brief(1)
-    terms.define_term("package", "a declared grouping of tasks")
+    terms.define_term("stage", "a declared grouping of tasks")
 
     candidates = briefs._candidates(tasks.get(1))
     brief = briefs.compose_brief(
         1, BriefSelection(included=tuple(ref for ref, _ in candidates))
     )
-    assert [t.term for t in brief.glossary] == ["package"]
+    assert [t.term for t in brief.glossary] == ["stage"]
     audit = briefs.audit_brief(brief.id)
     assert audit.candidates == len(candidates)
 
@@ -436,8 +436,8 @@ def test_the_glossary_in_a_brief_is_the_one_in_force_now(briefs, tasks, rows, te
     )
     assert brief.glossary == ()
 
-    terms.define_term("package", "a declared grouping of tasks")
-    assert [t.term for t in briefs.get(brief.id).glossary] == ["package"]
+    terms.define_term("stage", "a declared grouping of tasks")
+    assert [t.term for t in briefs.get(brief.id).glossary] == ["stage"]
 
 
 # --- migration ---
@@ -455,7 +455,7 @@ def test_a_store_written_before_the_glossary_migrates_to_an_empty_one(store):
     assert report.from_version == 3
     assert report.to_version == 4
     assert TermService(store).glossary() == ()
-    assert TermService(store).define_term("package", "a declared grouping").id == 1
+    assert TermService(store).define_term("stage", "a declared grouping").id == 1
 
 
 def test_a_migration_with_no_path_is_still_refused(store):

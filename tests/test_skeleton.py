@@ -1,4 +1,4 @@
-"""Harness check: the v2 package imports and the frozen spec is present.
+"""Harness check: the v2 stage imports and the frozen spec is present.
 
 These are deliberately trivial. Their job is to prove the M0 groundwork is sound
 before M1 starts building against it.

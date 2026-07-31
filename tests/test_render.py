@@ -1,7 +1,7 @@
 """The plan as a document a person reads (DEVIATIONS D21).
 
 What these tests are actually guarding is the reason the render exists: the last planning
-package ends by skimming the plan **with the owner**, and a render that quietly dropped
+stage ends by skimming the plan **with the owner**, and a render that quietly dropped
 rows, or that reworded the owner's prose, would make that skim worse than no skim — it
 would certify a plan nobody read.
 """

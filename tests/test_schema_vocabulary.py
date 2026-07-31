@@ -47,7 +47,7 @@ TIMESTAMP_ROLES = {
 
 #: Suffixes whose vocabulary is closed, mapped to their declared members. Only `_at` is
 #: enumerated by name; the others are checked for shape, because their stems are
-#: legitimately per-table (`package_id`, `subtask_id`) while their *role* must be uniform.
+#: legitimately per-table (`brief_id`, `task_id`) while their *role* must be uniform.
 #: The codebase already made this distinction — `gap_key`, `warning_key`, `idempotency.key`
 #: — and three columns did not follow it: `rule_id`, `lease_id`, `session_id` were opaque
 #: strings wearing the spelling of an integer key. `gap_overlay` carried `gap_key` and
@@ -130,7 +130,7 @@ def test_every_table_records_when_its_rows_were_created():
     and read with their parent.
     """
     junctions = {
-        "conflict_refs", "claim_refs", "finding_refs", "subtask_deps",
+        "conflict_refs", "claim_refs", "finding_refs", "task_deps",
         "source_sections", "brief_rows",
     }
     tables = {table for table, _, _ in _columns()}
@@ -147,4 +147,4 @@ def test_the_check_can_actually_fail():
     columns = _columns()
     assert len(columns) > 100, f"the schema parser found only {len(columns)} columns"
     assert any(c == "created_at" for _, c, _ in columns)
-    assert {t for t, _, _ in columns} >= {"plan_rows", "subtasks", "briefs"}
+    assert {t for t, _, _ in columns} >= {"plan_rows", "tasks", "briefs"}

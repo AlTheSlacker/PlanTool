@@ -1,7 +1,7 @@
 """Every child row declares its owning parent, and the edge vocabulary is closed.
 
 **DEFECTS.md F28.** v1 carried eight mandatory (NOT NULL) relations that were not
-`plan_id`. The package-6 flattening into generic `plan_rows`/`links` preserved every row
+`plan_id`. The stage-6 flattening into generic `plan_rows`/`links` preserved every row
 and dropped every relation. Two were found by accident and repaired one at a time — F20
 (`contract_deps`) and F24 (`contracts.component_id`). Sweeping `archive/v1`'s schema
 found the other six, which is what the M6 gate item existed to stop us discovering the

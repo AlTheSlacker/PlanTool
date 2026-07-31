@@ -133,11 +133,12 @@ def test_unknown_scope_level_is_refused(attachments, rows):
 
 
 def test_a_dead_level_is_refused_rather_than_widened(attachments, rows):
-    """`package` and the old middle `task` were levels until v3 change 1, and a caller
-    still passing one is told so. Silently landing it at `plan` would be D8 §2.5's "too
-    high" failure arriving through the front door with nobody told — and the migration's
-    bulk widening, which *is* that, says so on every row it writes."""
+    """The build grouping and the middle task level were scope levels until v3 change 1,
+    and a caller still passing one is told so. Silently landing it at `plan` would be
+    D8 §2.5's "too high" failure arriving through the front door with nobody told — and
+    the migration's bulk widening, which *is* that, says so on every row it writes."""
     ref = _row(rows, "a note", "a")
-    with pytest.raises(UnknownScopeLevel) as exc:
-        attachments.attach(ref, "package", scope_key="3", reason="GUI-wide")
-    assert "plan, task" in str(exc.value)
+    for dead in ("package", "subtask"):
+        with pytest.raises(UnknownScopeLevel) as exc:
+            attachments.attach(ref, dead, scope_key="3", reason="GUI-wide")
+        assert "plan, task" in str(exc.value)

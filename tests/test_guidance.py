@@ -2,7 +2,7 @@
 
 import pytest
 
-from engine.guidance import Guidance, GuidanceUnreadable, UnknownPackage
+from engine.guidance import Guidance, GuidanceUnreadable, UnknownStage
 from engine.methodology import (
     ASSETS,
     DEFAULT_REVISION,
@@ -35,42 +35,42 @@ def test_mandate_carries_the_challenge_duty(guidance):
     assert "challenge duty" in guidance.get_mandate().lower()
 
 
-def test_every_package_has_a_readable_script(guidance):
-    low, high = load().package_range
-    for package in range(low, high + 1):
-        script = guidance.get_package_script(package)
+def test_every_stage_has_a_readable_script(guidance):
+    low, high = load().stage_range
+    for stage in range(low, high + 1):
+        script = guidance.get_stage_script(stage)
         assert script.text.strip()
-        assert script.package == package
+        assert script.stage == stage
 
 
-def test_elicit_packages_require_divergence(guidance):
-    """requirements:16 — elicit packages present divergence prompts and solicit
+def test_elicit_stages_require_divergence(guidance):
+    """requirements:16 — elicit stages present divergence prompts and solicit
     owner-generated candidates before agent drafts."""
-    for package in (1, 2, 3):
-        script = guidance.get_package_script(package)
+    for stage in (1, 2, 3):
+        script = guidance.get_stage_script(stage)
         assert script.mode == "elicit"
         assert script.divergence_required is True
 
-    for package in (4, 5, 6):
-        assert guidance.get_package_script(package).divergence_required is False
+    for stage in (4, 5, 6):
+        assert guidance.get_stage_script(stage).divergence_required is False
 
 
 def test_elicit_scripts_actually_contain_the_divergence_round(guidance):
     """The flag is only worth having if the vendored content backs it."""
-    for package in (1, 2, 3):
-        text = guidance.get_package_script(package).text.lower()
+    for stage in (1, 2, 3):
+        text = guidance.get_stage_script(stage).text.lower()
         assert "divergence" in text
 
 
-def test_unknown_package_names_the_valid_range(guidance):
-    with pytest.raises(UnknownPackage) as exc:
-        guidance.get_package_script(99)
+def test_unknown_stage_names_the_valid_range(guidance):
+    with pytest.raises(UnknownStage) as exc:
+        guidance.get_stage_script(99)
     assert exc.value.detail["valid_range"] == "1-8"
 
 
 def test_script_carries_the_revision_stamp(guidance):
     """requirements:71 — content assets carry a content-revision stamp."""
-    script = guidance.get_package_script(2)
+    script = guidance.get_stage_script(2)
     assert script.revision_stamp == load(DEFAULT_REVISION).revision_stamp
 
 
@@ -84,7 +84,7 @@ def test_each_revision_stamp_names_its_own_revision():
     copy and reported success for eighteen days. Assert the *relationship*, never the value.
 
     Only rev 3 is asserted here, because rev 2 is frozen v1 provenance written in v1's
-    vocabulary (`stages:`, not `packages:`) and this loader will not read it. That is
+    vocabulary (`stages:`, not `stages:`) and this loader will not read it. That is
     resolved deliberately, not merely observed: rev 2 is declared frozen provenance and
     rev 3 is the earliest loadable baseline, so `requirements:71`'s migration path is
     forward-only. See DEFECTS.md F43 and the frozen-provenance tests below.
@@ -93,11 +93,17 @@ def test_each_revision_stamp_names_its_own_revision():
     assert f"rev{DEFAULT_REVISION}" in stamp, stamp
 
 
-def test_frozen_provenance_revision_is_not_loadable():
-    """rev 2 is retained as frozen provenance and refuses to load — honestly, by its own
-    type, not with a raw KeyError('packages') from meeting `stages:` (DEFECTS.md F43)."""
+@pytest.mark.parametrize("revision", (2, 3))
+def test_frozen_provenance_revisions_are_not_loadable(revision):
+    """Retained as frozen provenance, refusing to load honestly by their own type rather
+    than with a raw KeyError from meeting the wrong key (DEFECTS.md F43).
+
+    rev 3 joined rev 2 there in v3 change 1: it is keyed `packages:` while the loader
+    reads `stages:` again, and its stage-6 script names three tools that no longer exist,
+    so serving it would raise at the door.
+    """
     with pytest.raises(RevisionNotLoadable) as exc:
-        load(2)
+        load(revision)
     message = str(exc.value)
     assert f"revision {EARLIEST_LOADABLE_REVISION}" in message
     assert "forward-only" in message
@@ -109,6 +115,14 @@ def test_rev2_is_still_verbatim_v1_provenance():
     manifest = (ASSETS / "rev2" / "manifest.yaml").read_text(encoding="utf-8")
     assert "\nstages:" in manifest
     assert "\npackages:" not in manifest
+
+
+def test_rev3_is_kept_as_it_was_written():
+    """The same rule applied to the revision this change superseded: it is retained, not
+    rewritten, so a plan stamped rev 3 can still be read by a person."""
+    manifest = (ASSETS / "rev3" / "manifest.yaml").read_text(encoding="utf-8")
+    assert "\npackages:" in manifest
+    assert (ASSETS / "rev3" / "package6_architecture.md").exists()
 
 
 def test_earliest_loadable_baseline_actually_loads():
@@ -133,36 +147,36 @@ def test_redteam_brief_is_available(guidance):
     assert "red" in guidance.get_auxiliary("redteam").lower()
 
 
-def test_a_packages_core_content_checks_name_tables_the_manifest_declares():
-    """DEFECTS.md F48 (and F11 before it) — every table a package's own core-content checks
-    read must be a table that package declares it fills.
+def test_a_stages_core_content_checks_name_tables_the_manifest_declares():
+    """DEFECTS.md F48 (and F11 before it) — every table a stage's own core-content checks
+    read must be a table that stage declares it fills.
 
-    F11 migrated package 1's checks off v1's `decisions`-with-a-`Goal:`-prefix shape onto
+    F11 migrated stage 1's checks off v1's `decisions`-with-a-`Goal:`-prefix shape onto
     first-class `goals`/`non_goals`/`stack` tables, but left the script and the manifest
     naming the old ones. A planner who followed the script filed where the gate could not
     look, so the "nothing recorded yet" gap never cleared. This is the mechanical check F11
-    asked for and nobody wrote until F48: a package-scoped `empty_table`/`missing_field` gap
-    rule, or a `non_empty` gate criterion, names the table that package fills — and it must be
-    one the manifest lists for that package.
+    asked for and nobody wrote until F48: a stage-scoped `empty_table`/`missing_field` gap
+    rule, or a `non_empty` gate criterion, names the table that stage fills — and it must be
+    one the manifest lists for that stage.
 
-    Cross-checks (`traced`/`untraced`) are excluded on purpose: they read *other* packages'
-    tables by design — a package-2 gate reads package-1 `goals` to check coverage — so a
+    Cross-checks (`traced`/`untraced`) are excluded on purpose: they read *other* stages'
+    tables by design — a stage-2 gate reads stage-1 `goals` to check coverage — so a
     superset rule over them would be wrong, not stricter."""
     m = load()
     core_gap_types = {"empty_table", "missing_field"}
-    for package in m.packages:
-        declared = set(package.tables)
+    for stage in m.stages:
+        declared = set(stage.tables)
         read = {
             rule.spec["table"]
             for rule in m.rules
-            if rule.package == package.number and rule.type in core_gap_types
+            if rule.stage == stage.number and rule.type in core_gap_types
         } | {
             criterion.spec["table"]
-            for criterion in m.criteria_for(package.number)
+            for criterion in m.criteria_for(stage.number)
             if criterion.type == "non_empty"
         }
         missing = read - declared
         assert not missing, (
-            f"package {package.number} core checks read {sorted(missing)} "
+            f"stage {stage.number} core checks read {sorted(missing)} "
             f"but its manifest tables are {sorted(declared)}"
         )
