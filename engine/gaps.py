@@ -13,7 +13,7 @@ survive re-derivation and survive the target row being superseded.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field, fields, replace
 from typing import Any
 
 from engine.errors import PlanToolError
@@ -116,6 +116,37 @@ class GapEngine:
         #: interview question like any other — and an unsettled definition is an open
         #: question only the owner can close, which is exactly what a gap is (D23).
         self.terms = terms or TermService(storage)
+        self._check_unreasoned_rules()
+
+    def _check_unreasoned_rules(self) -> None:
+        """Every `unreasoned` rule names columns `PlanRow` actually carries.
+
+        Checked here, once per engine, rather than inside the handler: `getattr(row, f)`
+        with a default turns a misspelt column into "missing on every live row" — a rule
+        that silently measures something other than its name, which is a failure this
+        project has already recorded once. Checked here rather than in the loader because
+        this is the module that knows what a `PlanRow` is; the loader would have to import
+        it back the way it is imported.
+        """
+        carried = {f.name for f in fields(PlanRow)}
+        for rule in self.methodology.rules:
+            if rule.type != "unreasoned":
+                continue
+            named = rule.spec.get("fields")
+            if not named:
+                raise PlanUnreadable(
+                    "an unreasoned rule names no fields, so it would report nothing and "
+                    "read as a rule that is satisfied",
+                    rule=rule.id,
+                )
+            unknown = [f for f in named if f not in carried]
+            if unknown:
+                raise PlanUnreadable(
+                    f"unreasoned rule names {unknown[0]!r}, which is not a column a plan "
+                    f"row carries; a rule reading a column that does not exist reports "
+                    f"every live row as a gap",
+                    rule=rule.id,
+                )
 
     # --- identity (requirements:78) ---
 
@@ -181,6 +212,7 @@ class GapEngine:
             "uncited_section": self._rule_uncited_section,
             "no_glossary": self._rule_no_glossary,
             "unsettled_term": self._rule_unsettled_term,
+            "unreasoned": self._rule_unreasoned,
         }.get(rule.type)
         if handler is None:
             raise PlanUnreadable(f"unknown gap rule type {rule.type!r}", rule=rule.id)
@@ -219,6 +251,38 @@ class GapEngine:
             missing = [f for f in rule.spec["fields"] if not row.content.get(f)]
             if missing:
                 gaps.append(self._make(rule, row, extra_key=",".join(sorted(missing))))
+        return gaps
+
+    def _rule_unreasoned(self, rule: Rule) -> list[Gap]:
+        """A live row of `table` missing any of the named justification **columns**.
+
+        A separate rule type rather than a `source: column` option on `missing_field`, and
+        the difference is the whole point of the design: `missing_field` reads
+        `row.content.get(f)` — free-form JSON with no per-table schema — and D12 settled
+        that nothing an accounting depends on may be inferred from content. A gap rule is
+        an accounting. Making one rule type's behaviour depend on a flag most of its rules
+        do not set is also how a check ends up measuring something narrower than its name.
+
+        No `when_field` and no `unless_field`: the first reads content, which this type
+        deliberately does not, and the second is an exemption `dismiss_gap` already
+        provides, keyed and recorded and readable by the owner.
+
+        `getattr(row, f)` takes no default — `_check_unreasoned_rules` is what makes the
+        two-argument form safe, and the two-argument form is what makes a skipped
+        validation loud instead of silent.
+        """
+        gaps = []
+        for row in self._live(rule.spec["table"]):
+            missing = [f for f in rule.spec["fields"] if not getattr(row, f)]
+            if missing:
+                gaps.append(
+                    self._make(
+                        rule,
+                        row,
+                        extra_key=",".join(sorted(missing)),
+                        missing=" and ".join(sorted(missing)),
+                    )
+                )
         return gaps
 
     def _rule_untraced(self, rule: Rule) -> list[Gap]:

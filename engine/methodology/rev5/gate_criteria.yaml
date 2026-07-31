@@ -1,0 +1,360 @@
+# Per-stage mechanical gate criteria — a content asset (requirements:71).
+#
+# Provenance: vendored from PlanTool v1 (archive/v1/engine/gates.py), spec rev 2,
+# 2026-07-15. v1 wrote one hand-coded SQL function per stage; v2's generic PlanRow store
+# lets the same criteria be stated declaratively, so the methodology stays versioned
+# data that can be revised without a release (decisions:61, findings:4).
+#
+# Two rules govern everything here:
+#   requirements:20 — gates evaluate ONLY mechanical criteria. Nothing in this file may
+#     require judgment. "Is this requirement well written?" is not a gate criterion;
+#     "does this requirement fill its EARS slots?" is.
+#   requirements:46 — gate results are deterministic. Criteria are evaluated in file
+#     order and holes are emitted in row order, so the same plan always gates the same.
+#
+# Every hole names table, row, problem, and fix (requirements:20). The fix text is
+# written as an instruction the agent can act on without asking the owner anything.
+#
+# Criterion types:
+#   non_empty           the table has at least one live row
+#   required_fields     live rows must carry every named field (when_field gates it)
+#   conditional_fields  live rows must carry fields required by another field's value
+#   traced              live rows must link to/from a row in one of to_tables;
+#                       unless_field exempts a row that explains the absence
+#   covers_all          each parent row's linked children must cover every named value
+#   matrix_complete     each parent's children must cover the full product of two
+#                       content-list axes (the state x event grid)
+#   unbacked_assumption live assumed rows of a kind, with no linked backing row
+#   prior_gates_green   every earlier stage gate passes
+#   no_open_conflicts   no conflict is open anywhere in the plan
+#
+# `cross_check: true` marks the elicit-stage coverage cross-checks requirements:17
+# names explicitly, so a gate result can report that they ran.
+
+revision: 2
+revision_stamp: "plantool-rev2-2026-07-15"
+vendored_from: "PlanTool v1 (archive/v1/engine/gates.py)"
+
+stages:
+  # --- stage 1: context & goals -------------------------------------------------
+  - stage: 1
+    criteria:
+      - id: goals_recorded
+        type: non_empty
+        table: goals
+        problem: "no goals recorded"
+        fix: >-
+          Record each goal as a row in `goals` with a measurable success criterion. A
+          plan with no stated goal cannot be gated against anything.
+
+      - id: goal_has_success_criteria
+        type: required_fields
+        table: goals
+        fields: [success_criteria]
+        problem: "goal \"{name}\" has no success criterion"
+        fix: >-
+          Supersede the row adding `success_criteria` — a scale and a target an
+          acceptance test could check. A goal you cannot measure cannot be gated.
+
+      - id: non_goals_recorded
+        type: non_empty
+        table: non_goals
+        problem: "no non-goals recorded"
+        fix: >-
+          Record each explicit exclusion as a row in `non_goals`. At least one real
+          exclusion is required: a plan that excludes nothing has not been scoped.
+
+      - id: stack_recorded
+        type: non_empty
+        table: stack
+        problem: "target stack not recorded"
+        fix: >-
+          Record the language, platform and runtime as rows in `stack`. This is planning
+          data about what is being built, never tool configuration.
+
+      - id: actor_participates
+        type: traced
+        table: actors
+        to_tables: [use_cases]
+        direction: in
+        cross_check: true
+        problem: "actor \"{name}\" ({ref}) participates in no use case"
+        fix: >-
+          Elicit that actor's scenario and link the use case to them, or retire the
+          actor. An actor with no scenario is either an un-elicited use case or a
+          recorded fiction — the coverage cross-check exists to force that choice.
+
+  # --- stage 2: use cases --------------------------------------------------------
+  - stage: 2
+    criteria:
+      - id: use_cases_recorded
+        type: non_empty
+        table: use_cases
+        problem: "no use cases recorded"
+        fix: >-
+          Elicit them Cockburn-style: primary actor, numbered main scenario in
+          `uc_steps`, extensions per step in `uc_extensions`.
+
+      - id: step_has_extensions
+        type: traced
+        table: uc_steps
+        to_tables: [uc_extensions]
+        direction: in
+        unless_field: no_extension_reason
+        problem: "step \"{name}\" ({ref}) has no extensions and no no_extension_reason"
+        fix: >-
+          Add what can fail or vary at this step as `uc_extensions` rows, or supersede
+          the step with a `no_extension_reason` recording why genuinely nothing can.
+
+      - id: goal_traces_to_use_case
+        type: traced
+        table: goals
+        to_tables: [use_cases]
+        direction: in
+        cross_check: true
+        problem: "goal \"{name}\" ({ref}) traces to no use case"
+        fix: >-
+          Link the use case that realizes this goal, or record why the goal needs no
+          scenario. A goal nothing exercises is a goal the plan does not actually serve.
+
+  # --- stage 3: requirements -----------------------------------------------------
+  - stage: 3
+    criteria:
+      - id: requirements_recorded
+        type: non_empty
+        table: requirements
+        problem: "no requirements recorded"
+        fix: >-
+          Derive EARS-typed requirements from the use cases, linking each to the use
+          case it came from.
+
+      - id: ears_slots_filled
+        type: conditional_fields
+        table: requirements
+        cases:
+          - when_field: ears_type
+            when_values: [ubiquitous]
+            require: [system_response]
+          - when_field: ears_type
+            when_values: [event, unwanted]
+            require: [trigger_text, system_response]
+          - when_field: ears_type
+            when_values: [state]
+            require: [precondition, system_response]
+          - when_field: ears_type
+            when_values: [optional]
+            require: [feature, system_response]
+        problem: "{ref} does not fill the slots its ears_type requires (missing {missing})"
+        fix: >-
+          Every requirement is slot-structured; free prose is never accepted. Supersede
+          the row filling the slots its EARS type demands.
+
+      - id: nfr_quantified
+        type: required_fields
+        table: requirements
+        when_field: is_nfr
+        fields: [planguage_scale, planguage_meter, planguage_target]
+        problem: "NFR {ref} lacks a full Planguage triad (missing {missing})"
+        fix: >-
+          Quantify the NFR with scale, meter and target. An unquantified NFR cannot be
+          verified and cannot be gated.
+
+      - id: use_case_traces_to_requirement
+        type: traced
+        table: use_cases
+        to_tables: [requirements]
+        direction: in
+        cross_check: true
+        problem: "use case \"{name}\" ({ref}) traces to no requirement"
+        fix: >-
+          Derive its requirements and link them to it, or retire the use case if it no
+          longer stands.
+
+  # --- stage 4: domain model ------------------------------------------------------
+  - stage: 4
+    criteria:
+      - id: entities_recorded
+        type: non_empty
+        table: entities
+        problem: "no domain entities recorded"
+        fix: >-
+          Synthesize mode: propose the domain model — entities with their lifecycle
+          judgments — and let the owner adjudicate.
+
+      - id: crud_grid_complete
+        type: covers_all
+        table: entities
+        child_table: crud_grid
+        field: op
+        values: [C, R, U, D]
+        problem: "entity \"{name}\" ({ref}) has empty CRUD cell(s): {missing}"
+        fix: >-
+          Every cell names the responsible actor or component, or is an explicit n/a
+          with a reason. The D cell also records what happens to children.
+
+      - id: lifecycle_justified
+        type: required_fields
+        table: entities
+        unless_field: has_lifecycle
+        fields: [lifecycle_reason]
+        problem: "entity \"{name}\" ({ref}) has no lifecycle and no recorded justification"
+        fix: >-
+          Record why this entity has no lifecycle worth modelling, or mark
+          has_lifecycle and give it a state machine.
+
+      - id: lifecycle_has_state_machine
+        type: traced
+        table: entities
+        to_tables: [state_machines]
+        direction: in
+        when_field: has_lifecycle
+        problem: "lifecycle entity \"{name}\" ({ref}) has no state machine"
+        fix: >-
+          Propose its states and events. Every state x event cell is either a transition
+          or an explicit impossible with a reason.
+
+      - id: state_machine_grid_complete
+        type: matrix_complete
+        table: state_machines
+        child_table: sm_cells
+        axes: [states, events]
+        child_fields: [state, event]
+        problem: "state machine {ref} has {count} undefined state x event cell(s): {missing}"
+        fix: >-
+          Fill each cell with a transition_to, or an explicit impossible plus the reason
+          it cannot happen. An unfilled cell is an unconsidered transition.
+
+  # --- stage 5: dependencies & failure modes ----------------------------------------
+  - stage: 5
+    criteria:
+      - id: dependencies_registered
+        type: non_empty
+        table: dependencies
+        escape_table: no_dependencies_decision
+        problem: >-
+          no external dependencies registered, and no explicit
+          "this system has no external dependencies" decision
+        fix: >-
+          Register every filesystem, service, API and external agent the system touches
+          as a `dependencies` row — or, if there genuinely are none, record that as a
+          row in `no_dependencies_decision` with the reason.
+
+      - id: failure_modes_covered
+        type: covers_all
+        table: dependencies
+        child_table: dep_failure_modes
+        field: mode
+        values: [unavailable, slow, malformed, auth, partial]
+        problem: "dependency \"{name}\" ({ref}) has no handling for failure mode(s): {missing}"
+        fix: >-
+          Record what the system does for each of unavailable, slow, malformed, auth and
+          partial. All five per dependency — the one you skip is the one that happens.
+
+  # --- stage 6: architecture --------------------------------------------------------
+  - stage: 6
+    criteria:
+      - id: components_recorded
+        type: non_empty
+        table: components
+        problem: "no components recorded"
+        fix: >-
+          Design the component cut and its contracts to structured-signature level; the
+          owner adjudicates.
+
+      - id: component_has_contract
+        type: traced
+        table: components
+        to_tables: [contracts]
+        direction: in
+        problem: "component \"{name}\" ({ref}) has no contract"
+        fix: "Every deliverable component gets at least one contract."
+
+      - id: contract_signature_complete
+        type: required_fields
+        table: contracts
+        fields: [params, returns, errors]
+        problem: "contract \"{name}\" ({ref}) is structurally incomplete (missing {missing})"
+        fix: >-
+          Supersede it with the completed signature: params typed (or explicitly empty),
+          a return type, and at least one named error with its trigger — or
+          cannot_fail with the reason it cannot.
+
+      - id: contract_has_consumer
+        type: traced
+        table: contracts
+        to_tables: [components, contracts]
+        direction: in
+        unless_field: is_external
+        problem: "contract \"{name}\" ({ref}) has no consumer and is not marked external"
+        fix: >-
+          Record the consumer edge, mark the contract external, or cut it. An
+          untraceable contract is invented scope.
+
+      - id: contract_traces_to_requirement
+        type: traced
+        table: contracts
+        to_tables: [requirements]
+        direction: out
+        problem: "contract \"{name}\" ({ref}) traces to no requirement — invented scope"
+        fix: >-
+          Link the requirement(s) it satisfies, or retire it. Code nobody asked for is
+          the most expensive kind.
+
+      - id: requirement_traces_to_contract
+        type: traced
+        table: requirements
+        to_tables: [contracts, deferrals]
+        direction: in
+        problem: "{ref} traces to no contract and is not explicitly deferred"
+        fix: >-
+          Link a contract to it, record a deferral with the reason, or retire the
+          requirement if it no longer stands.
+
+      - id: world_assumption_backed
+        type: unbacked_assumption
+        assumption_kind: world
+        problem: "{ref} (\"{name}\") {reason}"
+        fix: >-
+          Run its spike against the real dependency and record the result. If the spike
+          concluded inconclusive or blocked, the assumption cannot ride into the frozen
+          plan on silence — record the owner's explicit acceptance of the residual risk
+          (file_finding on it, then resolve as accepted_risk). A world-assumption is never
+          resolved by asking the owner what they meant; it is settled by what the world
+          does, or by the owner knowingly accepting the risk of not knowing.
+
+  # --- stage 7: adversarial ----------------------------------------------------------
+  - stage: 7
+    criteria:
+      - id: findings_recorded
+        type: findings_exist
+        problem: "no adversarial findings recorded"
+        fix: >-
+          Run the red-team pass and the pre-mortem in a fresh session, filing each issue
+          with file_finding. A red team that finds nothing means the red-team script is
+          broken, not that the plan is perfect.
+
+      - id: findings_dispositioned
+        type: findings_resolved
+        problem: "{label} is still missing {missing}"
+        fix: >-
+          Resolve it — addressed (the plan rows were corrected), accepted_risk (the
+          owner's knowing acceptance), or withdrawn — and record why. An accepted risk
+          with no recorded acceptance is indistinguishable at handoff from an issue
+          somebody forgot about.
+
+  # --- stage 8: finalization ------------------------------------------------------------
+  - stage: 8
+    criteria:
+      - id: all_prior_gates_green
+        type: prior_gates_green
+        problem: "the stage-{stage} gate has {count} open hole(s)"
+        fix: >-
+          Run that gate for its row-level holes and work them with the owner.
+          Finalization requires every earlier gate green.
+
+      - id: no_open_conflicts
+        type: no_open_conflicts
+        problem: "conflict #{id} is still open: {description}"
+        fix: >-
+          A frozen plan cannot contradict itself. Resolve it with the owner's
+          adjudication first.
