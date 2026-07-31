@@ -714,9 +714,36 @@ class Storage:
           a manufactured one would read as though somebody had checked. The columns arrive
           NULL and the gap engine reports them on the next derive.
 
+          **9 -> 10** is v3 change 3, the catalogue. Both tables start empty and it
+          backfills nothing, which is the glossary's test again rather than an exception to
+          it: a plan written before the catalogue existed has no catalogue, and there is no
+          truth in the old store from which a set of function names could be derived. The
+          one place such a truth exists is the *tree*, and deriving the catalogue from a
+          tree is the design `FUNCTION_CATALOGUE.md` §7 rejects, for dragging
+          language-specific declaration-finding into the engine.
+
+          Neither does it join the snapshot table set, which reverses the instinct for a
+          mechanical reason: `snapshot_version` carries nine tables and `tasks` is not among
+          them — the whole execution layer sits outside snapshots. A `catalogue` inside the
+          set would be rewound while the `tasks` rows its `task_id` references were not,
+          leaving entries and tasks describing two different plans with nothing complaining.
+          Both stay out, together. The inherited consequence is named rather than fixed:
+          `recover('restart')` clears eight tables and leaves `terms`, `findings` and the
+          execution layer standing, so the catalogue joins that set and a restart leaves a
+          catalogue of a plan that no longer exists. That is v2's behaviour for every table
+          outside the eight, and fixing it would be a change about recovery.
+
         Anything else is an error and never a silent no-op (decisions:45) — including a
         downgrade, which would have to drop rows to succeed.
         """
+        if (current, target) == (9, 10):
+            # v3 change 3. Both tables are created from `CATALOGUE_DDL` rather than from SQL
+            # restated here, which is what three of the four older branches do (3 -> 4, 5 -> 6,
+            # 6 -> 7). The rule the four share is not "always call `statements()`" — 4 -> 5 is
+            # the mixed case and issues an ALTER of its own — but this: *a whole table is
+            # created from the one text; a column added to an existing table is an ALTER the
+            # DDL also carries.* This change is purely the first kind.
+            return schema.statements(schema.CATALOGUE_DDL)
         if (current, target) == (8, 9):
             # The three ADD COLUMNs are in the order `schema.DDL` declares them, and the
             # DDL declares them last. `ADD COLUMN` appends, so any other pairing gives a

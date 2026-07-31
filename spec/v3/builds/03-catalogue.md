@@ -1,5 +1,10 @@
 # Change 3 — the catalogue
 
+**BUILT AND MERGED 2026-07-31. §12 is the build record** — schema 10, 647 tests, 57 tools —
+and it is where the next change's cold read starts. Read §12.1 before §3.7, §9 or task 3B.1
+behaviour 11: those three still carry the `engine/lexical.py` amendment that change 4 reversed,
+and the build followed the reversal.
+
 **Specification, complete. All five packets were cold-read and §11's corrections are applied
 below. Amended twice on 2026-07-29 by change 4** — the ranking and the tokeniser are a shared
 module, and stop words are settled here rather than left task-local; both are marked in place and
@@ -373,6 +378,12 @@ something else.
 **The ranking must be one function, called by both the search and the registration**, or the
 candidates a planner is shown and the candidate they are required to adjudicate come from two
 rankings that will drift.
+
+> **STALE — the amendment below was reversed on 2026-07-30 and the build followed the
+> reversal. See §12.1.** There is no `engine/lexical.py`; `CatalogueService` keeps `_rank`
+> private and owns the tokeniser, and it does **not** take `TermService`, so the glossary
+> warning in 3B.2 behaviour 9 and 3B.5 behaviour 4 is not built. Change 4 deleted the
+> glossary's own near-match guard, leaving one caller, and deletes `violations()` outright.
 
 **Amended 2026-07-29 by change 4: it is one function for more callers than this change has, so it
 is not private to this service.** The ranking and the tokeniser live in **`engine/lexical.py`**,
@@ -786,6 +797,13 @@ asked to adjudicate a candidate needs to see *why* it ranked — a candidate tha
 alone is dismissed at a glance, and one that matched on `resolve supersession chain` is not.
 
 ### Task 3B.1 — the read path and the ranking
+
+> **STALE in one respect — see §12.1.** As built there is no `engine/lexical.py`:
+> `engine/catalogue.py` itself exports `tokens(text)`, `rank(...)` and `tied_at_top(...)`,
+> and `TermService._tokens` delegates to `tokens` while keeping its own scope/address half.
+> `word()` stays in `terms.py` as `_word`. Behaviour 11 reads: *the tokeniser and the ranking
+> are the catalogue's, and `TermService._tokens` becomes a delegation.* Everything else in
+> this task — behaviours 1 to 10 and 12 — is built as written.
 
 **Signature.** A new module `engine/lexical.py` exporting `tokens(text: str, scope: str) ->
 set[str]`, `word(term: str) -> str`, `rank(name: str, text: str, candidates, limit: int = 5)` and
@@ -1434,6 +1452,13 @@ left as a refactor**, because this change is merged and unbuilt: the ranking and
 words are answered by a rarity weight rather than left task-local (task 3B.1 behaviour 10). Neither
 changes a number measured here. `04-labels.md` §11 is the argument and the measurement.
 
+> **The first of those two was itself reversed on 2026-07-30, and the build followed the
+> reversal — §12.1.** The rarity weight (behaviour 10) stands and is built. The shared module
+> does not: there is no `engine/lexical.py`, `CatalogueService` keeps `_rank` private and owns
+> the tokeniser, and it takes no `TermService`. With change 4's own near-match guard deleted
+> there is one caller, and change 4 deletes `violations()` with its three enumerated call
+> sites — a fourth added here would make that count wrong.
+
 ## 10. Two conventions this change proposes
 
 **Validate refs in stored prose at the write.** *A free-text field that will be rendered through
@@ -1676,3 +1701,146 @@ Recorded because taking a cold read at face value is its own failure.
   omits the block, and the index behaviour is 3E.2's separate business.
 - Convention 14 was cited against "reorganising" beside "finalized". Both are correct here:
   the first is a quotation, the second is this codebase's established spelling (`finalize_plan`).
+
+## 12. What the build found
+
+**Built and merged 2026-07-31.** Schema 10, 647 tests green (561 before), 57 tools. One entry
+per thing the specification did not say, said wrongly, or could not have known — this is where
+the next change's cold read starts, and it is the section changes 1 and 2 made a habit.
+
+### 12.1 The reversal the document still carried
+
+**`engine/lexical.py` is not created, and §3.7, §9 and task 3B.1 behaviour 11 are stale.**
+They were amended on 2026-07-29 to put the ranking and the tokeniser in a shared module for
+three callers, then two. Change 4 then deleted the glossary's own near-match guard, leaving
+**one** — this catalogue — and reversed the amendment in as many words:
+*"change 3 keeps `CatalogueService._rank` private and takes the tokeniser with it"*
+(`04-glossary-and-labels.md` §4). Extract on the second occurrence; there is no second
+occurrence. Built that way: `engine/catalogue.py` owns `tokens()`, `WORD` and a module-level
+`rank()`, and `TermService._tokens` is a delegation that change 4 deletes with `violations()`.
+`WORD` left `terms.py` entirely, because `_word` is strip-and-lowercase and needs no regex.
+
+**`CatalogueService` does not take `TermService`, and 3B.2 behaviour 9 / 3B.5 behaviour 4 —
+the glossary warning — are not built.** Same reversal, and the decisive evidence is a count
+rather than a preference: change 4 deletes `violations()` and **enumerates its call sites as
+three** (the submission scan in `rows.py`, `_retired_words()` in `gates.py`, a gap rule in
+`gaps.py`). Change 4's specification was written after this one and deliberately does not
+include a fourth. Building the wiring here would make change 4's count wrong and would add a
+caller to a scan Al ruled ineffective on 2026-07-30 — the ruling that deleted the guard. So
+`CatalogueResult` has no `vocabulary_note`: it would be a field nothing writes, which is what
+§3.9 refuses to ship.
+
+### 12.2 The landing order, twice more
+
+**3A.0 and 3A.1 cannot land as separate green commits, and the spec's §3.10 presents them as
+if they could.** §3.10 is right that 3A.0 must come first — 2E.1's forward check refuses
+`catalogue.retire_reason` the moment the DDL exists. But `test_the_declared_justification_set_
+is_the_whole_of_it` also runs the **reverse** check, that every declared member is a column
+that exists, so 3A.0 alone is red for naming columns nothing has created yet. The two block
+each other and land in one commit. This is the mirror image of the failure §3.10 catches, in
+the same test change 2 wrote.
+
+**3D.1 cannot land before 3B either, for a reason the packet table missed.**
+`test_every_tool_reaches_a_real_method` constructs a `Surface` and resolves `getattr(surface,
+tool.service)` for every row, so the six registry rows are red until `CatalogueService` exists
+*and* is wired on — which is 3D.2. The *substantive* rule §3.10 states is untouched (the
+registry row must exist before anything emits `ContainerNotCatalogued`, and
+`test_a_refusal_naming_a_call_survives_the_door` asserts it); it is only the claim that the
+ordering is achievable as separate green landings that is false. The real dependency order is
+**3A.0+3A.1 → 3A.2 → 3B.0 (models) → 3D.1 → 3B.1–3B.5 → 3C → 3D.2 → 3E**: the models move
+ahead of 3D.1 because its payload parser returns `Comparison`.
+
+### 12.3 Two names the specification chose that the codebase refused
+
+**`UnresolvableRef` does not exist and was not created; the error is `UnresolvedReference`.**
+Change 2 built that name for exactly this refusal, with this docstring. A second spelling of
+it is the disease this whole family of documents is about, and the spec applies the same rule
+twice elsewhere in its own text (3B.4 behaviour 2 reuses `RetireNeedsReason`; 3B.2 behaviour 3
+reuses an existing name "because the codebase already has that name for exactly this").
+
+**`RefNotFound` is `ComponentNotFound`, and this is the sharper one.** 3B.2 behaviour 3 says
+to reuse `RefNotFound` "because the codebase already has that name for exactly this". It has
+it **three times** — `conflicts.py:39`, `findings.py:71`, `validation.py:127` — and §3.2 of
+this very document cites `RefNotFound` in three modules as one of the eleven collisions the
+catalogue exists to refuse. Adding a fourth definition of that name, in the change that builds
+the catalogue, would be the most quotable self-inflicted wound available; importing one of the
+three arbitrarily couples this service to whichever was picked. And the name is not even
+accurate: the refusal covers three conditions — no row at the address, a row in the wrong
+table, a component that is not live — and only the first is "not found". Convention 9 asks the
+error to name the specific thing at fault, and it does.
+
+### 12.4 What driving it end to end caught, and the tests did not
+
+**`retire_catalogue_entry` and `restate_purpose` were unreachable through the surface.** The
+spec's signatures put `container: str | None` in the middle with no default, while the registry
+rows mark it optional — so `dispatch` never bound it and Python raised `TypeError`, which the
+surface reports as a bare `PlanToolError`. Every unit test passed, because a test calls the
+method directly and supplies it. Fixed by moving `container` last with a default, matching
+`catalogue_function`, which the spec already had right. **This is F46's shape again** — a
+defect on the shipped surface that the engine's own tests cannot see — and it was found by
+driving, not by reading.
+
+**A new `Param.kind` needs a JSON-Schema entry in `engine/mcp.py`, and no rule says so.**
+`SCHEMA_OF` is keyed by kind, and `input_schema` reads it with `[]`. Adding `comparisons` to
+`DECODERS` without adding it there raises `KeyError` inside `tools/list` — which kills the
+advertisement for the **whole registry**, not for the one tool that introduced the kind. The
+repo's own `test_schema_and_decoders_cover_the_same_kinds` caught it. Convention 12 covers what
+goes *with a deleted call*; there is no mirror entry for what a new parameter kind owes, and
+this is the second half of the same rule. `test_the_whole_registry_still_advertises_over_mcp`
+pins it.
+
+### 12.5 The design consequences worth carrying to change 5
+
+**Eligibility makes the article `a` a near match, and the rarity weight cannot help at small
+n.** Behaviour 10 weights a shared word by how many *candidates* contain it — and the candidate
+set is what already passed eligibility, so with one candidate the denominator is 1 and `a`
+scores full. This is the specification working as written (§3.7: *"eligibility is untouched"*),
+and §3.5's measurements assume it — 88% of registrations owing an adjudication is the same
+fact. But the measurement that justified the design was taken at **n = 635**, and the table is
+empty until change 5 fills it. Between now and then every registration will be refused over
+articles. Recorded rather than fixed, because fixing it means a stop-word list, which is a
+threshold wearing a wordlist.
+
+**The retirement note is delivered on the *success*, not only on the two refusals 3B.4
+behaviour 5 names.** The behaviour table names `NameTaken` and `EntryNotFound`; both are
+implemented. But the case the design's strongest sentence was written for — *the thing about
+to be written may have been removed on purpose, and the planner may be undoing somebody's
+decision without knowing it* — is re-cataloguing a **freed** name, which is refused by nothing
+and would therefore have said nothing at all. §11.3's own wording asked for "the result" to
+carry it, and the applied behaviour narrowed that to two refusals. `CatalogueResult.note`
+carries it, warning without refusing, for `_vocabulary_note`'s reason: re-introducing a retired
+name is legitimate, and refusing it would have the tool overruling a decision whose grounds it
+cannot see.
+
+**A comparison naming an entry that is not live is refused (`EntryNotFound`), and no behaviour
+said so.** `catalogue_comparisons.matched_id` is `NOT NULL REFERENCES catalogue (id)`, so the
+alternative was an `IntegrityError` naming a column — the same hole 3B.2 behaviour 2 closes for
+a blank `reason`, one column along. It is checked with the other lookups, before the search,
+because it is a mistake in the caller's own argument and the ranking is the expensive step.
+
+**`_find` orders by `id DESC`.** With reintroduction after retirement a name legitimately has
+several rows, and `include_retired=True` must return the *newest* or the name check reports an
+ancient retirement as though it were the current state. The spec says "the one live entry",
+which is true only of the live lookup.
+
+### 12.6 The counts, re-measured
+
+| | specified | **built** |
+|---|---|---|
+| `JUSTIFICATION_ROLES` | 18 | **18** |
+| statements in `CATALOGUE_DDL` | 5 | **5** |
+| planning registry | 57 | **57** |
+| `ADDED` | 16 | **16** |
+| writes / reads among the six | 4 / 2 | **4 / 2** |
+| suite | — | **647**, from 561 |
+
+**Every number this document stated survived the build**, which is the first change of the
+three where that is true — change 1 lost two counts and change 2 lost two more, both times a
+denominator taken over the wrong population. The re-enumeration in §3D.1 and §11.1 is why.
+
+**No contract row is superseded, and that was verified rather than assumed** (3D.1 behaviour
+5). Of the six engine modules this change touches, only `storage.py` owns methods a contract
+cites — `init_plan`, `recover`, `migrate` — and all three signatures and error lists are
+unchanged; `_migration_steps` is private and merely gains a branch. `terms.py`'s six tools are
+all deviations. So the `[[amend-the-frozen-plan]]` procedure does **not** run for change 3,
+and the standing note that it would was an inherited claim, not a measurement.

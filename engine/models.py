@@ -467,3 +467,146 @@ class RollbackReport:
     restored_version: int
     reverted: tuple[RowRef, ...]
 
+
+# --- the catalogue (v3 D10, `spec/v3/builds/03-catalogue.md` §5) ---------------------
+#
+# These five are defined here rather than left to the service, because the register's own §2
+# records what happens otherwise: the v2 plan named `WriteBatch`, `RowSelector`,
+# `TraversalSpec` and `GraphScope` and defined none of them, "so two implementers would have
+# built two incompatible interfaces". A return type's fields are explicitly *not* a
+# convention — they differ per task — so they are a hole in every task that leaves them out.
+
+
+@dataclass(frozen=True, slots=True)
+class CatalogueEntry:
+    """One object, method or function the plan intends to exist.
+
+    `container` is a **name**, never an id, which is the decision that settles three other
+    calls at once. A catalogue entry is addressed the way `terms` is — *by the word you were
+    about to type, never by an ordinal* — so a planner answering an adjudication has the
+    name in front of them because the refusal just printed it, and an entry read out of a
+    search can be passed straight back into `catalogue_function`.
+
+    `owner` is a `task_id` for a function and a `components:n` ref for an object, and which
+    one it is follows from `kind`. An object's owner is a component and not a task because a
+    service class carries the entry points of twenty tasks, so no task owns it — which is
+    the job that earns `component` its un-retirement (v3 D16).
+    """
+
+    id: int
+    name: str
+    container: str | None
+    kind: str
+    visibility: str
+    purpose: str
+    owner: int | RowRef
+    retired_at: str | None = None
+    retire_reason: str | None = None
+
+    @property
+    def is_live(self) -> bool:
+        """Liveness is `retired_at IS NULL` and nothing else.
+
+        `FUNCTION_CATALOGUE.md` §8 made the death *commit* the only field that decides this,
+        which was true of a build-time record and breaks at planning time: there are no
+        commits, so a helper designed at stage 8 and designed away at stage 9 would have no
+        death commit and never would — live forever, offered as a candidate for the rest of
+        the plan, its name locked against reuse. One field still decides it, which is the
+        concern §8 actually had.
+        """
+        return self.retired_at is None
+
+
+@dataclass(frozen=True, slots=True)
+class Candidate:
+    """One live entry the search ranked, and why it ranked.
+
+    `matched` carries the words that did it, because the whole ranking is lexical and a
+    planner asked to adjudicate a candidate needs to see *why*: a candidate that matched on
+    `get` alone is dismissed at a glance, and one that matched on `resolve supersession
+    chain` is not.
+
+    The score is kept in its two parts rather than summed, because the two mean different
+    things — a shared word in the name is a naming collision and a shared word in the
+    purpose is duplication — and because behaviour 5 orders on the name half at equal
+    totals. A single number would make that rule unexpressible.
+    """
+
+    entry: CatalogueEntry
+    name_score: float
+    purpose_score: float
+    matched: tuple[str, ...]
+
+    @property
+    def score(self) -> float:
+        return self.name_score + self.purpose_score
+
+
+@dataclass(frozen=True, slots=True)
+class Comparison:
+    """One judgment about one candidate: what the relationship is, and why.
+
+    `matched` and `container` name the candidate — a name and a container, never an id, for
+    `CatalogueEntry`'s reason. A bare name cannot identify a candidate in a table whose
+    identity is a pair.
+
+    `same` and `contains` are the two verdicts that **refuse the write**, and that is what
+    makes the adjudication load-bearing rather than a box to tick: the cheap way past a
+    required field is to write whatever gets you through the door, and here the two answers
+    a planner reaches for when the match is real are exactly the two that stop them.
+    """
+
+    matched: str
+    relationship: str
+    reason: str
+    container: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class Cluster:
+    """Live entries grouped by shared purpose vocabulary, with the words they share.
+
+    Containers are **reported**, never filtered on. "Cross-container" names where the design
+    expected to find things; as a predicate it would have made the report blind to the 56
+    module-level functions and all 204 objects, which share the empty container — and to
+    `RowService.get_row` beside `RowService.fetch_row`, which is duplication of exactly the
+    kind this table exists to catch.
+
+    The word `Cluster` is reused from `GapCluster` deliberately: one word for one role — a
+    ranked grouping by affinity — applied to a second object. Two roles for one word would
+    be the disease change 2 exists to treat; this is the opposite.
+    """
+
+    shared: tuple[str, ...]
+    members: tuple[CatalogueEntry, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class CatalogueResult:
+    """What a registration returns, including when it deliberately wrote nothing.
+
+    **`entry=None` with `use_instead` set is a deliberate override of convention 1**, which
+    says a named error is raised and never reported as a status field in a success payload.
+    Written here rather than upstream because the register requires an override to be argued
+    in the task that takes it. The reason: on a `same` or `contains` verdict the planner did
+    exactly the right thing, the call did what it exists to do, and a comparison **was**
+    committed — an exception path that also commits a write is a shape nothing else in this
+    engine has. `use_instead` carries the entry itself, so nothing has to be looked up to
+    act on it.
+
+    `note` is where a **retired namesake** surfaces. Retirement frees the name, so writing it
+    again is refused by nothing — and that is exactly the case the design's strongest
+    sentence was written for: a dead function cannot be reused, and offering it as a search
+    candidate would be a confidently wrong answer, but *the thing about to be written may
+    have been removed on purpose, and the planner may be undoing somebody's decision without
+    knowing it.* Delivered nowhere, that argument protects nobody. It rides on the success
+    rather than refusing, for `_vocabulary_note`'s reason: re-introducing a retired name is
+    legitimate, and refusing it would have the tool overruling a decision whose grounds it
+    cannot see.
+    """
+
+    entry: CatalogueEntry | None
+    comparisons: tuple[Comparison, ...]
+    use_instead: CatalogueEntry | None = None
+    note: str | None = None
+

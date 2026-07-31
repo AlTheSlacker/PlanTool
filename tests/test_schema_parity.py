@@ -22,12 +22,13 @@ from engine import schema
 from engine.storage import Storage
 from tests.fixtures.schema_v7 import DDL_V7
 from tests.fixtures.schema_v8 import DDL_V8
+from tests.fixtures.schema_v9 import DDL_V9
 
 #: Each retained DDL, with the version it created and the version it migrates to. One entry
 #: joins this per schema change; the parametrisation is what stops the check from silently
-#: covering one hop forever while the schema moves on. The 7 entry now crosses *two* hops,
+#: covering one hop forever while the schema moves on. The 7 entry now crosses *three* hops,
 #: which is what `Storage._chained_steps` exists for.
-RETAINED = {7: DDL_V7, 8: DDL_V8}
+RETAINED = {7: DDL_V7, 8: DDL_V8, 9: DDL_V9}
 
 
 def _structure(conn: sqlite3.Connection) -> dict:
@@ -139,6 +140,20 @@ def test_the_retained_ddl_is_the_version_it_claims(tmp_path):
     assert "stage" in rows
     assert not {"grounds", "alternatives", "supersede_reason"} & rows
     assert "rationale" in findings and "reason" not in findings
+
+    ours = tmp_path / "v9"
+    ours.mkdir()
+    _built_at(ours / "plan.db", DDL_V9, 9)
+    conn = sqlite3.connect(ours / "plan.db")
+    tables = {
+        r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+    }
+    rows = {r[1] for r in conn.execute("PRAGMA table_info(plan_rows)")}
+    conn.close()
+    # Schema 9 is after change 2 and before change 3: the decision context has landed and
+    # the catalogue has not.
+    assert {"grounds", "alternatives", "supersede_reason"} <= rows
+    assert not {"catalogue", "catalogue_comparisons"} & tables
 
 
 def test_the_8_to_9_step_backfills_nothing_and_renames_in_place(tmp_path):

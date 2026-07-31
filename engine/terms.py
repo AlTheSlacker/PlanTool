@@ -56,6 +56,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from engine.catalogue import tokens as catalogue_tokens
 from engine.clock import now
 from engine.errors import PlanToolError
 from engine.idempotency import key
@@ -81,9 +82,10 @@ BAN_SCOPES = (PROSE, IDENTIFIER, BOTH)
 #: otherwise warn on every citation of one, and a meter that cries wolf stops being read.
 ADDRESS = re.compile(r"\b[a-z][a-z0-9_]*:[1-9][0-9]*\b")
 
-#: A word, in prose or inside an identifier. `_` and case boundaries split identifiers, so
-#: `planRowId` and `plan_row_id` tokenise the same way.
-WORD = re.compile(r"[A-Z]?[a-z]+|[A-Z]+(?![a-z])|[0-9]+")
+#: `WORD` was here and is now `engine.catalogue.WORD`, with the tokeniser that reads it.
+#: v3 change 3 moved both: the catalogue is the second thing to need word-splitting, and one
+#: regex in two modules is the duplication this codebase keeps writing down. Nothing here
+#: reads it any more — `_word` is strip-and-lowercase and needs no regex.
 
 
 class TermNotFound(PlanToolError):
@@ -522,22 +524,23 @@ class TermService:
 
     @staticmethod
     def _tokens(text: str, scope: str) -> set[str]:
-        """The words in one string, lowercased, with plurals folded onto the singular.
+        """The words in one string, scoped, delegating the word-splitting itself.
 
-        Addresses come out first: `components:15` cites a row, it does not use the word.
-        Plural folding is deliberately the crudest possible rule — a trailing `s` — because
-        anything cleverer starts guessing, and a guess here spends the owner's attention on
-        a word nobody wrote.
+        Addresses come out first, and that half stays here because it is the glossary's own
+        concern: `components:15` cites a row, it does not use the word, and a plan whose row
+        tables are named for a retired word would otherwise warn on every citation of one.
+
+        **The splitting itself moved to `engine/catalogue.py` in v3 change 3**, which is the
+        second thing to need it. The catalogue ranks names and purpose lines against each
+        other, and the moment a second module tokenises a word one copy is canonical and the
+        other is a copy — in the change whose own subject is duplication. `GapService.
+        lineage_root` set the shape: the second application is the reason a primitive lives
+        in one place rather than on either caller. v3 change 4 deletes `violations()` and
+        this delegation with it, leaving the catalogue the only owner.
         """
         if scope == PROSE:
             text = ADDRESS.sub(" ", text)
-        words = set()
-        for token in WORD.findall(text):
-            token = token.lower()
-            words.add(token)
-            if token.endswith("s"):
-                words.add(token[:-1])
-        return words
+        return catalogue_tokens(text)
 
     # --- the export (M6_PLAN.md §3.3, delivery point 1) ---
 
