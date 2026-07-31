@@ -70,29 +70,29 @@ class RowNotFound(PlanToolError):
 
 
 class NotAssumed(PlanToolError):
-    """contracts:11 — row is not an open assumption; no write occurs."""
+    """contracts:70 — row is not an open assumption; no write occurs."""
 
 
 class UpgradeFailed(PlanToolError):
-    """contracts:11 — upgrade could not be applied; never a silent duplicate row."""
+    """contracts:70 — upgrade could not be applied; never a silent duplicate row."""
 
 
 class AlreadySuperseded(PlanToolError):
-    """contracts:12 — lineage is write-once; supersede the live replacement instead."""
+    """contracts:71 — lineage is write-once; supersede the live replacement instead."""
 
 
 class SpikeRequired(PlanToolError):
-    """contracts:9 / contracts:12 (D16) — a world-assumption is filed with the spike that
+    """contracts:69 / contracts:71 (D16) — a world-assumption is filed with the spike that
     will attack it, atomically. Raised when a replacement mints a world-assumption with no
     spike, or attaches a spike to a row that is not one; nothing is written."""
 
 
 class AlreadyRetired(PlanToolError):
-    """contracts:13 — refused so the audit trail records exactly one retirement."""
+    """contracts:72 — refused so the audit trail records exactly one retirement."""
 
 
 class SupersedeNeedsReason(PlanToolError):
-    """contracts:12 — superseding is an act, and an act records why it was performed.
+    """contracts:71 — superseding is an act, and an act records why it was performed.
 
     Added by v3 change 2. Retiring a row already cost a reason and superseding one cost
     nothing, which meant the two exits from "this row is no longer live" were treated
@@ -103,7 +103,7 @@ class SupersedeNeedsReason(PlanToolError):
 
 
 class RetireNeedsReason(PlanToolError):
-    """contracts:13 / contracts:11 — a retirement records why, and blank is not why.
+    """contracts:72 / contracts:70 — a retirement records why, and blank is not why.
 
     Added by v3 change 2, which settled what a justification is and found the two sites
     that were not checking: `retire_row` accepted a blank reason outright, and
@@ -121,7 +121,7 @@ class RowNotLive(PlanToolError):
 
 
 class GroundsAlreadyRecorded(PlanToolError):
-    """contracts:9 (v3 D11) — decision context is write-once per field.
+    """contracts:69 (v3 D11) — decision context is write-once per field.
 
     Filling a field that was never recorded is not editing the row's claim; *re-writing*
     one is revising history quietly, which is the one thing this store permits nowhere
@@ -154,7 +154,7 @@ class UnresolvedReference(PlanToolError):
 
 
 class ConflictRequired(PlanToolError):
-    """contracts:9 / requirements:27 — a submitted row contradicts a stored row.
+    """contracts:69 / requirements:27 — a submitted row contradicts a stored row.
 
     Nothing is filed until a conflict is raised and presented.
     """

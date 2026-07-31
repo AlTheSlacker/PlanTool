@@ -29,7 +29,6 @@ from engine.methodology import load
 from engine.storage import Storage
 from engine.surface import (
     ADDED,
-    AMENDED,
     DEFERRED,
     DEVIATION,
     EXCLUDED,
@@ -44,6 +43,20 @@ PLAN = Path(__file__).resolve().parents[1] / "spec" / "v2" / "plan.md"
 ENGINE = Path(__file__).resolve().parents[1] / "engine"
 
 CONTRACT_LINE = re.compile(r"^- \*\*(\w+)\*\* \((?:function|api|event)\):.*?\(`(contracts:\d+)`")
+
+
+def contracts_declared_live() -> dict[str, str]:
+    """Every contract `plan.md` declares, as {contract: call}, whoever consumes it.
+
+    `plan.md` renders active rows only, so this is the plan's live contracts — a
+    superseded address is absent. Distinct from `contracts_for_the_surface()` below,
+    which narrows to the ones the plan sends to `components:15`.
+    """
+    return {
+        match.group(2): match.group(1)
+        for line in PLAN.read_text(encoding="utf-8").splitlines()
+        if (match := CONTRACT_LINE.match(line))
+    }
 
 
 def contracts_for_the_surface() -> dict[str, str]:
@@ -811,16 +824,31 @@ class TestTheDecisionContext:
         assert not [g for g in after.payload["gaps"]
                     if g["rule_key"] == "entity_without_grounds"]
 
-    def test_every_amended_contract_is_real_and_says_what_changed(self):
-        """`AMENDED` records what a contract's frozen text no longer says about the call
-        that implements it. An entry naming a contract the plan does not declare, or a call
-        no tool exposes, is a note nobody can act on."""
-        declared = contracts_for_the_surface()
-        for absence in AMENDED:
-            assert absence.contract in declared, absence.contract
-            # The frozen plan's own name for the contract, so an entry cannot drift onto
-            # the wrong row while still naming a call that exists.
-            assert declared[absence.contract] == absence.call, absence.contract
-            assert absence.call in REGISTRY, absence.call
-            assert absence.reason.strip(), absence.call
-        assert len(AMENDED) == 5
+    def test_no_registry_entry_cites_a_superseded_contract(self):
+        """The successor of an amended contract, not the row it replaced.
+
+        This replaces `test_every_amended_contract_is_real_and_says_what_changed`, which
+        guarded the `AMENDED` list that v3 change 2 used to record five stale contracts.
+        Al ruled that a contract a change has altered is superseded in the frozen plan
+        rather than annotated at the code, so the five became `contracts:69`-`73` and the
+        list went with them.
+
+        `plan.md` renders active rows only, so a superseded address is simply absent from
+        it, and a registry entry still naming one is caught by name here — as well as by
+        the unaccounted successor in `test_every_contract_is_exposed_excluded_or_deferred`.
+
+        The denominator is every contract the plan declares, NOT
+        `contracts_for_the_surface()`: that one is the subset consumed by `components:15`,
+        and four contracts this surface exposes are consumed by other components too.
+        Measured against the subset, this test reported four false positives.
+        """
+        live = set(contracts_declared_live())
+        stale = {
+            tool.contract: name
+            for name, tool in REGISTRY.items()
+            if tool.contract != DEVIATION and tool.contract not in live
+        }
+        assert not stale, (
+            f"these registry entries cite a contract the frozen plan no longer declares "
+            f"live — supersession moves the address, and the citation moves with it: {stale}"
+        )

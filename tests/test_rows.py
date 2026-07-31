@@ -208,7 +208,7 @@ def test_neighbourhood_selector_walks_links(rows):
 
 
 def test_resolve_assumption_upgrades_in_place(rows):
-    """contracts:11 / decisions:28(a) — the SAME row upgrades; no duplicate appears."""
+    """contracts:70 / decisions:28(a) — the SAME row upgrades; no duplicate appears."""
     rows.submit_rows(
         [RowSubmission("decisions", {"text": "assumed thing"},
                        provenance=Provenance.ASSUMED, assumption_kind="intent", name="assumed thing")],

@@ -360,7 +360,7 @@ CREATE TABLE IF NOT EXISTS claim_tracks (
 -- its *meaning* is a stage ordinal, and a migration to improve a comment is not a trade
 -- this change makes. It is NOT NULL and supplied at filing: an item with no gate to answer to
 -- is one that only finalization catches, which is the pile-up D15 exists to break up. The
--- two exits are `resolve_finding` (contracts:34) and a *recorded* reallocation to a later
+-- two exits are `resolve_finding` (contracts:73) and a *recorded* reallocation to a later
 -- gate — the deferral costs a reason the owner reads (finding_reallocations), which is what
 -- keeps it from being silent procrastination. Gaps are deliberately outside this scheme:
 -- they are closable by the agent now, so a deferred gap is procrastination with no cost.

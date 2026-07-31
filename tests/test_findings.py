@@ -166,7 +166,7 @@ def test_integrity_finding_files_without_readable_rows(store, findings):
     assert finding.severity == "blocking"
 
 
-# --- contracts:34 resolve_finding ---
+# --- contracts:73 resolve_finding ---
 
 
 def test_addressed_is_terminal(rows, findings):

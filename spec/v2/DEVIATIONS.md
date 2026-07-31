@@ -1,10 +1,24 @@
 # Deviations from the frozen plan
 
-The plan at `plan.md` is FROZEN (version 2, 2026-07-17) and cannot be amended. Every
-place where the v2 build departs from it is recorded here, so plan and build never
-silently disagree.
+The plan at `plan.md` is FROZEN (version 2, 2026-07-17). Every place where the v2 build
+departs from it is recorded here, so plan and build never silently disagree.
 
 Format: what the plan says · what v2 does · why.
+
+**Corrected 2026-07-31 — this header used to say the frozen plan "cannot be amended".**
+It can, and now has been. When a v3 change alters a contracted call's signature or error
+list, the contract row is **superseded** in `plan.db` through `archive/v1`'s own
+`lineage.supersede_row`: the plan is unfrozen deliberately (`state` goes to `open`, the
+only other legal value), the supersessions are made, it is re-frozen, and both exports are
+regenerated. `version` is not bumped — that is what `freeze_plan()` does to end a planning
+round, and a correction of the record is not a new round.
+
+v3 change 2 superseded five, so **the addresses below have moved**: `contracts:9` → `:69`
+(`submit_rows`), `:11` → `:70` (`resolve_assumption`), `:12` → `:71` (`supersede_row`),
+`:13` → `:72` (`retire_row`), `:34` → `:73` (`resolve_finding`). The citations in this
+document keep the **original** addresses and are not rewritten: a deviation records what
+the plan said at the moment the build departed from it, and moving those citations would
+falsify the very thing the entry exists to preserve.
 
 ---
 

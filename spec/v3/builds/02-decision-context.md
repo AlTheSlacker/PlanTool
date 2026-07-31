@@ -678,7 +678,7 @@ Depends on 2C. `surface.py`, `render.py`.
 | 2 | `supersede_row` gains a required `reason` parameter, before `idempotency_key`. |
 | 3 | `record_grounds` is added as a `DEVIATION` tool with its reason, and appears in `ADDED`. |
 | 4 | `resolve_finding`'s `rationale` parameter becomes `reason`. |
-| 5 | Five contract rows are superseded: `contracts:9`, `:11`, `:12`, `:13` and `:34`. |
+| 5 | Five contract rows are superseded: `contracts:9`, `:11`, `:12`, `:13` and `:34`. **Discharged 2026-07-31** — they became `contracts:69`, `:70`, `:71`, `:72`, `:73`; see §12. |
 
 **Behaviour 1 names both parsers because the first draft named one.** A `grounds` the `rows` parser
 accepts and the `row` parser drops means a replacement can never carry its argument — and since
@@ -1053,19 +1053,27 @@ one, and it is what is true. **The two spellings of `superseded_by` are a live i
 this change does not fix** — one word for a ref in one table and an id in another — and it
 belongs to whichever change touches briefs.
 
-**Not done, and it is the owner's call: the five contract rows are not superseded.** 2D.1
-behaviour 5 asks for `contracts:9`, `:11`, `:12`, `:13` and `:34` to be superseded in the
-frozen plan, on the argument that a contract whose signature or error list is stale lies to
-its reader. The argument is right and the act is bigger than the specification reckoned:
-superseding mints new ordinals, so **~50 live citations of those five addresses** across the
-engine, the tests and the v3 documents would point at frozen history; `spec/v2/plan.md` is a
-rendered export and would have to be regenerated; and `tests/test_surface.py`'s denominator is
-parsed out of that file. **`spec/v2/plan.db` and `plan.md` have not been touched since M0** —
-through seven build packages, four dogfood rounds and v3 change 1 — and every divergence since
-has been recorded at the code instead (`EXCLUDED`, `ADDED`, the frozen spellings in
-`errors.py`). `surface.AMENDED` records all five with what each contract's frozen text no
-longer says, and a test keeps each entry pointing at a contract the plan declares and a call
-the surface exposes. **It is the work order if the owner wants the supersession done.**
+**DONE 2026-07-31, in its own pull request after this change merged — 2D.1 behaviour 5 is
+discharged.** `contracts:9`, `:11`, `:12`, `:13` and `:34` are superseded in the frozen plan
+by `contracts:69`, `:70`, `:71`, `:72` and `:73`. Al ruled it when change 2 merged: *"Of
+course I want it done properly. I always want it done properly."*
+
+The paragraph that stood here reported the act as not done and the owner's to call, and
+listed the costs as the argument for parking it. The costs were real and were simply paid:
+the supersessions went through `archive/v1`'s own `lineage.supersede_row` (which repoints
+child rows and rewrites intra-plan links, where hand-written SQL would not), `plan.md` and
+`plan.yaml` were regenerated, and the citations were swept one at a time — a citation meaning
+*the contract that governs this code* moved to the successor, a citation meaning *what the
+plan said when this was built* stayed and its document now says so in a header.
+`surface.AMENDED` is gone with them, and deliberately not left empty: see the comment
+standing where it was.
+
+**Recording the reckoning that was wrong, because the estimate is the reusable part.** The
+sweep was ~70 citations, not ~50, and it was cheaper than the count suggests — 27 were
+governing citations that moved mechanically, and the rest were historical records in three
+documents that took one header note each. The load-bearing fact is that `plan.md`
+**regenerates byte-identically** (probed: 175,982 chars, no render timestamp), so the diff is
+exactly the amendment and nothing else. That is what made the job safe rather than large.
 
 **One thing v1 already had, worth recording because it is evidence for the design rather than
 against it.** Every table in the frozen plan's own v1-shaped database carries a

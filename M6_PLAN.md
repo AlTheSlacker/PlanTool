@@ -7,6 +7,12 @@ outstanding-problem table, which governs every gate), then this.
 Status: **not started.** M6a (`engine/clock.py`, timestamp vocabulary) is a precursor branch
 and is not M6 itself.
 
+**Three contract addresses below moved on 2026-07-31.** v3 change 2 altered the calls they
+specify, so those rows were superseded in the frozen plan: `contracts:9` → `:69`
+(`submit_rows`), `:11` → `:70` (`resolve_assumption`), `:12` → `:71` (`supersede_row`). The
+citations below keep the **original** addresses — this document is the design record of what
+M6 was planned against. The procedure is in `spec/v2/DEVIATIONS.md`'s header.
+
 ---
 
 ## 1. What M6 builds
