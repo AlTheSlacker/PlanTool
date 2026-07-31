@@ -945,5 +945,65 @@ alternative is holding the level alive across two changes, which means writing t
 twice.
 
 The **eleven-stage interview** is not built here either. Revision 4 is the existing eight stages
-with the vocabulary corrected and the dead calls removed; the eleven-stage rewrite is revision 5,
-and it stays where `PLAN.md` item 10 put it, at the end, for the reason given there.
+with the vocabulary corrected and the dead calls removed; the eleven-stage rewrite is the last
+item of `PLAN.md` §4, which is **revision 7** by the time changes 2 and 4 have each minted one.
+
+## 12. What the build found, 2026-07-31
+
+Built as specified, in the landing order §3.5 gives, six commits and one pull request. **533
+tests green at the end and green nowhere in the middle**, which is what §3.5 said to expect.
+Nine things the specification did not say, each recorded with what it cost.
+
+**Two schema objects the behaviour tables missed, found by enumerating rather than reading.**
+`briefs.subtask_id` (with `idx_briefs_subtask`) and `workspace_fingerprints.subtask_id` carry
+the dying word and appear in none of 1A.1's twelve behaviours. Both are renamed, because 1C
+and 1D rename the parameters that address them and a parameter renamed against a column that
+was not is the F20/F24 join that matches nothing. **The method that found them is worth
+keeping: parse every `CREATE TABLE`/`CREATE INDEX` out of `schema.py` and grep the *names*,
+rather than reading the list and believing it.** §4.5's index rule was written from exactly
+that lesson and the column list was not.
+
+**A third, one level down: the generated behaviour key.** `enumerate_from_row` keyed the
+second and later entries of a bare string list `o1`, `o2` — an `o` for the retired word. It
+now generates `b1`, `b2`, and the migration moves the stored ones with `key GLOB 'o[0-9]*'`.
+Leaving them would have had the store and the code disagreeing about the key of the same
+behaviour, which is what `UNIQUE (contract_ref, key)` exists to make impossible.
+
+**`contracts:40` needed an `EXCLUDED` entry and no packet said so.** 1C.3 deletes
+`split_subtask`; the surface's coverage test subtracts `EXCLUDED` from the 39 contracts the
+frozen plan sends to the surface, so deleting the tool without the entry reports a shortfall
+with no explanation. Added with its reason, and `test_thirty_six_are_required` becomes
+thirty-five.
+
+**rev3 had to become unloadable, which 1E did not say.** 1D.1 makes the loader read `stages:`,
+so rev3's `packages:` manifest raises a bare `KeyError` — the exact shape F43 ruled on for
+rev2. `EARLIEST_LOADABLE_REVISION` is 4 and the refusal is typed, so "retained as frozen
+provenance and deliberately not loaded" is what a caller is told.
+
+**A check pinned to a directory name, found the same way F37 was.**
+`test_surface.py::calls_named_in_rev3` scanned `engine/methodology/rev3` by name. After 1E it
+would have gone on passing green against a frozen archive while the *served* scripts named
+calls the registry cannot resolve — a check measuring something narrower than its name, which
+is the failure this repository has recorded three times. It now scans `load().root`.
+
+**F39's regression test tested a mechanism this change deletes.** It drove
+`declare_package` → `assign_task` → `packaging`. The instance is gone and the class is not, so
+it is replaced by the question F39 actually asks: can a plan authored through this surface be
+finalized through it? The answer was "no" for a month and nothing noticed.
+
+**`SHAPES`'s comment cited two columns that no longer exist** (`package_id`, `subtask_id`) as
+its examples of legitimately per-table `_id` stems. Corrected to `brief_id`/`task_id`. A
+convention illustrated by examples that have been deleted is one nobody can check.
+
+**The parity fixture needs a guard of its own, and 1F.2 did not specify one.** A retained v7
+DDL quietly edited to the current shape makes the parity check pass by comparing schema 8
+against schema 8 — a check that cannot fail. `test_the_retained_ddl_is_the_version_it_claims`
+asserts the fixture still holds `subtasks`, `packages` and `obligations`.
+
+**Found by driving, pre-existing, and not fixed here because it is not this change's:
+`serve_brief` is not on the surface.** The registry exposes `finalize_plan`, `graph_status`,
+`next_task`, `verify_completion` and `report_status`. `verify_completion` requires
+`in_progress`; the only call that reaches `in_progress` is `serve_brief`, which no tool
+exposes. So through the shipped surface a task can be derived and offered and can never be
+verified or completed — F39's shape exactly, in the execution half, and it was true before
+this change. It belongs to change 7's build surface. **Raised rather than silently repaired.**

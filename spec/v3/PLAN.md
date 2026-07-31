@@ -87,8 +87,15 @@ rather than 79, and stage 10's output is a triage surface rather than a gate. It
 both.
 
 1. **Vocabulary and levels.** The rename and the removal, with the schema migration: drop
-   packages, move `tasks` down, rename obligations to behaviours, update the enforcement test's
-   banned list. Large and mechanical, and everything else sits on top of it.
+   packages, move `tasks` down, rename obligations to behaviours. Large and mechanical, and
+   everything else sits on top of it.
+
+   **Built 2026-07-31.** `SCHEMA_VERSION` is 8, the suite is 533 tests, and the surface is
+   **50** tools: 54 less `declare_package`, `assign_task`, `packaging` and `split_subtask`.
+   The enforcement-test rewrite this item used to carry is struck, not deferred — 1A.0
+   deletes the existing check instead, on the owner's ruling that v3 code reads only the
+   `terms` table. Two things the specification had not listed turned up in the build and are
+   recorded in `builds/01-vocabulary-and-levels.md` §12.
 2. **Decision context** (D11). Small, self-contained, and it improves the record of every change
    after it — so it goes early to earn its value across the rest of the work.
 3. **The catalogue** (D10). A dependency of both brief derivation and the cold read, which is why
