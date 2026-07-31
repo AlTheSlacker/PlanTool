@@ -143,6 +143,7 @@ class TestSupersededCitationsResolveToTheirSuccessor:
             "old": "decisions:1",
             "replacement": {"table": "decisions", "name": "ship on SQLite",
                             "content": {"text": "One file, no server."}},
+            "reason": "the server was never affordable",
             "idempotency_key": "sup",
         }))
         assert replaced.ok, replaced.problem
@@ -163,6 +164,7 @@ class TestSupersededCitationsResolveToTheirSuccessor:
                 "old": old,
                 "replacement": {"table": "decisions", "name": name,
                                 "content": {"text": f"version {i}."}},
+                "reason": f"version {i - 1} said it differently",
                 "idempotency_key": f"hop-{i}",
             }))
             assert step.ok, step.problem
@@ -189,6 +191,7 @@ class TestSupersededCitationsResolveToTheirSuccessor:
             "old": "decisions:1",
             "replacement": {"table": "decisions", "name": "ship on SQLite",
                             "content": {"text": "One file."}},
+            "reason": "the server was never affordable",
             "idempotency_key": "sup2",
         }))
         assert replaced.ok, replaced.problem
@@ -218,6 +221,7 @@ class TestSupersededCitationsResolveToTheirSuccessor:
             "old": "decisions:1",
             "replacement": {"table": "decisions", "name": "ship on SQLite",
                             "content": {"text": "One file."}},
+            "reason": "the server was never affordable",
             "idempotency_key": "r-sup",
         })).ok
         assert surface.dispatch(ToolCall("retire_row", {
