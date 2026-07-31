@@ -77,8 +77,10 @@ from engine.gaps import GapEngine
 from engine.gates import GateEngine
 from engine.graph import LinkGraph
 from engine.guidance import Guidance
+from engine.catalogue import RELATIONSHIPS, CatalogueService
 from engine.models import (
     ChangeRequest,
+    Comparison,
     Disposition,
     LinkSpec,
     OwnerDecision,
@@ -381,6 +383,52 @@ def as_owner_decision(field_name: str, value: Any) -> OwnerDecision:
 # parameter of one call, and both are gone with the level (v3 change 1).
 
 
+def as_comparisons(field_name: str, value: Any) -> tuple[Comparison, ...]:
+    """The judgments a registration carries about the near matches it was shown.
+
+    **A comparison names its candidate by name and container, never by an ordinal**, which
+    is the catalogue's identity and also what a planner has in hand: the refusal that sent
+    them here printed the names. A bare name cannot identify a candidate in a table whose
+    identity is a pair, and this parser is where that would first go wrong.
+
+    An unknown relationship is rejected by name and the five are listed, because the five
+    are not guessable and a misspelt one does not merely fail downstream — it takes the
+    branch that writes the entry the planner had just said not to write.
+    """
+    if not isinstance(value, list):
+        raise _fail(field_name, "a list of comparisons", value)
+    out = []
+    for i, item in enumerate(value):
+        where = f"{field_name}[{i}]"
+        got = as_dict(where, item)
+        unknown = set(got) - {"matched", "container", "relationship", "reason"}
+        if unknown:
+            raise _fail(
+                where, f"a comparison; it has no field {sorted(unknown)[0]!r}", item
+            )
+        for required in ("matched", "relationship", "reason"):
+            if not got.get(required):
+                raise _fail(where, f"a comparison with a {required}", item)
+        relationship = as_str(f"{where}.relationship", got["relationship"])
+        if relationship not in RELATIONSHIPS:
+            raise _fail(
+                f"{where}.relationship",
+                "one of " + "; ".join(f"{k} — {v}" for k, v in RELATIONSHIPS.items()),
+                relationship,
+            )
+        out.append(Comparison(
+            matched=as_str(f"{where}.matched", got["matched"]),
+            relationship=relationship,
+            reason=as_str(f"{where}.reason", got["reason"]),
+            container=(
+                as_str(f"{where}.container", got["container"])
+                if got.get("container")
+                else None
+            ),
+        ))
+    return tuple(out)
+
+
 DECODERS: dict[str, Callable[[str, Any], Any]] = {
     "str": as_str,
     "int": as_int,
@@ -396,6 +444,7 @@ DECODERS: dict[str, Callable[[str, Any], Any]] = {
     "evidence": as_text_map,
     "change_request": as_change_request,
     "owner_decision": as_owner_decision,
+    "comparisons": as_comparisons,
 }
 
 
@@ -738,6 +787,95 @@ REGISTRY: dict[str, Tool] = {
            Param("confirm", "bool", required=False,
                  note="true to actually rewind; omit to preview what a rewind reverts"),
            writes=True),
+        # --- catalogue-service (v3 D10) ---
+        #
+        # No contract row describes any of this: the frozen plan never anticipated a
+        # catalogue, so it cannot have anticipated the calls. That is exactly what
+        # DEVIATION means, and each carries its written reason in `ADDED` below. No
+        # `Absence` entry is filed either — an absence records a call that *exists* and is
+        # deliberately not exposed, and none of these was ever built before.
+        #
+        # Three of these take a parameter whose whole difficulty is knowing what to put in
+        # it — `visibility`, `container` and `comparisons` — and `Param.note` is, in this
+        # module's own words, the whole of the tool's documented interface. A caller who
+        # cannot tell whether `container` wants a name or a ref will pass the wrong one and
+        # read `ContainerNotCatalogued` as a bug in the tool.
+        _t("catalogue_object", "catalogue", "catalogue_object", DEVIATION,
+           "Record an object the plan intends to exist, owned by a component. The search "
+           "runs inside this call, and the top of the ranking must be judged first.",
+           Param("name", "str", note="the class or type name, as it will be written"),
+           Param("purpose", "str",
+                 note="what concept this owns: verb, object, qualifier. It carries the "
+                      "whole of the search, so a vague one is an entry nothing will match"),
+           Param("visibility", "str",
+                 note="public or private — whether anything outside this component may "
+                      "name it"),
+           Param("component_ref", "ref",
+                 note="the component that owns it, as `components:n`. An object's owner is "
+                      "a component and never a task: a service class carries the entry "
+                      "points of twenty tasks"),
+           Param("idempotency_key", "str",
+                 note="replaying this key returns the first result"),
+           Param("comparisons", "comparisons", required=False,
+                 note="your judgment on each near match the search showed you, as "
+                      "{matched, container, relationship, reason}. The candidate is named "
+                      "by name and container, exactly as the refusal printed it. "
+                      "`same` and `contains` mean use what exists, and write no entry"),
+           writes=True),
+        _t("catalogue_function", "catalogue", "catalogue_function", DEVIATION,
+           "Record a function or method the plan intends to exist, owned by a task. The "
+           "search runs inside this call, and the top of the ranking must be judged first.",
+           Param("name", "str", note="the function name, as it will be written"),
+           Param("purpose", "str",
+                 note="what concept this owns: verb, object, qualifier. It carries the "
+                      "whole of the search"),
+           Param("visibility", "str",
+                 note="public or private. A task has exactly one public entry point — the "
+                      "only thing another task's pseudocode may call"),
+           Param("task_id", "int", note="the task this function is the work of"),
+           Param("idempotency_key", "str",
+                 note="replaying this key returns the first result"),
+           Param("container", "str", required=False,
+                 note="the *name* of the object holding it — not a ref, and not a file. "
+                      "Omit for a module-level function; a module is a location, and "
+                      "location is never identity here"),
+           Param("comparisons", "comparisons", required=False,
+                 note="your judgment on each near match the search showed you, as "
+                      "{matched, container, relationship, reason}"),
+           writes=True),
+        _t("retire_catalogue_entry", "catalogue", "retire_catalogue_entry", DEVIATION,
+           "Withdraw an entry the design no longer calls for, with the reason on the "
+           "record. The name becomes free again; retirement is never undone.",
+           Param("name", "str", note="the entry to retire"),
+           Param("container", "str", required=False,
+                 note="the name of the object holding it; omit for a module-level entry"),
+           Param("reason", "str",
+                 note="why it no longer applies. At planning time a design that changed; "
+                      "at build time an absence discovered"),
+           Param("idempotency_key", "str", note="replaying this key retires it once"),
+           writes=True),
+        _t("restate_purpose", "catalogue", "restate_purpose", DEVIATION,
+           "Reword what an entry says it owns. In place, because a purpose line is an "
+           "index entry rather than an argument, and nothing cites it.",
+           Param("name", "str", note="the entry to reword"),
+           Param("container", "str", required=False,
+                 note="the name of the object holding it; omit for a module-level entry"),
+           Param("purpose", "str", note="the new purpose line: verb, object, qualifier"),
+           Param("idempotency_key", "str",
+                 note="replaying this key returns the first result"),
+           writes=True),
+        _t("search_catalogue", "catalogue", "search_catalogue", DEVIATION,
+           "What is already catalogued near this description or name, ranked, both "
+           "directions at once. No cut-off and no notification: it computes and shows.",
+           Param("query", "str",
+                 note="a name, a purpose line, or both — the words are what is matched, "
+                      "against every entry's own name and purpose"),
+           Param("limit", "int", required=False,
+                 note="how many to show; a page size, not a similarity cut-off")),
+        _t("catalogue_clusters", "catalogue", "catalogue_clusters", DEVIATION,
+           "Live entries grouped by the purpose vocabulary they share, most shared first. "
+           "The cross-container report: containers are shown, never filtered on.",
+           Param("limit", "int", required=False, note="how many clusters to show")),
     )
 }
 
@@ -819,6 +957,31 @@ ADDED: tuple[Absence, ...] = (
             "anticipated the call; without one, the only way to give an existing row its "
             "grounds is a full replacement submission and a supersede reason for an "
             "abandonment that never happened (v3 D11)"),
+    Absence(DEVIATION, "catalogue_object",
+            "the frozen plan never anticipated a catalogue, so no contract asks for one; "
+            "and objects are the half that catches things — measured over v2's own engine "
+            "the identity collides eleven times and every collision is an object, against "
+            "zero among the 431 functions (v3 D10)"),
+    Absence(DEVIATION, "catalogue_function",
+            "D10's functions and methods; the entry a task's public one *is* the task, so "
+            "without this call nothing records what the plan intends to exist and "
+            "duplication is caught in the tree instead of in the plan (v3 D10)"),
+    Absence(DEVIATION, "retire_catalogue_entry",
+            "a design that changes leaves entries behind, and an entry that cannot die is "
+            "offered as a candidate for the rest of the plan while locking its own name "
+            "against reuse (v3 D10)"),
+    Absence(DEVIATION, "restate_purpose",
+            "the purpose line carries the whole of the search, so a wrong one is a search "
+            "that fails silently; without this the only repair is a retirement and a "
+            "re-registration, which would poison the churn measurement with typos (v3 D10)"),
+    Absence(DEVIATION, "search_catalogue",
+            "the planner's half of the loop — the tool computes and shows, and a planner "
+            "who cannot look before writing is back to the condition that let three naming "
+            "collisions land in one sitting (v3 D10)"),
+    Absence(DEVIATION, "catalogue_clusters",
+            "the cross-container report: duplication becomes true when nobody is standing "
+            "there, so it is found by a ranked reading rather than by a notification, and "
+            "a threshold would be a judgment written as arithmetic (v3 D10)"),
 )
 
 # There is deliberately no fourth list for "the frozen contract text is stale".
@@ -1004,6 +1167,12 @@ class Surface:
         )
         self.attachments = AttachmentService(storage, self.rows)
         self.behaviours = BehaviourService(storage)
+        # The catalogue takes the row service and neither collaborator is optional (v3
+        # D10): `rows` is what checks that a `component_ref` names a live component and
+        # what resolves the addresses inside a purpose line, and convention 11 makes an
+        # unpassed collaborator skip its guard and proceed — a catalogue missing both would
+        # look identical to a working one.
+        self.catalogue = CatalogueService(storage, self.rows)
         self.tasks = TaskGraphService(
             storage, self.rows, graph=self.graph, findings=self.findings
         )

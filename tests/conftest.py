@@ -1,6 +1,7 @@
 import pytest
 
 from engine.briefs import BriefComposer
+from engine.catalogue import CatalogueService
 from engine.conflicts import ConflictService
 from engine.behaviours import BehaviourService
 from engine.findings import FindingService
@@ -84,6 +85,11 @@ def behaviours(store):
 @pytest.fixture
 def briefs(store, tasks, graph, attachments):
     return BriefComposer(store, tasks, graph=graph, attachments=attachments)
+
+
+@pytest.fixture
+def catalogue(store, rows):
+    return CatalogueService(store, rows)
 
 
 PAPER = """A Study of Widget Settling

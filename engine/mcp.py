@@ -50,6 +50,22 @@ SCHEMA_OF: dict[str, dict[str, Any]] = {
     "evidence": {"type": "object", "additionalProperties": {"type": "string"}},
     "change_request": {"type": "object"},
     "owner_decision": {"type": "object"},
+    # v3 change 3. Advertised with its item shape rather than as a bare array of objects,
+    # because `matched` and `container` together identify the candidate and a client that
+    # sends only the first has named nothing in a table whose identity is a pair.
+    "comparisons": {
+        "type": "array",
+        "items": {
+            "type": "object",
+            "properties": {
+                "matched": {"type": "string"},
+                "container": {"type": "string"},
+                "relationship": {"type": "string"},
+                "reason": {"type": "string"},
+            },
+            "required": ["matched", "relationship", "reason"],
+        },
+    },
 }
 
 

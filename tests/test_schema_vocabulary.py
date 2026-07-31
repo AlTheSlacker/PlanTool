@@ -108,6 +108,13 @@ JUSTIFICATION_ROLES = {
     "finding_reallocations.reason": "why the finding now answers to a later gate",
     "findings.reason": "how the finding was closed — for an accepted risk, the owner's "
                        "acceptance. It was `rationale` until schema 9",
+    "catalogue.retire_reason": "why the catalogue entry was withdrawn — at planning time a "
+                               "design that changed, at build time an absence discovered",
+    "catalogue_comparisons.reason": "why this candidate was judged to stand in that "
+                                    "relationship to the proposal. It names the act of "
+                                    "judging, which is why it is a `reason` and not "
+                                    "`grounds`: the comparison row *is* the act and has no "
+                                    "content of its own to have grounds for",
     # Declared here *because* it is not one, so the next reader who notices it does not
     # have to re-derive the argument. It holds what was found when the claim was tested;
     # that is evidence, and it was the parameter `fence_claim(rationale)` that was misspelt.
@@ -232,10 +239,15 @@ def test_the_declared_justification_set_is_the_whole_of_it():
     ran green while seeing four names where there were twenty-two.
 
     The count is stated so that a fixture asserting a number nobody wrote down cannot
-    cement whichever number a builder guessed. Fifteen justification columns, plus
+    cement whichever number a builder guessed. Seventeen justification columns, plus
     `technical_claims.evidence` declared as the one that is deliberately not one.
+
+    Sixteen until v3 change 3, which adds `catalogue.retire_reason` and
+    `catalogue_comparisons.reason`. Those two are why this register is keyed `table.column`:
+    under bare-column keying `reason` and `retire_reason` were already declared, so change 3
+    would have added nothing to a check that could never have fired on it.
     """
-    assert len(JUSTIFICATION_ROLES) == 16, sorted(JUSTIFICATION_ROLES)
+    assert len(JUSTIFICATION_ROLES) == 18, sorted(JUSTIFICATION_ROLES)
     declared_columns = {key.split(".", 1)[1] for key in JUSTIFICATION_ROLES}
     assert declared_columns == {
         "grounds", "alternatives", "reason", "retire_reason", "supersede_reason",

@@ -72,6 +72,23 @@ it records.** A convention drawn from anywhere else is a proposal, not a record.
 | 12 | A call is being **deleted**. What goes with it? | Its named errors; its registry row, and any payload parser existing only for its parameters; its absence entry if it has one; every model and helper left with no reader; every mention of its name in text the tool emits, because the door refuses a payload naming a call the registry cannot resolve; and its tests. |
 | 13 | A word is being **renamed**. How far does the rename reach? | Every identifier derived from it — parameters, private helpers, dataclass fields, dict keys, constants, idempotency-key literals, module and test-module filenames — plus prose in docstrings and emitted text. A rename that stops at the export surface is not finished. |
 | 14 | Which spelling, and what about plurals? | British. `behaviour`, not `behavior`. A banned word is banned in its plural and possessive forms too. The Python-packaging sense of `package` is exempt by path, recorded once. |
+| 15 | A free-text field will be rendered through the door. When are its refs checked? | **At the write, and then never touched again.** A `table:ordinal` token that resolves to nothing refuses the write, naming the token; thereafter the field is served `door.Verbatim` — as written, with each address resolved *alongside* it, never rewritten inline. Both halves are one decision. |
+| 16 | A text value is about to be stored. Is it trimmed, and what does empty become? | `rows.stored_text()`: trimmed, and a value that strips to empty is stored `NULL`, never `''`. One function rather than a `.strip()` per write, because `''` and `NULL` read as absent to a person and differently to a rule that reads the column raw. |
+
+**Entries 15 and 16 arrived by the §4 rule rather than by anticipation, and each is quoted
+from the code that implements it.** Change 2 reached the ref check for `plan_rows.grounds`
+and `.alternatives` with a probe behind it; change 3 reached the same answer for
+`catalogue.purpose` and `catalogue_comparisons.reason`. That is the third task, which is the
+bar. `stored_text()` was proposed by change 2 as its second occurrence and reached its third
+in change 3, where `name`, `purpose` and a comparison `reason` all needed one answer.
+
+**The `Verbatim` half of 15 is written into the entry deliberately**, because leaving it out
+is how change 3 got it wrong: the draft specified the write-time check correctly and then had
+the renderer rewrite the prose inline, which is the opposite of what the door does. An entry
+stating only the first half invites the second mistake. The evidence for the check is change
+2's probe against realistic justification prose, which found one trap — a URL with a port
+reads as an address — and change 3 promotes its consequence: where change 2 left such a token
+rendering oddly, change 3 *refuses the write* over it, so the refusal has to name the token.
 
 ## 4. How it grows, and the guard on it
 
