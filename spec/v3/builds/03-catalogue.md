@@ -295,6 +295,11 @@ guarantee with no receipt to keep true.
 is refused with the candidates in the refusal text, so the planner reads them and answers. There
 is no path to an entry that did not pass a search, because the tool runs the search.
 
+**Amended 2026-07-31, after the build, by the owner — see §13.** The refusal is addressed to
+the **planning session**, which investigates and answers; the owner is asked only when the
+session has looked and agrees there is a real similarity problem. This closes a hole the
+build's own §12.5 recorded and then wrongly dismissed as transient.
+
 ### 3.6 What a comparison records, and the verdict that refuses the write
 
 A comparison is one judgment about one candidate: what the relationship is, and why.
@@ -1437,9 +1442,11 @@ owes that step, and without it the report is a query nobody runs.
 recorded and the follow-through is the planner's next call. No gap counts them, because the
 denominator is a table nothing populates until change 5.
 
-**Three items change 5 inherits from this change, listed together so they are not rediscovered:**
-the stage-8 script step that reads the report; the prior-verdict field on a search result; and the
-"at least one public entry per task" gap.
+**Four items change 5 inherits from this change, listed together so they are not rediscovered:**
+the stage-8 script step that reads the report; the prior-verdict field on a search result; the
+"at least one public entry per task" gap; and **the stage-8 script step carrying §13's ruling**
+— investigate every near match, answer it, and escalate to the owner only what survives the
+investigation. That last one is a rule in a document until the script says it.
 
 **Two sentences this change owes to earlier ones, because their specifications are wrong without
 them and nothing else will notice:** change 2 must say that `JUSTIFICATION_ROLES` is keyed
@@ -1801,6 +1808,13 @@ empty until change 5 fills it. Between now and then every registration will be r
 articles. Recorded rather than fixed, because fixing it means a stop-word list, which is a
 threshold wearing a wordlist.
 
+> **This paragraph reached the wrong conclusion and §13 is the correction.** It treated the
+> empty table as a transient state that cures itself as the catalogue fills. It does not:
+> **every plan starts with an empty catalogue**, so this is the first hour of every project
+> rather than a corner case, and the tool's first act on each new plan would be to raise fake
+> duplicates. The measurement and the mechanics above are right; "recorded rather than fixed"
+> was not.
+
 **The retirement note is delivered on the *success*, not only on the two refusals 3B.4
 behaviour 5 names.** The behaviour table names `NameTaken` and `EntryNotFound`; both are
 implemented. But the case the design's strongest sentence was written for — *the thing about
@@ -1844,3 +1858,89 @@ cites — `init_plan`, `recover`, `migrate` — and all three signatures and err
 unchanged; `_migration_steps` is private and merely gains a branch. `terms.py`'s six tools are
 all deviations. So the `[[amend-the-frozen-plan]]` procedure does **not** run for change 3,
 and the standing note that it would was an inherited claim, not a measurement.
+
+## 13. Who adjudicates a near match — the owner's ruling, 2026-07-31
+
+**Settled after the build, on reading §12.5.** In his words:
+
+> That is not sufficient, it means as every project starts, you are going to bug the user with
+> fake duplicates. We should be saying that a word match provokes an investigation by you to
+> check it is ok and only if you also agree there is a similarity problem do you ask the user.
+> I know this involves you making a judgement, but that is the best option here.
+
+### 13.1 What was wrong with §12.5
+
+§12.5 measured the small-`n` behaviour correctly and then drew the wrong conclusion from it.
+It called the empty-catalogue regime a transient artefact that cures itself as entries
+accumulate — true of *one* catalogue over its lifetime, and irrelevant, because **every plan
+starts with an empty one.** The regime is therefore not a corner case a project passes
+through unnoticed; it is the on-ramp of every project, and the tool's first visible act on a
+new plan would be to refuse a registration over the word `a`. D7's cry-wolf finding is the
+standing evidence for what that costs: a meter that fires on nonsense stops being read, and
+then it is not there for the case it was built for.
+
+The absolute volume is small — three entries admit at most three candidates — so this is a
+**credibility** problem rather than a throughput one, which is why the answer is about who
+sees it rather than about making the ranking cleverer.
+
+### 13.2 The ruling
+
+**The refusal is addressed to the planning session, not to the owner.** A word match obliges
+the session to *go and look* at the candidate. Having looked, it answers — and `unrelated`
+with a one-line reason is the expected answer to a spurious match, not a failure. **The owner
+is asked only when the session has looked and agrees there is a real duplicate or a real
+naming collision.**
+
+What this asks for is that somebody looked, not that somebody argued. That distinction is
+what keeps the obligation affordable, and it is the same one §3.5 drew when it cut 2,475
+written dismissals down to 561.
+
+### 13.3 Why this does not put judgment in the tool
+
+`decisions:12` says the tool records judgment and never exercises it, and holds no model. That
+is untouched, and the distinction is the whole of this section: **the tool computes the
+ranking and refuses the write, and forms no opinion about what similarity is worth acting on.
+The session judges.** The session has always been the adjudicator here — it is the caller
+`catalogue_object` was written for, and it is what already writes every gap dismissal, every
+waiver and every other judgment v3 records. Nothing moved into the engine.
+
+What changed is only that the session's judgment is **named as the filter in front of the
+owner**, where before the specification was silent and the refusal read as though it were
+addressed to whoever was standing there.
+
+**A cold session reading `decisions:12` may think this contradicts it and try to reverse it.
+It does not.** Reversing it means the tool asking the owner about `a`.
+
+### 13.4 The guard, because a filter nobody checks is not a filter
+
+The obvious objection is that a session permitted to dismiss a match will dismiss all of them
+— which is exactly the failure §3.5 exists to prevent, and *"a rule that merely says check for
+duplicates is an intention"*.
+
+Three things hold against it, and none is trust:
+
+- **The refusal still fires.** The mechanism is unchanged: no entry reaches the table without
+  the search having run and the top of the ranking having been answered. What the session may
+  decide is *what the answer is*, never whether to answer.
+- **Every verdict is recorded with its reason**, and the owner can read the lot. §3.6 already
+  set this standard: *"the remaining dishonesty — answering `unrelated` about something that
+  is not — is a lie in a record the owner can read"*, which is what `dismiss_gap` and the
+  waiver log already rest on. The session is not trusted; it is audited.
+- **The two verdicts that matter still refuse the write.** A session that judges a match real
+  cannot proceed by saying so.
+
+### 13.5 What was built for it
+
+No schema change and no new call. The refusal text now says plainly that a shared word is not
+a duplicate, that the search matches on any word in common including `a` and `the`, and that
+`unrelated` with a one-line reason is the right answer to a spurious match — and it lists
+**the words that actually matched** against each candidate the session must answer, which is
+what makes a spurious one disposable at a glance (`matched on: a` versus `matched on:
+supersession, lineage`). Both `comparisons` parameter notes say the same, because `Param.note`
+is the whole of a tool's documented interface. The module docstring carries §13.1 to §13.4.
+
+**Change 5 owes the other half.** The stage-8 script is what tells a session how to run the
+catalogue round, and it must carry this ruling: investigate every match, answer it, escalate
+only what survives the investigation. Written in a document and not into the script it would
+be a rule without a mechanism, which is the failure this project keeps re-learning. §9's list
+of what change 5 inherits now names it.
