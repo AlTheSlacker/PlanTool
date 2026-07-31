@@ -676,9 +676,19 @@ class Storage:
           feed existed has no change history, the table starts empty, and a watching GUI
           cold-loads the current state rather than being handed a backfilled past.
 
+          **7 -> 8** is v3 change 1, and it is the first step that *removes* rather than adds:
+          the build grouping and the sub-task level go, `obligation` becomes `behaviour`, and
+          the planning-sense `package` becomes `stage`. Where the old store holds something
+          the new shape cannot express, it is refused rather than resolved — see
+          `_guard_7_to_8`. Only adjacent pairs are handled here, so a store at 7 reaching 11
+          is migrated one step at a time by `migrate`.
+
         Anything else is an error and never a silent no-op (decisions:45) — including a
         downgrade, which would have to drop rows to succeed.
         """
+        if (current, target) == (7, 8):
+            self._guard_7_to_8()
+            return self._steps_7_to_8()
         if (current, target) == (3, 4):
             return schema.statements(schema.TERMS_DDL)
         if (current, target) == (4, 5):
@@ -698,6 +708,188 @@ class Storage:
         raise ValueError(
             f"no migration path from schema version {current} to {target}"
         )
+
+    def _guard_7_to_8(self) -> None:
+        """Refuse, before any write, what schema 8 cannot express without inventing a truth.
+
+        The standing migration rule is that a migrated value must be something the old store
+        already implied, never something manufactured to satisfy the new shape. Two cases
+        fail it, and both are refusals rather than resolutions:
+
+        **More than one live declared package.** Collapsing several of the owner's declared
+        groupings into nothing invents the claim that his grouping meant nothing. One live
+        package migrates in silence — that grouping *is* the whole plan, which the old store
+        already implied. Two or more is his call: retire the ones he does not want, then
+        migrate. Refusing costs almost nothing, because exactly one such database exists.
+
+        **Two live sub-tasks sharing a contract.** Schema 8 makes `tasks.contract_ref`
+        unique, which is only correct because splitting dies with the level. A store still
+        holding a split would have its second task silently rejected by the new index, so it
+        is named here instead.
+
+        Raised as ValueError inside `migrate`'s try, so the pre-migration snapshot is
+        restored and the caller is told the store did not move.
+        """
+        live_packages = self.query(
+            "SELECT id, name FROM packages WHERE superseded_at IS NULL ORDER BY id"
+        )
+        if len(live_packages) > 1:
+            named = ", ".join(f"packages:{r['id']} ({r['name']})" for r in live_packages)
+            raise ValueError(
+                "schema 8 removes the declared build grouping, and this plan has "
+                f"{len(live_packages)} live packages: {named}. Retire the ones you do not "
+                "want kept before migrating — collapsing them here would record that the "
+                "grouping never meant anything, which is not something the old store said."
+            )
+
+        shared = self.query(
+            "SELECT contract_ref, GROUP_CONCAT(id) AS ids FROM subtasks "
+            "WHERE superseded_by IS NULL GROUP BY contract_ref HAVING COUNT(*) > 1"
+        )
+        if shared:
+            named = "; ".join(
+                f"{r['contract_ref']} is implemented by "
+                + ", ".join(f"subtasks:{i}" for i in r["ids"].split(","))
+                for r in shared
+            )
+            raise ValueError(
+                "schema 8 makes a task's contract unique, and this plan holds a split: "
+                f"{named}. Splitting is removed with the sub-task level, so decide which "
+                "one survives before migrating."
+            )
+
+    def _steps_7_to_8(self) -> list[str]:
+        """v3 change 1: the levels, the rename, and the planning-sense word.
+
+        Order is load-bearing in three places. The two column drops precede `DROP TABLE
+        tasks`, or the foreign key is violated. `packages` drops after `tasks`, which
+        references it. And `subtasks` takes the name `tasks` only once the old table of that
+        name is gone.
+
+        Every index is named explicitly, because renaming a table carries its indexes across
+        under their *old* names — probed, `01-vocabulary-and-levels.md` §4.5 — and an index
+        called `idx_subtasks_state` sitting on `tasks` is the retired word surviving in the
+        place nobody looks.
+
+        Each rename here has a matching edit in `schema.DDL`, and `test_schema_parity` is
+        what holds the two together: a migrated store and a fresh one must end structurally
+        identical, or the stores that were born and the stores that were migrated drift.
+        """
+        stamp = now()
+        widened = (
+            "the build grouping was removed in schema 8; this attachment was at that "
+            "level and has been widened rather than dropped"
+        )
+        return [
+            # --- the planning-sense word: the interview step that produced a row ---
+            "ALTER TABLE plan_rows RENAME COLUMN package TO stage",
+            "DROP INDEX idx_rows_package",
+            "CREATE INDEX idx_rows_stage ON plan_rows (stage)",
+            "ALTER TABLE gate_runs RENAME COLUMN package TO stage",
+            "DROP INDEX idx_gate_runs_package",
+            "CREATE INDEX idx_gate_runs_stage ON gate_runs (stage, id)",
+            "ALTER TABLE journal_notes RENAME COLUMN package TO stage",
+            "DROP INDEX idx_journal_package",
+            "CREATE INDEX idx_journal_stage ON journal_notes (stage, id)",
+            "ALTER TABLE finding_reallocations RENAME COLUMN from_package TO from_stage",
+            "ALTER TABLE finding_reallocations RENAME COLUMN to_package TO to_stage",
+
+            # --- the dying levels ---
+            "ALTER TABLE subtasks DROP COLUMN task_id",       # FK to the dying middle level
+            "ALTER TABLE subtasks DROP COLUMN superseded_by",  # split lineage
+            "DROP TABLE tasks",                                # takes idx_tasks_package
+            "DROP TABLE packages",                             # takes idx_packages_live
+
+            # --- obligation -> behaviour ---
+            "ALTER TABLE obligations RENAME TO behaviours",
+            "ALTER TABLE obligation_ownership RENAME TO behaviour_ownership",
+            "ALTER TABLE obligation_amendments RENAME TO behaviour_amendments",
+            "ALTER TABLE behaviour_ownership RENAME COLUMN obligation_id TO behaviour_id",
+            "ALTER TABLE behaviour_ownership RENAME COLUMN subtask_id TO task_id",
+            "ALTER TABLE behaviour_amendments RENAME COLUMN obligation_id TO behaviour_id",
+            "DROP INDEX idx_obligations_contract",
+            "CREATE INDEX idx_behaviours_contract ON behaviours (contract_ref, retired_at)",
+            "DROP INDEX idx_obligation_live_owner",
+            "CREATE UNIQUE INDEX idx_behaviour_live_owner ON behaviour_ownership "
+            "(behaviour_id) WHERE superseded_at IS NULL",
+            "DROP INDEX idx_obligation_owner_subtask",
+            "CREATE INDEX idx_behaviour_owner_task ON behaviour_ownership "
+            "(task_id, superseded_at)",
+            # Data, not structure: one word may not mean two things. A row of kind
+            # 'behaviour' whose ref reads `contracts:40#behaviour` is the disease this
+            # change is spending 710 lines to remove.
+            "UPDATE behaviours SET kind = 'effect' WHERE kind = 'behaviour'",
+            "UPDATE behaviours SET key = 'effect' WHERE key = 'behaviour'",
+            # The `obligations` array inside contract rows' free-form JSON content.
+            # `enumerate_from_row` reads it by that key and the stage-6 script instructs the
+            # planner to write it by that key, so the key moves and the value does not.
+            "UPDATE plan_rows SET content = json_remove("
+            "json_set(content, '$.behaviours', json_extract(content, '$.obligations')), "
+            "'$.obligations') WHERE table_name = 'contracts' "
+            "AND json_extract(content, '$.obligations') IS NOT NULL",
+
+            # --- the sub-task level moves down, and the name moves with it ---
+            "ALTER TABLE subtask_deps RENAME TO task_deps",
+            "ALTER TABLE task_deps RENAME COLUMN subtask_id TO task_id",
+            "ALTER TABLE subtask_verifications RENAME TO task_verifications",
+            "ALTER TABLE task_verifications RENAME COLUMN subtask_id TO task_id",
+            "DROP INDEX idx_subtask_deps_on",
+            "CREATE INDEX idx_task_deps_on ON task_deps (depends_on)",
+            "DROP INDEX idx_verifications_subtask",
+            "CREATE INDEX idx_verifications_task ON task_verifications "
+            "(task_id, serve_epoch)",
+            # The two columns naming the level from outside it. Renaming a parameter against
+            # a column that was not renamed is a join that matches nothing, which is the
+            # F20/F24 failure this schema already carries scars from.
+            "ALTER TABLE briefs RENAME COLUMN subtask_id TO task_id",
+            "DROP INDEX idx_briefs_subtask",
+            "CREATE INDEX idx_briefs_task ON briefs (task_id, superseded_by)",
+            "ALTER TABLE workspace_fingerprints RENAME COLUMN subtask_id TO task_id",
+            "ALTER TABLE subtasks RENAME TO tasks",            # the name is free now
+            "DROP INDEX idx_subtasks_state",
+            "CREATE INDEX idx_tasks_state ON tasks (state)",
+            "CREATE UNIQUE INDEX idx_tasks_contract ON tasks (contract_ref)",
+
+            # --- the attachment scope collapse (task 1A.3) ---
+            # Two of the four levels lose their anchor, not one: `packages` is dropped and so
+            # is the old middle `tasks` that `task` scope keyed. Each live row at either is
+            # superseded and *replaced* at plan scope rather than updated in place — the
+            # schema states "a target has exactly one live placement" and `idx_attachments_
+            # live` is a lookup index, not a unique one, so a bulk UPDATE would leave a
+            # target that had one attachment at each level holding two live placements and
+            # the invariant false with no error anywhere. Where several widened rows land on
+            # one target, the earliest becomes the survivor and the rest are superseded
+            # without a replacement.
+            #
+            # `promoted_from` and the reason are `PromotionNeedsReason`'s friction, honoured
+            # rather than walked through: broadening a scope is the free direction and the
+            # one that silently bloats context, so a migration that promotes in bulk says so
+            # in the owner's own review surface. D8 recorded that forcing subsystem-wide
+            # attachments to plan scope is a silent "too high" failure; this does it
+            # deliberately, and 1D.3 records what it costs.
+            "INSERT INTO scope_attachments (scope_level, scope_key, target_root, reason, "
+            "promoted_from, superseded_at, created_at) "
+            f"SELECT 'plan', '', a.target_root, '{widened}', a.scope_level, NULL, "
+            f"'{stamp}' FROM scope_attachments a WHERE a.superseded_at IS NULL "
+            "AND a.scope_level IN ('package', 'task') "
+            "AND a.id = (SELECT MIN(b.id) FROM scope_attachments b "
+            "WHERE b.target_root = a.target_root AND b.superseded_at IS NULL "
+            "AND b.scope_level IN ('package', 'task')) "
+            "AND NOT EXISTS (SELECT 1 FROM scope_attachments c "
+            "WHERE c.target_root = a.target_root AND c.superseded_at IS NULL "
+            "AND c.scope_level = 'plan')",
+            f"UPDATE scope_attachments SET superseded_at = '{stamp}' "
+            "WHERE superseded_at IS NULL AND scope_level IN ('package', 'task')",
+            # `subtask` scope keeps its anchor and only loses its name: the id it holds is a
+            # row in the table that has just become `tasks`. So this one is a rename, on
+            # every row including the superseded ones — the placements are the same
+            # placements, spelled with the surviving word. The two levels that ceased to
+            # exist are left spelled as they were on superseded rows, because rewriting them
+            # would claim a placement that never happened.
+            "UPDATE scope_attachments SET scope_level = 'task' WHERE scope_level = 'subtask'",
+            "UPDATE scope_attachments SET promoted_from = 'task' "
+            "WHERE promoted_from = 'subtask'",
+        ]
 
 
 class _Immediate:
