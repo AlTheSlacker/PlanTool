@@ -1,6 +1,6 @@
 """Scope-attachment framework — DEVIATIONS.md D8/D13, M5_PLAN.md section 2.
 
-Levels are plan > package > task > subtask (`GLOSSARY.md`).
+Levels are plan > package > task > task (`GLOSSARY.md`).
 """
 
 import pytest
@@ -22,32 +22,32 @@ def _row(rows, text, key):
     ).verdicts[0].ref
 
 
-def test_subtask_context_unions_enclosing_scopes(attachments, rows):
-    """M5_PLAN.md 2.3 — a sub-task's context is its own attachments plus every enclosing
+def test_task_context_unions_enclosing_scopes(attachments, rows):
+    """M5_PLAN.md 2.3 — a task's context is its own attachments plus every enclosing
     scope. This is the structural bound that replaces 'last N' (DEFECTS.md F16)."""
     wide = _row(rows, "no LLM inside the tool, ever", "a")
     pkg = _row(rows, "the GUI is single-window", "b")
     task = _row(rows, "this task uses typed dependency links", "c")
-    narrow = _row(rows, "this sub-task needs the WAL note", "d")
+    narrow = _row(rows, "this task needs the WAL note", "d")
 
     # Keys are ids, never names (GLOSSARY.md) — a name-keyed scope returns an empty set on
-    # a typo, and the sub-task silently missing its context is what decisions:14 measures.
+    # a typo, and the task silently missing its context is what decisions:14 measures.
     attachments.attach(wide, PLAN, reason="binds every task")
     attachments.attach(pkg, PACKAGE, scope_key="3", reason="GUI-wide")
     attachments.attach(task, TASK, scope_key="11", reason="task-wide")
     attachments.attach(narrow, SUBTASK, scope_key="7", reason="local")
 
-    context = attachments.context_for(subtask_key="7", task_key="11", package_key="3")
+    context = attachments.context_for(task_key="7", task_key="11", package_key="3")
     assert [str(r) for r in context] == [str(wide), str(pkg), str(task), str(narrow)]
 
 
-def test_a_subtask_does_not_see_a_sibling_subtasks_attachments(attachments, rows):
+def test_a_task_does_not_see_a_sibling_tasks_attachments(attachments, rows):
     mine = _row(rows, "mine", "a")
     theirs = _row(rows, "theirs", "b")
     attachments.attach(mine, SUBTASK, scope_key="7", reason="local")
     attachments.attach(theirs, SUBTASK, scope_key="8", reason="local")
 
-    assert [str(r) for r in attachments.context_for(subtask_key="7")] == [str(mine)]
+    assert [str(r) for r in attachments.context_for(task_key="7")] == [str(mine)]
 
 
 def test_attachment_keys_on_lineage_root(attachments, rows):
@@ -69,7 +69,7 @@ def test_attachment_keys_on_lineage_root(attachments, rows):
 
 def test_promotion_requires_a_recorded_reason(attachments, rows):
     """M5_PLAN.md 2.5 — asymmetric friction. Too high is the silent failure: a
-    plan-level attachment is in every sub-task forever and nobody notices a cost spread
+    plan-level attachment is in every task forever and nobody notices a cost spread
     evenly."""
     ref = _row(rows, "a local note", "a")
     attachments.attach(ref, SUBTASK, scope_key="7", reason="local")
@@ -91,7 +91,7 @@ def test_narrowing_is_free(attachments, rows):
 def test_narrowing_actually_narrows(attachments, rows):
     """Caught by driving the engine, not by the suite. The first implementation inserted
     a new row and left the old one live, so a narrowed attachment stayed plan-scoped
-    and remained in every sub-task forever — the exact 'too high' failure M5_PLAN.md 2.5's
+    and remained in every task forever — the exact 'too high' failure M5_PLAN.md 2.5's
     friction exists to prevent, made unfixable by the direction that is supposed to be
     free. The test above passed throughout: it asserted on `promoted_from` and never
     checked where the row ended up."""
@@ -101,7 +101,7 @@ def test_narrowing_actually_narrows(attachments, rows):
 
     attachments.attach(ref, SUBTASK, scope_key="7")
     assert attachments.context_for() == ()
-    assert attachments.context_for(subtask_key="7") == (ref,)
+    assert attachments.context_for(task_key="7") == (ref,)
 
 
 def test_superseded_placements_are_kept_not_deleted(attachments, rows, store):

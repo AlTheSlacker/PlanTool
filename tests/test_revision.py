@@ -284,27 +284,27 @@ def test_abandon_refuses_an_applied_revision(rev, rows, tasks):
 # --- F21 / decisions:62 the affected-only freeze on task-graph ---
 
 
-def test_unaffected_subtasks_flow_during_a_revision(rev, rows, tasks):
+def test_unaffected_tasks_flow_during_a_revision(rev, rows, tasks):
     refs = _contracts(rows, 2)  # independent
     tasks.finalize_plan()
     rev.open_revision(ChangeRequest(targets=(refs[0],), intent="touch c0"))
-    served = tasks.next_subtask()
-    assert served.subtask.contract_ref == refs[1] and served.is_draft is False
+    served = tasks.next_task()
+    assert served.task.contract_ref == refs[1] and served.is_draft is False
 
 
 def test_a_fully_frozen_revision_serves_nothing_without_consent(rev, rows, tasks):
     refs = _contracts(rows, 2)
     tasks.finalize_plan()
     rev.open_revision(ChangeRequest(targets=(refs[0], refs[1]), intent="both"))
-    assert tasks.next_subtask() == tasks.next_subtask()  # AllBlockedReport, falsy
-    assert not tasks.next_subtask()
+    assert tasks.next_task() == tasks.next_task()  # AllBlockedReport, falsy
+    assert not tasks.next_task()
 
 
-def test_allow_draft_serves_a_frozen_subtask_watermarked(rev, rows, tasks):
+def test_allow_draft_serves_a_frozen_task_watermarked(rev, rows, tasks):
     refs = _contracts(rows, 2)
     tasks.finalize_plan()
     rev.open_revision(ChangeRequest(targets=(refs[0], refs[1]), intent="both"))
-    served = tasks.next_subtask(allow_draft=True, consent="owner ok")
+    served = tasks.next_task(allow_draft=True, consent="owner ok")
     assert served.is_draft is True
 
 

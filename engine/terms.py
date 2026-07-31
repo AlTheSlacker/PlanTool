@@ -82,7 +82,7 @@ BAN_SCOPES = (PROSE, IDENTIFIER, BOTH)
 ADDRESS = re.compile(r"\b[a-z][a-z0-9_]*:[1-9][0-9]*\b")
 
 #: A word, in prose or inside an identifier. `_` and case boundaries split identifiers, so
-#: `subTaskId` and `sub_task_id` tokenise the same way.
+#: `planRowId` and `plan_row_id` tokenise the same way.
 WORD = re.compile(r"[A-Z]?[a-z]+|[A-Z]+(?![a-z])|[0-9]+")
 
 

@@ -15,12 +15,13 @@ parses them out of `spec/v2/plan.md` and compares against `REGISTRY`, so "we wra
 everything" is a test rather than a sentence in a docstring. A hand-kept list inside this
 module would report success the first time somebody added a contract and forgot.
 
-Three of those 39 are the writer lock, deleted with the mechanism it guarded (D5). They are
-`EXCLUDED` here, each carrying its reason, rather than quietly absent: a permanent false
-shortfall is a gap everyone learns to ignore, and a real omission eventually hides inside
-it. The five revision-service contracts were `DEFERRED` until M7 and are now built and
-exposed, so `DEFERRED` is empty. `EXCLUDED` is what the coverage test subtracts, so nothing
-is unaccounted for and nothing is silently missing.
+Four of those 39 are `EXCLUDED` here, each carrying its reason, rather than quietly absent:
+a permanent false shortfall is a gap everyone learns to ignore, and a real omission
+eventually hides inside it. Three are the writer lock, deleted with the mechanism it
+guarded (D5); the fourth is the split, deleted with the level it divided (v3 change 1). The
+five revision-service contracts were `DEFERRED` until M7 and are now built and exposed, so
+`DEFERRED` is empty. `EXCLUDED` is what the coverage test subtracts, so nothing is
+unaccounted for and nothing is silently missing.
 
 **Six tools are here that the frozen plan does not send here** — the mandate, the package
 script, the active warnings, the journal, the gate history and `compose_brief` (DEVIATIONS
@@ -30,11 +31,13 @@ would let the specification's internal bookkeeping decide what a planner is allo
 know. The door (`engine/door.py`) now makes the two lists agree mechanically: any call
 named in outgoing text must resolve here, or the call fails.
 
-The same shape recurred at the packaging level and cost more: `declare_package`,
-`assign_task` and `packaging` are ours (D13) and none of them was exposed, while
-`finalize_plan` refuses a plan whose tasks are in no package. An invariant that is
-enforceable and not satisfiable stops every plan authored through this surface — DEFECTS.md
-F39. Every tool with no contract behind it appears in `ADDED` with the reason it exists.
+The same shape recurred once at the build-grouping level and cost more: three tools of ours
+went unexposed while finalization refused a plan whose tasks were in no group, so an
+invariant that was enforceable and not satisfiable stopped every plan authored through this
+surface (DEFECTS.md F39). That level is gone (v3 change 1) and those three tools with it,
+but the question it leaves is permanent, and it is worth asking of every guard: **which
+exposed call satisfies this invariant?** Every tool with no contract behind it appears in
+`ADDED` with the reason it exists.
 
 The glossary is the third such group (D23) and the plan has nothing to say about it at all —
 it never asks what the words mean (DEFECTS.md F40). `plan_status` names `glossary()` even
@@ -360,24 +363,8 @@ def as_owner_decision(field_name: str, value: Any) -> OwnerDecision:
     )
 
 
-def as_split(field_name: str, value: Any) -> list[tuple[str, list[int]]]:
-    """The sub-tasks a split divides into: each a title and the obligations it takes on."""
-    if not isinstance(value, list):
-        raise _fail(field_name, "a list of sub-tasks", value)
-    out = []
-    for i, item in enumerate(value):
-        got = as_dict(f"{field_name}[{i}]", item)
-        if "title" not in got or "obligations" not in got:
-            raise _fail(
-                f"{field_name}[{i}]", "a sub-task with a title and obligations", item
-            )
-        out.append(
-            (
-                as_str(f"{field_name}[{i}].title", got["title"]),
-                as_ints(f"{field_name}[{i}].obligations", got["obligations"]),
-            )
-        )
-    return out
+# `as_split` stood here, decoding the parts a split divided into. It existed for one
+# parameter of one call, and both are gone with the level (v3 change 1).
 
 
 DECODERS: dict[str, Callable[[str, Any], Any]] = {
@@ -392,7 +379,6 @@ DECODERS: dict[str, Callable[[str, Any], Any]] = {
     "selector": as_selector,
     "spike": as_spike_spec,
     "selection": as_selection,
-    "split": as_split,
     "evidence": as_text_map,
     "change_request": as_change_request,
     "owner_decision": as_owner_decision,
@@ -590,59 +576,38 @@ REGISTRY: dict[str, Tool] = {
            Param("reason", "str", note="why it belongs there instead — the owner reads this"),
            writes=True),
         # --- task-graph (components:11) ---
-        _t("declare_package", "tasks", "declare_package", DEVIATION,
-           "Declare a build package — the one grouping a human chooses rather than derives.",
-           Param("name", "str", note="what this package is, in the owner's words"),
-           Param("intent", "str", required=False,
-                 note="what it is for, if the name does not carry it"),
-           writes=True),
-        _t("assign_task", "tasks", "assign_task", DEVIATION,
-           "Place a task in a package. Membership is mandatory and there is no catch-all.",
-           Param("source_ref", "ref", note="the components row whose task this is"),
-           Param("package_id", "int", note="the package it belongs to, by id"),
-           writes=True),
-        _t("packaging", "tasks", "packaging", DEVIATION,
-           "The cut so far: each package with its tasks, and the tasks still in none."),
         _t("finalize_plan", "tasks", "finalize_plan", "contracts:35",
            "Freeze the plan and derive the task graph from it.",
-           Param("required_packages", "ints", required=False,
-                 note="the packages whose gates must have passed"),
            writes=True),
         _t("graph_status", "tasks", "graph_status", "contracts:38",
            "Where the build has got to across the whole graph."),
-        _t("next_subtask", "tasks", "next_subtask", "contracts:55",
-           "The next ready sub-task and its candidate rows — the selection is yours to make.",
+        _t("next_task", "tasks", "next_task", "contracts:55",
+           "The next ready task and its candidate rows — the selection is yours to make.",
            Param("allow_draft", "bool", required=False,
                  note="true to work from a plan that is not finalized"),
            Param("consent", "str", required=False,
                  note="the owner's recorded agreement to work from a draft")),
         _t("verify_completion", "tasks", "verify_completion", "contracts:62",
-           "Check delivered evidence against every contract the sub-task owes.",
-           Param("subtask_id", "int", note="the sub-task being verified"),
-           Param("evidence", "evidence", note="what was delivered, per contract"),
+           "Check delivered evidence against every behaviour the task owes.",
+           Param("task_id", "int", note="the task being verified"),
+           Param("evidence", "evidence", note="what was delivered, per behaviour"),
            writes=True),
         _t("report_status", "tasks", "report_status", "contracts:60",
            "The engine's report of what it observed; 'done' still needs a passing verification.",
-           Param("subtask_id", "int", note="the sub-task reported on"),
+           Param("task_id", "int", note="the task reported on"),
            Param("status", "str", note="what happened"),
            Param("detail", "str", required=False, note="notes, which are not evidence"),
            writes=True),
         # --- brief-composer (components:12) ---
         _t("compose_brief", "briefs", "compose_brief", "contracts:68",
            "Record your selection as an immutable brief; every candidate must be accounted for.",
-           Param("subtask_id", "int", note="the sub-task the brief is for"),
+           Param("task_id", "int", note="the task the brief is for"),
            Param("selection", "selection",
                  note="the rows you include, and a reason for each you leave out"),
            writes=True),
         _t("audit_brief", "briefs", "audit_brief", "contracts:41",
            "Meter a brief against the closure frozen with it.",
            Param("brief_id", "int", note="the brief to audit")),
-        _t("split_subtask", "briefs", "split_subtask", "contracts:40",
-           "Divide a sub-task whose brief proved too large, redistributing what it owes.",
-           Param("subtask_id", "int", note="the sub-task to divide"),
-           Param("into", "split",
-                 note="the sub-tasks to divide it into, each with the obligations it takes"),
-           writes=True),
         # --- session-service (components:14) ---
         _t("journal_note", "resume", "journal_note", "contracts:48",
            "Leave an informal learning that is not a plan row.",
@@ -764,9 +729,12 @@ class Absence:
     reason: str
 
 
-#: Deliberately never built. The writer lock was removed entirely (D5) on the grounds that
-#: the owner plans in one session and the lock guarded a situation that cannot arise; these
-#: three are its remains.
+#: Contracts the plan sends here that this tool does not implement, each with the decision
+#: that struck it. Three are the writer lock, removed entirely (D5) on the grounds that the
+#: owner plans in one session and the lock guarded a situation that cannot arise. The fourth
+#: is the split, removed with the sub-task level (v3 D5/D7): a task is one function, so
+#: there is nothing to divide, and the call is named here under the frozen plan's own
+#: spelling so a reader grepping it lands on the reason.
 EXCLUDED: tuple[Absence, ...] = (
     Absence("contracts:53", "renew_lease",
             "the writer lock was removed; there is no lease to renew"),
@@ -774,6 +742,10 @@ EXCLUDED: tuple[Absence, ...] = (
             "the writer lock was removed; there is nothing held to release"),
     Absence("contracts:63", "acquire_writer_lock",
             "the writer lock was removed; there is nothing to acquire"),
+    Absence("contracts:40", "split_subtask",
+            "the level it divided is gone (v3 change 1): a task is one externally-callable "
+            "function, so an over-large brief is answered by the plan naming smaller "
+            "contracts, not by the graph dividing a node after the fact"),
 )
 
 #: Not built yet, each bound to the build package that owes it — the outstanding-problem
@@ -792,13 +764,6 @@ ADDED: tuple[Absence, ...] = (
     Absence(DEVIATION, "get_auxiliary",
             "the red-team script is a content asset requirements:71 ships and no contract "
             "served it, so the red team could not fetch its own brief (D21)"),
-    Absence(DEVIATION, "declare_package",
-            "packages are the one level a human declares (D13) and finalization refuses a "
-            "plan with an unpackaged task, so with no tool to declare one, no plan "
-            "authored through this surface could ever finalize (D13, F39)"),
-    Absence(DEVIATION, "assign_task",
-            "the other half of D13's membership: the placement is the recorded judgment "
-            "and nothing else can record it (D13, F39)"),
     Absence(DEVIATION, "define_term",
             "the eight planning packages never ask what the words mean, so a plan could "
             "not say — and a vocabulary nothing records is the one F27 broke (D23)"),
@@ -818,9 +783,6 @@ ADDED: tuple[Absence, ...] = (
     Absence(DEVIATION, "export_glossary",
             "the delivery point that achieves the most: the tool publishes the vocabulary "
             "and the codebase's own checks enforce it, with no judgment exercised (D23)"),
-    Absence(DEVIATION, "packaging",
-            "package ids are the only way to assign and a declaration returns one once, so "
-            "a planner resuming cold could not get back to them (D13, F39)"),
     Absence(DEVIATION, "reallocate_finding",
             "D15 gives a finding two exits, resolve or defer-to-a-later-gate; without a tool "
             "for the second, the gate lock could only ever be satisfied by resolving, and a "

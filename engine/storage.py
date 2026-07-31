@@ -418,8 +418,8 @@ class Storage:
     def _as_ref(table: str, pointer: Any) -> str | None:
         """A supersession pointer rendered as a `table:key` ref, matching change_log.ref.
 
-        `plan_rows` already stores it as `table:ordinal`; the same-table id pointers
-        (`subtasks`, `briefs`) store a bare id naming a row in the op's own table.
+        `plan_rows` already stores it as `table:ordinal`; the same-table id pointer
+        (`briefs`) stores a bare id naming a row in the op's own table.
         """
         if pointer is None:
             return None
@@ -432,7 +432,7 @@ class Storage:
 
         Covers every shape the services use: plan_rows' (table_name, ordinal), the common
         single `id`, the `plan` singleton's `guard`, `gap_key`, and the two compound keys
-        (subtask_deps, claim_tracks) — the last joined, having no single-column id.
+        (task_deps, claim_tracks) — the last joined, having no single-column id.
         """
         where = op.where or {}
         if "table_name" in where and "ordinal" in where:

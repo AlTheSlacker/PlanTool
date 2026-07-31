@@ -3,12 +3,12 @@
 Contracts: `contracts:48` journal_note, `contracts:49` set_next_action, `contracts:64`
 plan_status.
 
-**The module is `resume`, not `sessions`.** `GLOSSARY.md` retires `session` as an identifier
-outright — it names no entity, has no table and no lifecycle, and its last occurrence in the
-data went out with the writer lock. The frozen plan's `session-service` is the read-only
-spelling, recorded here so a reader grepping the plan lands in the right file. This is the
-same call as `contracts:40`'s `PartsDontCover` becoming `ObligationsNotCovered`: the
-retirement beats the quotation for identifiers, and the quotation survives in prose.
+**The module is `resume`, not `sessions`.** `session` is retired as an identifier outright —
+it names no entity, has no table and no lifecycle, and its last occurrence in the data went
+out with the writer lock. The frozen plan's `session-service` is the read-only spelling,
+recorded here so a reader grepping the plan lands in the right file. The rule it follows is
+`errors.py`'s: a retirement beats a quotation for identifiers, and the quotation survives in
+prose.
 
 **What this component is for.** A planner's context is disposable and dies without warning;
 the database is the source of truth. `plan_status` is the one call a cold planner makes to

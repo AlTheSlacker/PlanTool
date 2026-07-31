@@ -20,7 +20,7 @@ from engine.briefs import (
 )
 from engine.models import LinkSpec, RowSubmission
 from engine.obligations import NotEnumerated
-from engine.tasks import DONE, IN_PROGRESS, PENDING, SubTaskSuperseded
+from engine.tasks import DONE, IN_PROGRESS, PENDING, TaskSuperseded
 
 OBLIGATIONS = [
     {"key": "effect", "kind": "effect", "statement": "does the thing"},
@@ -49,10 +49,10 @@ def _plan(rows, extra_rows=0, obligations=OBLIGATIONS):
     )
 
 
-def _account_for_all(briefs, subtask_id, omit_reason="not relevant to this sub-task"):
+def _account_for_all(briefs, task_id, omit_reason="not relevant to this task"):
     """A selection that includes everything. The tool computes the candidate set; the
     caller is the only party that may choose from it (decisions:52/60)."""
-    candidates = briefs._candidates(briefs.tasks.get(subtask_id))
+    candidates = briefs._candidates(briefs.tasks.get(task_id))
     return BriefSelection(included=tuple(ref for ref, _ in candidates))
 
 
@@ -65,7 +65,7 @@ def test_compose_records_the_selection_and_freezes_the_closure(briefs, tasks, ro
     tasks.serve_brief(1)
 
     brief = briefs.compose_brief(1, _account_for_all(briefs, 1))
-    assert brief.subtask_id == 1
+    assert brief.task_id == 1
     assert brief.serve_epoch == 1
     assert len(brief.rows) == 3          # the contract and its two decisions
     assert len(brief.included) == 3
@@ -234,7 +234,7 @@ def test_audit_names_the_loud_omissions(briefs, tasks, rows):
     assert briefs.audit_brief(brief.id).loud_omissions == ("decisions:1",)
 
 
-# --- contracts:40 split_subtask, and DEFECTS.md F23 / F25 ---
+# --- contracts:40 split_task, and DEFECTS.md F23 / F25 ---
 
 
 def test_split_redistributes_the_obligations(briefs, tasks, rows, obligations):
@@ -245,24 +245,24 @@ def test_split_redistributes_the_obligations(briefs, tasks, rows, obligations):
     tasks.finalize_plan()
     tasks.serve_brief(1)
 
-    new = briefs.split_subtask(1, [("the happy path", [1]), ("the error path", [2])])
+    new = briefs.split_task(1, [("the happy path", [1]), ("the error path", [2])])
     assert len(new) == 2
-    assert [o.key for o in obligations.for_subtask(new[0].id)] == ["behaviour"]
-    assert [o.key for o in obligations.for_subtask(new[1].id)] == ["NotFound"]
+    assert [o.key for o in obligations.for_task(new[0].id)] == ["behaviour"]
+    assert [o.key for o in obligations.for_task(new[1].id)] == ["NotFound"]
     # And nothing is owed twice: the original owns nothing now.
-    assert obligations.for_subtask(1) == ()
+    assert obligations.for_task(1) == ()
 
 
 def test_a_split_that_drops_an_obligation_is_refused(briefs, tasks, rows):
     """contracts:40's coverage check — `PartsDontCover` in the frozen plan — with the
-    denominator F23 found missing. Before D12 every sub-task a split produced named the same
+    denominator F23 found missing. Before D12 every task a split produced named the same
     single contract, so joint coverage was vacuous and requirements:37's "silent trimming is
     not a remedy" had no enforcement at all."""
     _plan(rows)
     tasks.finalize_plan()
 
     with pytest.raises(ObligationsNotCovered) as exc:
-        briefs.split_subtask(1, [("sub-task a", [1]), ("sub-task b", [])])
+        briefs.split_task(1, [("task a", [1]), ("task b", [])])
     assert "contracts:1#NotFound" in str(exc.value)
     assert len(tasks._all()) == 1        # nothing written
 
@@ -274,28 +274,28 @@ def test_a_split_cannot_claim_obligations_the_original_never_owed(briefs, tasks,
     tasks.finalize_plan()
 
     with pytest.raises(ObligationsNotOwned):
-        briefs.split_subtask(1, [("sub-task a", [1]), ("sub-task b", [2, 99])])
+        briefs.split_task(1, [("task a", [1]), ("task b", [2, 99])])
 
 
-def test_a_subtask_with_no_surface_cannot_be_split(briefs, tasks, rows):
+def test_a_task_with_no_surface_cannot_be_split(briefs, tasks, rows):
     """D12's accepted cost, made loud. A split measured against an empty denominator
     passes vacuously — the tool refuses rather than permitting an unaccountable split."""
     _plan(rows, obligations=None)
     tasks.finalize_plan()
 
     with pytest.raises(NotEnumerated):
-        briefs.split_subtask(1, [("sub-task a", []), ("sub-task b", [])])
+        briefs.split_task(1, [("task a", []), ("task b", [])])
 
 
-def test_one_subtask_is_not_a_split(briefs, tasks, rows):
+def test_one_task_is_not_a_split(briefs, tasks, rows):
     _plan(rows)
     tasks.finalize_plan()
     with pytest.raises(NothingToSplit):
-        briefs.split_subtask(1, [("the whole thing", [1, 2])])
+        briefs.split_task(1, [("the whole thing", [1, 2])])
 
 
 def test_the_original_leaves_the_graph(briefs, tasks, rows):
-    """DEFECTS.md F25 — `contracts:40` returns sub-tasks "superseding the original in the
+    """DEFECTS.md F25 — `contracts:40` returns tasks "superseding the original in the
     graph" and never says what that does. Left in, the original sits in `in_flight`
     forever, trips the 24h staleness flag, and can be served again."""
     _plan(rows)
@@ -303,18 +303,18 @@ def test_the_original_leaves_the_graph(briefs, tasks, rows):
     tasks.serve_brief(1)
     assert tasks.graph_status().in_flight == (1,)
 
-    new = briefs.split_subtask(1, [("sub-task a", [1]), ("sub-task b", [2])])
+    new = briefs.split_task(1, [("task a", [1]), ("task b", [2])])
 
     status = tasks.graph_status()
     assert status.in_flight == ()
     assert set(status.ready) == {n.id for n in new}
-    assert tasks.next_subtask().subtask.id in {n.id for n in new}
-    with pytest.raises(SubTaskSuperseded):
+    assert tasks.next_task().task.id in {n.id for n in new}
+    with pytest.raises(TaskSuperseded):
         tasks.serve_brief(1)
 
 
-def test_dependants_are_rewired_to_the_new_subtasks(briefs, tasks, rows):
-    """The deadlock half of F25. `subtask_deps` edges point at the original's id, and a
+def test_dependants_are_rewired_to_the_new_tasks(briefs, tasks, rows):
+    """The deadlock half of F25. `task_deps` edges point at the original's id, and a
     split original can never reach `done` — so every consumer would sit in `pending`
     behind a node that will never complete."""
     rows.submit_rows(
@@ -332,21 +332,21 @@ def test_dependants_are_rewired_to_the_new_subtasks(briefs, tasks, rows):
     provider, consumer = 1, 2
     tasks.serve_brief(provider)
 
-    new = briefs.split_subtask(provider, [("sub-task a", [1]), ("sub-task b", [2])])
+    new = briefs.split_task(provider, [("task a", [1]), ("task b", [2])])
 
     assert set(tasks.get(consumer).deps) == {n.id for n in new}
     # And the consumer really does become ready once both of them are done.
-    for subtask in new:
-        tasks.serve_brief(subtask.id)
+    for task in new:
+        tasks.serve_brief(task.id)
         tasks.verify_completion(
-            subtask.id,
-            {o.ref: "tests pass" for o in briefs.obligations.for_subtask(subtask.id)},
+            task.id,
+            {o.ref: "tests pass" for o in briefs.obligations.for_task(task.id)},
         )
-        tasks.report_status(subtask.id, "complete", "built")
+        tasks.report_status(task.id, "complete", "built")
     assert tasks.graph_status().ready == (consumer,)
 
 
-def test_new_subtasks_inherit_the_originals_dependencies(briefs, tasks, rows):
+def test_new_tasks_inherit_the_originals_dependencies(briefs, tasks, rows):
     """Each is still downstream of whatever the whole was — otherwise a split is a way to
     escape the dependency order requirements:34 exists to preserve."""
     rows.submit_rows(
@@ -362,7 +362,7 @@ def test_new_subtasks_inherit_the_originals_dependencies(briefs, tasks, rows):
     )
     tasks.finalize_plan()
 
-    new = briefs.split_subtask(2, [("sub-task a", [3]), ("sub-task b", [4])])
-    for subtask in new:
-        assert subtask.deps == (1,)
-        assert tasks.readiness_of(subtask) == PENDING
+    new = briefs.split_task(2, [("task a", [3]), ("task b", [4])])
+    for task in new:
+        assert task.deps == (1,)
+        assert tasks.readiness_of(task) == PENDING

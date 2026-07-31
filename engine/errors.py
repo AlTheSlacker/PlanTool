@@ -6,10 +6,11 @@ carry structured detail because the plan repeatedly requires that an error *name
 offending thing rather than merely failing.
 
 **One amendment to that convention, owner's decision 2026-07-21 (DEFECTS.md F27).** Where a
-contract's error name uses retired vocabulary, `GLOSSARY.md` wins and the class is renamed.
+contract's error name uses retired vocabulary, the retirement wins and the class is renamed.
 The frozen plan's spelling is recorded in the class docstring so a reader grepping the plan
-still lands here. Known instance: `contracts:40`'s `PartsDontCover` is
-`engine.briefs.ObligationsNotCovered`.
+still lands here. There is no live instance today: the one there was — `contracts:40`'s
+`PartsDontCover`, renamed once already — went with the split in v3 change 1, and
+`engine/surface.py`'s `EXCLUDED` records where that contract went.
 
 The reasoning is worth keeping, because the first instinct was to treat this as a standoff
 between two rules and preserve the plan's spelling as a quotation. It is not a standoff. This
@@ -141,7 +142,7 @@ class SourceTextUnavailable(PlanToolError):
 
 class NotFinalized(PlanToolError):
     """contracts:42 — draft plans are edited through the interview; revisions are for
-    finalized plans. Distinct from `PlanNotFinalized` (contracts:55, next_subtask): same
+    finalized plans. Distinct from `PlanNotFinalized` (contracts:55, next_task): same
     condition, different contract and different caller advice."""
 
 

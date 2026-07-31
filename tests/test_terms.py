@@ -229,9 +229,9 @@ def test_the_scan_finds_a_retired_word_in_prose(terms):
 def test_the_scan_reads_content_keys_as_identifiers(terms):
     """The two scopes map onto something real: a content key becomes a field name every
     reader types, and a value is prose."""
-    terms.define_term("subtask", "the atomic unit of executable work")
-    terms.define_term("packet", "the old word for a sub-task")
-    terms.retire_term("packet", IDENTIFIER, "our own coinage", use_instead="subtask")
+    terms.define_term("task", "the atomic unit of executable work")
+    terms.define_term("packet", "the old word for a task")
+    terms.retire_term("packet", IDENTIFIER, "our own coinage", use_instead="task")
 
     assert terms.violations({"packet_id": 3}) != ()
     assert terms.violations({"text": "he called it a packet at the time"}) == ()

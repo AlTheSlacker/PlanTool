@@ -332,7 +332,7 @@ def _store_baseline(storage, fingerprint: dict) -> None:
         [Op("insert", "workspace_fingerprints", {
             "occasion": "finalization",
             "plan_version": 1,
-            "subtask_id": None,
+            "task_id": None,
             "fingerprint": json.dumps(fingerprint, sort_keys=True),
             "created_at": now(),
         })],
