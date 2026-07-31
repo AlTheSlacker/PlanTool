@@ -3,10 +3,10 @@
 Owns the red-team finding lifecycle from filing against specific rows through addressed,
 accepted-risk, or withdrawn outcomes.
 
-Contracts: contracts:33 file_finding, contracts:34 resolve_finding.
+Contracts: contracts:33 file_finding, contracts:73 resolve_finding.
 
 `dispute_finding` is not in the frozen plan. state_machines:7 needs `dispute` and
-`uphold` events that no planned contract fires, which makes contracts:34's `withdrawn`
+`uphold` events that no planned contract fires, which makes contracts:73's `withdrawn`
 outcome unreachable — sm_cells:92 refuses to withdraw a finding that was never disputed.
 See DEFECTS.md F13.
 """
@@ -52,7 +52,7 @@ _IMPOSSIBLE = {
     (ACCEPTED_RISK, "accept_risk"): "already accepted",
 }
 
-#: contracts:34 outcome -> the state_machines:7 event it fires.
+#: contracts:73 outcome -> the state_machines:7 event it fires.
 _OUTCOME_EVENT = {
     "addressed": "address",
     "accepted_risk": "accept_risk",
@@ -73,11 +73,11 @@ class RefNotFound(PlanToolError):
 
 
 class FindingNotFound(PlanToolError):
-    """contracts:34 — names the missing id."""
+    """contracts:73 — names the missing id."""
 
 
 class InvalidTransition(PlanToolError):
-    """contracts:34 — outcome not reachable from the finding's state; state
+    """contracts:73 — outcome not reachable from the finding's state; state
     unchanged."""
 
 
@@ -265,7 +265,7 @@ class FindingService:
         )
         return self.get(receipt["results"][0]["id"])
 
-    # --- contracts:34 ---
+    # --- contracts:73 ---
 
     def resolve_finding(
         self, finding_id: int, outcome: str, reason: str
@@ -358,7 +358,7 @@ class FindingService:
         """Fire `dispute` (sm_cells:90): the finding's target argues it is wrong.
 
         Not in the frozen plan. Without it `withdraw` is unreachable, because sm_cells:92
-        refuses to withdraw a finding that was never disputed — so contracts:34's
+        refuses to withdraw a finding that was never disputed — so contracts:73's
         `withdrawn` outcome could never be used.
         """
         if not argument.strip():

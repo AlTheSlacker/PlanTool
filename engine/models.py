@@ -146,7 +146,7 @@ def content_fingerprint(content: dict[str, Any]) -> str:
 
 @dataclass(slots=True)
 class RowSubmission:
-    """One row offered to submit_rows (contracts:9).
+    """One row offered to submit_rows (contracts:69).
 
     `name` is required and has no default. M6_PLAN.md §6: a row is addressed as
     `table:ordinal`, and an address on its own forces the reader to go and look it up —
@@ -246,7 +246,7 @@ class PlanRow:
 
 @dataclass(frozen=True, slots=True)
 class RowVerdict:
-    """contracts:9 — per-row accept/reject naming the specific problem.
+    """contracts:69 — per-row accept/reject naming the specific problem.
 
     requirements:14 — a failing row is rejected alone; accepted rows stand.
     """

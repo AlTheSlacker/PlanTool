@@ -4,8 +4,8 @@ Owns the PlanRow lifecycle: provenance-checked batched submission with per-row v
 full and targeted readback, in-place assumption upgrade, supersession lineage, and
 retirement.
 
-Contracts: contracts:9 submit_rows, contracts:10 read_rows, contracts:11
-resolve_assumption, contracts:12 supersede_row, contracts:13 retire_row.
+Contracts: contracts:69 submit_rows, contracts:10 read_rows, contracts:70
+resolve_assumption, contracts:71 supersede_row, contracts:72 retire_row.
 """
 
 from __future__ import annotations
@@ -58,7 +58,7 @@ from engine.validation import (
 #: A contradiction detector: given a candidate submission and the store, return a
 #: human-readable description of what stored row it contradicts, or None.
 #:
-#: contracts:9 mandates a ConflictRequired error but the frozen plan never specifies how
+#: contracts:69 mandates a ConflictRequired error but the frozen plan never specifies how
 #: contradiction is *determined* (DEFECTS.md F4). conflict-service supplies a real
 #: detector in M3; until then no contradiction is detected and the error is unreachable.
 ContradictionDetector = Callable[[RowSubmission, "RowService"], str | None]
@@ -157,7 +157,7 @@ class RowService:
             containment = load().containment
         self.containment = containment
 
-    # --- contracts:9 ---
+    # --- contracts:69 ---
 
     def submit_rows(
         self, batch: list[RowSubmission], idempotency_key: str
@@ -733,7 +733,7 @@ class RowService:
             supersede_reason=row["supersede_reason"],
         )
 
-    # --- contracts:11 ---
+    # --- contracts:70 ---
 
     def resolve_assumption(
         self,
@@ -846,7 +846,7 @@ class RowService:
             raise UpgradeFailed("upgrade could not be applied", ref=str(ref))
         return self.get(ref)
 
-    # --- contracts:12 ---
+    # --- contracts:71 ---
 
     def supersede_row(
         self,
@@ -961,7 +961,7 @@ class RowService:
         new_ref = RowRef.parse(receipt["results"][1]["ref"])
         return {"old": old, "new": new_ref, "superseded_at": stamp}
 
-    # --- contracts:13 ---
+    # --- contracts:72 ---
 
     def retire_row(
         self, ref: RowRef | str, reason: str, idempotency_key: str

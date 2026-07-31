@@ -459,7 +459,7 @@ REGISTRY: dict[str, Tool] = {
            Param("target_schema_version", "int", note="the schema version to reach"),
            writes=True),
         # --- row-service (components:2) ---
-        _t("submit_rows", "rows", "submit_rows", "contracts:9",
+        _t("submit_rows", "rows", "submit_rows", "contracts:69",
            "File a batch of rows; each is accepted or rejected on its own, and the batch is "
            "atomic.",
            Param("batch", "rows", note="the rows to file, each with a name of its own; a "
@@ -471,7 +471,7 @@ REGISTRY: dict[str, Tool] = {
            "Read the rows a selector picks out, a page at a time.",
            Param("selector", "selector", note="which rows: by address, table, stage, "
                                               "provenance, liveness or neighbourhood")),
-        _t("resolve_assumption", "rows", "resolve_assumption", "contracts:11",
+        _t("resolve_assumption", "rows", "resolve_assumption", "contracts:70",
            "Upgrade an open assumption in place, quoting the owner's answer.",
            Param("ref", "ref", note="the assumption to settle"),
            Param("quote", "str", note="the owner's answer, in his words"),
@@ -482,7 +482,7 @@ REGISTRY: dict[str, Tool] = {
            Param("name", "str", required=False,
                  note="a new name, when the answer changed what the row says"),
            writes=True),
-        _t("supersede_row", "rows", "supersede_row", "contracts:12",
+        _t("supersede_row", "rows", "supersede_row", "contracts:71",
            "Replace a row with a new one, keeping the old as frozen history.",
            Param("old", "ref", note="the row being replaced"),
            Param("replacement", "row", note="the row that replaces it; if it is a "
@@ -493,7 +493,7 @@ REGISTRY: dict[str, Tool] = {
                                        "replacement's grounds say"),
            Param("idempotency_key", "str", note="replaying this key returns the first result"),
            writes=True),
-        _t("retire_row", "rows", "retire_row", "contracts:13",
+        _t("retire_row", "rows", "retire_row", "contracts:72",
            "Retire a row that no longer applies, with the reason on the record.",
            Param("ref", "ref", note="the row to retire"),
            Param("reason", "str", note="why it no longer applies"),
@@ -589,7 +589,7 @@ REGISTRY: dict[str, Tool] = {
            Param("resolve_by", "int",
                  note="the stage gate this must be resolved by — its deadline, made a gate"),
            writes=True),
-        _t("resolve_finding", "findings", "resolve_finding", "contracts:34",
+        _t("resolve_finding", "findings", "resolve_finding", "contracts:73",
            "Take a finding to a terminal outcome; an accepted risk stays visible at handoff.",
            Param("finding_id", "int", note="the finding being closed"),
            Param("outcome", "str", note="how it was closed"),
@@ -821,38 +821,24 @@ ADDED: tuple[Absence, ...] = (
             "abandonment that never happened (v3 D11)"),
 )
 
-#: What a contract's frozen text no longer says about the call that implements it.
-#:
-#: Five contracts changed shape in v3 change 2 — a new required parameter, a new refusal, a
-#: renamed one. `spec/v2/plan.md` is the frozen specification and has not been edited since
-#: it was frozen; every divergence from it since has been recorded at the code instead
-#: (`EXCLUDED`, `ADDED`, the frozen spellings in `errors.py`). This is the same mechanism
-#: for the same reason: a contract whose signature or error list is stale lies to its
-#: reader, and the cheapest honest answer is to say so where the reader is.
-#:
-#: **The build specification asked for these five rows to be *superseded* in the frozen
-#: plan instead** (`spec/v3/builds/02-decision-context.md` §7, task 2D.1 behaviour 5). That
-#: is a bigger act than it reads: superseding mints new ordinals, so every one of the ~50
-#: citations of these five addresses across the engine, the tests and the v3 documents would
-#: point at frozen history, `plan.md` would have to be re-rendered, and the coverage test's
-#: denominator moves. It is the owner's call to make and this list is the work order for it.
-AMENDED: tuple[Absence, ...] = (
-    Absence("contracts:9", "submit_rows",
-            "a submitted row may now carry `grounds` and `alternatives`, both optional; the "
-            "frozen payload shape predates them"),
-    Absence("contracts:11", "resolve_assumption",
-            "raises RetireNeedsReason: a rejection retires the row, and a blank reason "
-            "supplied for it is refused rather than replaced by the owner-rejected default"),
-    Absence("contracts:12", "supersede_row",
-            "the signature gains a required `reason` — why the old row was abandoned — and "
-            "it raises SupersedeNeedsReason when that is blank"),
-    Absence("contracts:13", "retire_row",
-            "raises RetireNeedsReason; the frozen contract takes a reason and never said a "
-            "blank one was refused, and until schema 9 it was not"),
-    Absence("contracts:34", "resolve_finding",
-            "the `rationale` parameter is now `reason`, with the column it writes; the word "
-            "was retired as a second spelling of one this store already had"),
-)
+# There is deliberately no fourth list for "the frozen contract text is stale".
+#
+# There was one — `AMENDED` — holding the five contracts v3 change 2 changed the shape of
+# (`contracts:9`, `:11`, `:12`, `:13`, `:34`). Al ruled on 2026-07-31 that a contract whose
+# signature or error list a change has altered is *superseded in the frozen plan*, through
+# `archive/v1`'s own `lineage.supersede_row`, not annotated at the code: "Of course I want
+# it done properly. I always want it done properly." Those five became `contracts:69`–`73`,
+# which is where `REGISTRY` above now points, and the list emptied.
+#
+# It is not left empty for the next change to refill. `EXCLUDED`, `DEFERRED` and `ADDED`
+# each record something with no other home: a contract the surface will never implement, one
+# it has not implemented yet, a call the plan never anticipated. A stale contract has a home
+# — the row itself — so a list here would only be somewhere to park the supersession instead
+# of performing it, which is the exact substitution the ruling rejected.
+#
+# The check that the substitution has not crept back is `TestTheDenominator`: `plan.md`
+# renders active rows only, so a superseded address disappears from it, and a `REGISTRY`
+# entry still naming one leaves its successor unaccounted for and fails.
 
 #: `contracts:50`'s `NotWriter`, struck rather than implemented. Recorded here because an
 #: outcome that is simply absent looks the same as one that was forgotten.
