@@ -42,7 +42,11 @@ TIMESTAMP_ROLES = {
     "retired_at": "withdrawn from live reads with a recorded reason",
     "resolved_at": "state_machines — an open thing reached its terminal state",
     "concluded_at": "spikes:  the experiment produced its outcome",
-    "approved_at": "terms: the owner settled a definition the planner proposed",
+    # `approved_at` stood here until schema 11. It meant "terms: the owner settled a
+    # definition the planner proposed", and it left with the only column that ever used it
+    # — the glossary is the owner's to write, so there is no proposal to settle. A declared
+    # role outliving its column is a citation to nothing, which is what
+    # `test_every_declared_timestamp_role_has_a_column` below now catches.
     "detached_at": "label_attachments: the attachment was taken off its target; the row "
                    "stays as the record that it was once there",
 }
@@ -115,7 +119,9 @@ JUSTIFICATION_ROLES = {
     "behaviour_amendments.reason": "why the behaviour was amended",
     "brief_rows.reason": "why the row was included in, or omitted from, the brief",
     "scope_attachments.reason": "why the attachment was made",
-    "terms.ban_reason": "why the word was retired",
+    # `terms.ban_reason` stood here until schema 11 — "why the word was retired" — and left
+    # with the banned list. Attaching a label records no reason, deliberately: it is the act
+    # the design makes free, so this change adds nothing here and removes one.
     "finding_reallocations.reason": "why the finding now answers to a later gate",
     "findings.reason": "how the finding was closed — for an accepted risk, the owner's "
                        "acceptance. It was `rationale` until schema 9",
@@ -168,6 +174,29 @@ def test_every_timestamp_column_is_a_declared_role():
         + "\n\nEither reuse the role that already means this — `created_at` covers every "
           "'when was this written' — or add the new one to TIMESTAMP_ROLES with what "
           "distinguishes it. Eight spellings of `created_at` is how this schema got here."
+    )
+
+
+def test_every_declared_timestamp_role_has_a_column():
+    """The other direction, and nothing checked it until v3 change 4.
+
+    `test_every_timestamp_column_is_a_declared_role` iterates columns and looks each up in
+    the register. Nothing iterated the register and looked for columns, so a role left
+    behind after its column died was invisible **forever** — which is exactly how
+    `approved_at` would have survived this change, a citation to nothing sitting in a
+    register whose whole purpose is that names are declared deliberately. The same defect
+    has bitten this repository once already, in the other register: `GLOSSARY.md` carried an
+    exception protecting `PartsDontCover`, an identifier that does not exist.
+
+    It is a few lines against the same `_columns()` helper and it generalises to every
+    future change, which is what makes it worth more than the one removal that prompted it.
+    """
+    declared = {column for _, column, _ in _columns()}
+    orphaned = sorted(role for role in TIMESTAMP_ROLES if role not in declared)
+    assert not orphaned, (
+        f"declared timestamp roles with no column: {orphaned}. A role outliving the column "
+        "it was declared for is a citation to nothing — delete it, or say which table now "
+        "carries it."
     )
 
 
@@ -250,19 +279,24 @@ def test_the_declared_justification_set_is_the_whole_of_it():
     ran green while seeing four names where there were twenty-two.
 
     The count is stated so that a fixture asserting a number nobody wrote down cannot
-    cement whichever number a builder guessed. Seventeen justification columns, plus
+    cement whichever number a builder guessed. Sixteen justification columns, plus
     `technical_claims.evidence` declared as the one that is deliberately not one.
+
+    Eighteen until v3 change 4, which drops `terms.ban_reason` with the banned list and adds
+    none — the specification said this register was "unchanged at 18: nothing this change
+    adds carries a reason", which was true about additions and forgot the deletion. The
+    assertion below is what caught it: a declared member whose column has died.
 
     Sixteen until v3 change 3, which adds `catalogue.retire_reason` and
     `catalogue_comparisons.reason`. Those two are why this register is keyed `table.column`:
     under bare-column keying `reason` and `retire_reason` were already declared, so change 3
     would have added nothing to a check that could never have fired on it.
     """
-    assert len(JUSTIFICATION_ROLES) == 18, sorted(JUSTIFICATION_ROLES)
+    assert len(JUSTIFICATION_ROLES) == 17, sorted(JUSTIFICATION_ROLES)
     declared_columns = {key.split(".", 1)[1] for key in JUSTIFICATION_ROLES}
     assert declared_columns == {
         "grounds", "alternatives", "reason", "retire_reason", "supersede_reason",
-        "block_reason", "ban_reason", "evidence",
+        "block_reason", "evidence",
     }
     # Every declared member is a column that exists — a register naming a column the schema
     # dropped is a register nobody has read since.
