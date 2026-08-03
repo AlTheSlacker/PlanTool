@@ -27,7 +27,11 @@ from typing import Any
 import yaml
 
 ASSETS = Path(__file__).parent
-DEFAULT_REVISION = 5
+#: Revision 6 (v3 change 4) adds the labelling round as stage 7 and moves adversarial and
+#: finalization to 8 and 9. Bumped here as well as in the manifest: `DEFAULT_REVISION` is
+#: the difference between an asset directory and a *used* asset directory, and a rev6 nobody
+#: loads is a revision that exists only on disk.
+DEFAULT_REVISION = 6
 
 #: The oldest revision this loader will load. Earlier revisions are retained on disk as
 #: frozen provenance and are deliberately not loadable.
