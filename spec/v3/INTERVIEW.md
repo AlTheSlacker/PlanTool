@@ -41,12 +41,28 @@ Eleven stages. New ones in bold.
 | 3 | Requirements | elicit | requirements |
 | 4 | Domain model | synthesize | entities, CRUD grid, state machines and cells |
 | 5 | External dependencies and failure modes | synthesize | dependencies, failure modes, technical claims |
-| 6 | Architecture | synthesize | components, contracts, labels |
+| 6 | Architecture | synthesize | components, contracts |
+| 6a | **Labelling** — see the note below | synthesize | glossary terms, label attachments |
 | 7 | **Verification design** | synthesize | scenarios |
 | 8 | **Detailed design** | synthesize | tasks, behaviours, pseudocode, catalogue entries |
 | 9 | Adversarial findings | verify | findings |
 | 10 | **Cold read** | verify | sufficiency results |
 | 11 | Finalization | verify | — |
+
+**Labelling is numbered `6a` above because this table and what was built now disagree, and the
+disagreement is real rather than clerical.** This table gave labels to stage 6 as one of
+Architecture's outputs. Change 4 made labelling **a stage of its own** — 7 in methodology revision
+6, which is the *interim nine-stage* methodology, not this eleven-stage target — because a round
+bolted onto architecture has no script, no mode, no gate entry and no place in `stage_range`. That
+argument does not weaken when the interview grows to eleven stages.
+
+**So the eleven-stage rewrite (`PLAN.md` item 10, methodology revision 7) has a decision to make
+and must make it deliberately: twelve stages with labelling standing alone, or labelling folded
+back into architecture and losing its script.** It is left open here rather than settled quietly,
+because settling it in passing is how a stage acquires a number nobody argued for. Note that the
+two numbering schemes are independent — revision 6's nine stages are the v2 eight plus labelling,
+while this table is the target — so "stage 7" means different things in the two, and change 5's
+specification has to say which it means every time it says it.
 
 ## 3. Why verification is designed *before* detailed design
 
