@@ -202,8 +202,24 @@ becomes comparable in size to the code. That is the trade the whole product is m
 affordable at build time precisely because a builder is served one task's worth, not the whole
 plan.
 
-**Open — my call, flagged:** exactly how deep the pseudocode goes before a task counts as
-specified. Too shallow and it decides nothing; too deep and it is code written twice.
+~~**Open — my call, flagged:** exactly how deep the pseudocode goes before a task counts as
+specified. Too shallow and it decides nothing; too deep and it is code written twice.~~
+
+**Answered, and this flag was stale for weeks — corrected 2026-08-03 while specifying change 5,
+the change that depends on it.** The answer is `INTERVIEW.md` §8 and it landed in PR #35:
+**pseudocode is deep enough when every uncited decision a cold read returns is either a
+convention or task-local.** The third category — a decision another task would have to agree
+with — is the class the plan owes an answer to, and it is what "deep enough" means.
+
+**It is a sorting rule, not a threshold, which is why it can be stated at all.** There is no
+number to invent, and the calibration is what settled it: the proposal that a task is specified
+when the cold read finds no holes was killed because a reader leaves a mean of 35 uncited
+decisions per task, so that rule never terminates. The same sort takes those 35 down to 16
+conventions, 12 task-local and 5–8 real holes.
+
+**Left standing, this flag would have told change 5's author to go and decide something already
+decided** — which is the defect D12 carried for weeks in the other direction, and the reason
+`INTERVIEW.md` §8 exists at all.
 
 ---
 
@@ -294,9 +310,16 @@ a bad label is, because a threshold is a judgment written as arithmetic so revie
 **Rejected: labels as a free-text field.** A free-text grouping key is what "milestone" was in
 v2, and it silently yields nothing on a typo.
 
-**Settled 2026-07-29, by the owner:** the tool proposes labels under glossary rules, the owner
+~~**Settled 2026-07-29, by the owner:** the tool proposes labels under glossary rules, the owner
 adds and assigns freely and overturns anything. The control level stands as written; what was
-wrong was the guard beneath it, not the level.
+wrong was the guard beneath it, not the level.~~
+
+**He reversed that the next day, 2026-07-30, and change 4 built the reversal.** Kept here because
+the 2026-07-29 ruling did happen and a reader meeting it elsewhere needs to know what became of
+it. The control level is **not** tool-proposal: *"the user defines the contents"*, so there is no
+proposal and nothing to settle. What went with it was not only the imaginary guard but the whole
+scanning apparatus — and the reason is in D18: the failure is a synonym sharing no letters, and
+every guard anyone proposed for it was lexical.
 
 ---
 
@@ -516,7 +539,10 @@ Carried forward so nothing is lost. Each is scheduled, not merely noted.
 - **The catalogue's exact shape** (D10). *Next document but one.*
 - **The interview design** — how the tool elicits a specification deep enough to build from.
   Nothing has been written on it, and it is where the density problem is won or lost.
-- **How deep the pseudocode goes** before a task counts as specified (D9).
+- ~~**How deep the pseudocode goes** before a task counts as specified (D9).~~ **Settled by
+  `INTERVIEW.md` §8 (PR #35) and struck here 2026-08-03**: deep enough when every uncited
+  decision left is a convention or task-local. It sat on this list after being answered, which
+  is this document's recurring failure — nothing cold-reads it.
 - ~~**The starter label list** (D12), and whether tool-proposal under glossary rules is the right
   level of control.~~ **Settled by change 4 and by D18.** There is no starter list and no
   tool-proposal: the owner defines the glossary's contents, and ten words written by the tool at

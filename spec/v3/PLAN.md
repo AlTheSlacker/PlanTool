@@ -45,8 +45,11 @@ one task at a time to a builder that has nothing else.
 - `catalogue` — every object, method and function the plan intends to exist: name, container,
   purpose line, owning task, public or private, near-match dismissals, and the two git fields
   that stay empty until the build phase. Design in `CATALOGUE.md`.
-- `labels` and their attachment to rows — governed by the glossary, proposed by the tool,
-  settled by the owner (D12).
+- `label_attachments` — a glossary term attached to a plan row's lineage root or to a task
+  (D12/D18). **Corrected 2026-08-03**: this said "`labels` and their attachment to rows —
+  governed by the glossary, proposed by the tool, settled by the owner", and change 4 built none
+  of that. There is no `labels` table (a label *is* a term), no tool proposal and no settling
+  step; the glossary is the owner's and the attachment is the whole of what is stored.
 - **Pseudocode**, held against a task.
 - **Scenarios** — tasks whose specification comes from a use case, step, extension or state-machine
   cell, frozen before implementation (D13).
@@ -70,10 +73,16 @@ smallness is the design: the tool call is the context boundary, not a query inte
 
 The planning surface keeps most of v2's **fifty-four**, minus what dies with packages and
 sub-tasks, plus what the catalogue, labels, pseudocode, scenarios and cold read require. (This line
-said forty-eight until 2026-07-29. Counted from `engine/surface.py`: `REGISTRY` holds 54, `ADDED`
-holds 12, and all 12 deviations appear in both. Changes 1 to 4 take it to **63** and `ADDED` to
-**22** — the arithmetic is in `builds/03-catalogue.md` task 3D.1 and `builds/04-labels.md` task
-4D.1.)
+said forty-eight until 2026-07-29. Counted from `engine/surface.py`: `REGISTRY` held 54 and `ADDED`
+12, with all 12 deviations in both.)
+
+**Measured after change 4 landed, 2026-08-03: `REGISTRY` holds 58 and `ADDED` 17.** This line
+predicted 63 and 22 "after changes 1 to 4" and cited `builds/04-labels.md`, a document that was
+superseded before it was built. The prediction was made when change 4 was going to *add* a
+near-match guard, a labels table and their tools; the change that shipped deletes three glossary
+tools and adds four, so it is net **+1**. **Take the number from the code, never from this line** —
+changes 5 to 10 will move it again, and the specification that guesses is the one that cements a
+wrong count.
 
 ## 4. The order of work
 
@@ -177,9 +186,12 @@ added.
 replacement and measured it away: 92% of a plan's rows have no path to a component, so a place-name
 is not the redundant filter the replacement assumed (`builds/04-labels.md` §3.2).
 
-**Settled by the owner, 2026-07-29:** tool-proposed labels under glossary rules **is** the right
-level of control — the tool proposes, he adds and assigns freely and overturns anything. Specifying
-it against the code then found the guard underneath it was imaginary; see D12 and change 4.
+~~**Settled by the owner, 2026-07-29:** tool-proposed labels under glossary rules **is** the right
+level of control — the tool proposes, he adds and assigns freely and overturns anything.~~
+**Reversed by him on 2026-07-30 and built as change 4**: there is no tool proposal and no approval
+step, because he defines the glossary's contents. Specifying it against the code had already found
+the guard underneath it was imaginary, and the reversal removed the apparatus rather than building
+one. See D12, D18, and `builds/04-glossary-and-labels.md`.
 
 Still the owner's, at the build-phase discussion: whether `component` should be un-retired, which
 is currently my call. Change 3 is evidence for keeping it — it gives the word a job nothing else
