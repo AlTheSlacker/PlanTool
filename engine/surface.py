@@ -40,9 +40,9 @@ exposed call satisfies this invariant?** Every tool with no contract behind it a
 `ADDED` with the reason it exists.
 
 The glossary is the third such group (D23) and the plan has nothing to say about it at all —
-it never asks what the words mean (DEFECTS.md F40). `plan_status` names `glossary()` even
-when the plan has no terms yet, because a line that appears only once there are terms can
-never be the line that produces the first one.
+it never asks what the words mean (DEFECTS.md F40). Its labels are the fourth: they replace
+the declared build grouping as the way a review list is filtered (v3 D7/D12), and a
+grouping's replacement is no more anticipated by the frozen plan than the grouping's death.
 
 **`NotWriter` is moot, not implemented.** `contracts:50` declares it for "a write tool
 invoked without holding the writer lease"; there is no lease, the lock having been removed
@@ -96,6 +96,7 @@ from engine.revision import RevisionService
 from engine.rows import RowService
 from engine.storage import Storage
 from engine.tasks import TaskGraphService
+from engine.labels import LabelService
 from engine.terms import TermService
 from engine.validation import SpikeSpec, ValidationService
 from engine.warnings import WarningService
@@ -286,7 +287,7 @@ def as_selector(field_name: str, value: Any) -> RowSelector:
     got = as_dict(field_name, value)
     unknown = set(got) - {
         "ids", "table", "stage", "provenance", "live_only", "neighbourhood_of",
-        "limit", "offset",
+        "limit", "offset", "labels",
     }
     if unknown:
         raise _fail(
@@ -306,7 +307,30 @@ def as_selector(field_name: str, value: Any) -> RowSelector:
         ),
         limit=got.get("limit", 100),
         offset=got.get("offset", 0),
+        # **A field of the selector, not a top-level `read_rows` parameter.** That row takes
+        # exactly one argument and dispatch calls `read_rows(**args)` against
+        # `read_rows(self, selector)`, so a top-level `labels` would be a `TypeError` caught
+        # by the blanket handler and reported as the caller's mistake. Both halves — the
+        # whitelist above and this construction — have to move together, since `as_selector`
+        # refuses any key it does not know.
+        #
+        # **This is the one place allowed to be generous about a bare string.** The model
+        # refuses `labels="engine"` outright, because a `str` is a sequence of `str` and
+        # would filter on its own letters; here a JSON `"labels": "engine"` is plainly one
+        # word, so it is coerced. The friendliness lives at the edge and the model stays
+        # strict.
+        labels=_as_labels(f"{field_name}.labels", got.get("labels")),
     )
+
+
+def _as_labels(field_name: str, value: Any) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if isinstance(value, str):
+        return (value,)
+    if not isinstance(value, list):
+        raise _fail(field_name, "a list of words, or one word", value)
+    return tuple(as_str(f"{field_name}[{i}]", v) for i, v in enumerate(value))
 
 
 def as_spike_spec(field_name: str, value: Any) -> SpikeSpec:
@@ -429,6 +453,32 @@ def as_comparisons(field_name: str, value: Any) -> tuple[Comparison, ...]:
     return tuple(out)
 
 
+def as_targets(field_name: str, value: Any) -> list[RowRef | int]:
+    """What a label is being put on: plan-row addresses, task ids, or a mix of both.
+
+    `DECODERS` had `refs` and `ints` and nothing that accepts both, and a label attaches to
+    either kind — so a caller labelling three rows and a task had no way to say so in one
+    call.
+
+    **The `bool` rejection is not defensive.** `bool` subclasses `int`, so a bare
+    `isinstance(v, int)` reads `True` as task 1 and writes an attachment to whichever task
+    happens to hold that id. It is checked here and again in the service, because the
+    service is reachable without the door.
+    """
+    if not isinstance(value, list):
+        raise _fail(field_name, "a list of addresses and task ids", value)
+    out: list[RowRef | int] = []
+    for i, item in enumerate(value):
+        where = f"{field_name}[{i}]"
+        if type(item) is int:
+            out.append(as_int(where, item))
+        elif isinstance(item, str):
+            out.append(as_ref(where, item))
+        else:
+            raise _fail(where, "an address like 'requirements:61' or a task id", item)
+    return out
+
+
 DECODERS: dict[str, Callable[[str, Any], Any]] = {
     "str": as_str,
     "int": as_int,
@@ -445,6 +495,7 @@ DECODERS: dict[str, Callable[[str, Any], Any]] = {
     "change_request": as_change_request,
     "owner_decision": as_owner_decision,
     "comparisons": as_comparisons,
+    "targets": as_targets,
 }
 
 
@@ -516,7 +567,7 @@ REGISTRY: dict[str, Tool] = {
                                        "attack it (question, hypothesis, method, budget)"),
            Param("idempotency_key", "str", note="replaying this key returns the first receipt"),
            writes=True),
-        _t("read_rows", "rows", "read_rows", "contracts:10",
+        _t("read_rows", "rows", "read_rows", "contracts:74",
            "Read the rows a selector picks out, a page at a time.",
            Param("selector", "selector", note="which rows: by address, table, stage, "
                                               "provenance, liveness or neighbourhood")),
@@ -710,48 +761,56 @@ REGISTRY: dict[str, Tool] = {
         _t("get_auxiliary", "guidance", "get_auxiliary", DEVIATION,
            "A script that belongs to no single stage — the red team's, for one.",
            Param("name", "str", note="which auxiliary script")),
-        # --- the glossary (components:2, by deviation) ---
+        # --- the glossary and its labels (components:2, by deviation) ---
+        #
+        # The glossary is the owner's table and there is no approval step: whatever is
+        # written was authorised by him at the moment it was written, so there is no queue
+        # of unsettled proposals and nothing to settle. `approve_term`, `retire_term` and
+        # `export_glossary` were struck by v3 change 4 with the machinery behind them — the
+        # proposal lifecycle, the banned list, and a manifest with no consumer.
         _t("define_term", "terms", "define_term", DEVIATION,
-           "Propose what a word means in this plan; the owner settles it. Draft the "
-           "definition yourself — you have just read the rows it appears in.",
+           "Record what a word means in this plan, in the owner's terms.",
            Param("term", "str", note="the word itself"),
            Param("definition", "str",
-                 note="what you believe it means here, in a sentence, for the owner to "
-                      "accept or rewrite"),
-           Param("names_ref", "ref", required=False,
-                 note="the row this word names, if it names one"),
-           writes=True),
-        _t("approve_term", "terms", "approve_term", DEVIATION,
-           "Record the owner settling a definition — as proposed, or in his own words.",
-           Param("term", "str", note="the word being settled"),
-           Param("definition", "str", required=False,
-                 note="the owner's own wording, when he rewrote it; omit to accept the "
-                      "proposal as it stands"),
+                 note="what it means here, in a sentence. A word listed with no meaning "
+                      "beside it is a word two readers read two ways"),
            writes=True),
         _t("redefine_term", "terms", "redefine_term", DEVIATION,
-           "Sharpen what a word means, keeping the old wording as history. Also how a "
-           "retired word comes back.",
+           "Change what a word means, in place.",
            Param("term", "str", note="the word being redefined"),
            Param("definition", "str", note="what it means now"),
-           Param("names_ref", "ref", required=False,
-                 note="the row it names, if that changed too"),
            writes=True),
-        _t("retire_term", "terms", "retire_term", DEVIATION,
-           "Take a word out of use, saying where it may no longer appear and what to say "
-           "instead.",
-           Param("term", "str", note="the word being retired"),
-           Param("ban_scope", "str",
-                 note="where it is out: prose, identifier, or both"),
-           Param("ban_reason", "str", note="why, so the next writer can agree with it"),
-           Param("use_instead", "str", required=False,
-                 note="the word to say instead; it must be defined already"),
+        _t("remove_term", "terms", "remove_term", DEVIATION,
+           "Take a word out of the glossary. If anything carries it as a label, this "
+           "refuses and says how widely, so you can supply a replacement or take it off "
+           "everything.",
+           Param("term", "str", note="the word to remove"),
+           Param("replacement", "str", required=False,
+                 note="a word every attachment moves to; it must itself be defined"),
+           Param("detach_all", "bool", required=False,
+                 note="true to take the label off everything instead of moving it"),
            writes=True),
         _t("glossary", "terms", "glossary", DEVIATION,
-           "Every word this plan has agreed the meaning of, retired ones included."),
-        _t("export_glossary", "terms", "export_glossary", DEVIATION,
-           "Publish the vocabulary as a manifest in the workspace for your own checks to "
-           "read.",
-           writes=False),
+           "Every word this plan has agreed the meaning of, alphabetically."),
+        _t("attach_label", "label_service", "attach_label", DEVIATION,
+           "Put a label on plan rows or tasks. A label is a glossary term, so the word must "
+           "be defined first.",
+           Param("word", "str", note="the label, which must be a live glossary term"),
+           Param("targets", "targets",
+                 note="what to label: plan-row addresses like 'requirements:61', task ids "
+                      "as whole numbers, or a mix"),
+           writes=True),
+        _t("detach_label", "label_service", "detach_label", DEVIATION,
+           "Take a label off plan rows or tasks. The attachment is stamped, not deleted: it "
+           "stays as the record that the label was once there.",
+           Param("word", "str", note="the label to take off"),
+           Param("targets", "targets", note="which rows and tasks to take it off"),
+           writes=True),
+        _t("labels", "label_service", "labels", DEVIATION,
+           "Which labels are in use and how widely — as two counts, rows and tasks, never "
+           "their sum. Naming one lists everything carrying it.",
+           Param("word", "str", required=False,
+                 note="one label, to see every row and task carrying it")),
         # --- the render (components:15, by deviation) ---
         _t("render_plan", "renderer", "render_plan", DEVIATION,
            "Write the plan to a document in the workspace for the owner to read; the "
@@ -936,22 +995,29 @@ ADDED: tuple[Absence, ...] = (
     Absence(DEVIATION, "define_term",
             "the eight planning stages never ask what the words mean, so a plan could "
             "not say — and a vocabulary nothing records is the one F27 broke (D23)"),
-    Absence(DEVIATION, "approve_term",
-            "a definition the tool took from a planning session and filed as settled is "
-            "the tool deciding what the owner's words mean; he accepts it or writes his "
-            "own (D23)"),
     Absence(DEVIATION, "redefine_term",
-            "a meaning sharpens, and the old wording has to stay readable or the change "
-            "reads as a contradiction later (D23)"),
-    Absence(DEVIATION, "retire_term",
-            "retiring a word is the act the whole mechanism exists to make visible, and "
-            "the banned list is what every check downstream counts against (D23)"),
+            "a meaning sharpens, and a word that could be defined once and never corrected "
+            "is a glossary nobody keeps true (D23)"),
+    Absence(DEVIATION, "remove_term",
+            "the glossary is the owner's to edit, and a table you may add to and rewrite "
+            "but never remove from is not one he owns. It is also the only place the "
+            "replacement word belongs: supplied at the moment it is needed and consumed "
+            "immediately, rather than stored forever in a column (v3 change 4)"),
     Absence(DEVIATION, "glossary",
             "a writer needs the words before typing, and a resuming planner has no other "
             "way back to them (D23)"),
-    Absence(DEVIATION, "export_glossary",
-            "the delivery point that achieves the most: the tool publishes the vocabulary "
-            "and the codebase's own checks enforce it, with no judgment exercised (D23)"),
+    Absence(DEVIATION, "attach_label",
+            "labels replace the declared build grouping as the way a review list is "
+            "filtered (v3 D7/D12), and the lookup this call performs is the whole of the "
+            "glossary's mechanical role: a label must be a word the plan has defined"),
+    Absence(DEVIATION, "detach_label",
+            "a label put on wrongly has to come off, and it must come off by stamping "
+            "rather than deleting — the attachment is the record that the label was once "
+            "there (v3 change 4)"),
+    Absence(DEVIATION, "labels",
+            "a label on all 687 rows and a label on one are both useless for filtering, "
+            "and only a count against its denominator tells them apart; without this the "
+            "only way to find what a row carries was one call per word (v3 change 4)"),
     Absence(DEVIATION, "reallocate_finding",
             "D15 gives a finding two exits, resolve or defer-to-a-later-gate; without a tool "
             "for the second, the gate lock could only ever be satisfied by resolving, and a "
@@ -1144,27 +1210,22 @@ class Surface:
     def __init__(self, storage: Storage, *, guidance: Guidance | None = None):
         self.storage = storage
         self.terms = TermService(storage)
-        # The glossary is built before the row service, which consults it at submission:
-        # the moment of typing is the only moment at which saying "that word is retired"
-        # changes what gets written (D23).
-        self.rows = RowService(storage, terms=self.terms)
-        self.terms.rows = self.rows
+        self.rows = RowService(storage)
         self.graph = LinkGraph(storage)
         self.conflicts = ConflictService(storage, self.rows)
         self.warns = WarningService(storage)
         self.gaps = GapEngine(storage, self.rows)
         # The warning ledger mirrors conditions the gap-engine computes (open gaps, open
-        # assumptions, retired-word uses). Late-bound here — the gap-engine is built after
-        # the warning service — so `active_warnings` reconciles those against live state and
-        # never reports one a mutation has already cleared (DEFECTS.md F50). Same late-bind
-        # shape as `terms.rows = rows` above.
+        # assumptions). Late-bound here — the gap-engine is built after the warning service
+        # — so `active_warnings` reconciles those against live state and never reports one a
+        # mutation has already cleared (DEFECTS.md F50).
         self.warns.live_warning_keys = self.gaps.live_warning_keys
         # Findings are built before the gate that reads them: the stage-7 criteria go
         # through the finding service now, not through plan_rows (D22).
         self.findings = FindingService(storage, self.rows)
         self.gates = GateEngine(
             storage, self.rows, self.conflicts, self.warns, gaps=self.gaps,
-            findings=self.findings, terms=self.terms,
+            findings=self.findings,
         )
         self.validation = ValidationService(
             storage, self.rows, self.graph, self.conflicts
@@ -1177,12 +1238,19 @@ class Surface:
         # unpassed collaborator skip its guard and proceed — a catalogue missing both would
         # look identical to a working one.
         self.catalogue = CatalogueService(storage, self.rows)
+        # **`label_service`, not `labels`.** Four things would otherwise be called `labels` —
+        # the tool, the `RowSelector` field, the `RowPage` field, and the service method —
+        # plus this attribute, which the registry's `service` column resolves to, as a
+        # fifth. The three data fields are fine, each qualified by what holds it; this one
+        # would sit beside the tool name in dispatch, and `renderer` a few lines below
+        # records the precedent against exactly that.
+        self.label_service = LabelService(storage, self.rows, self.terms)
         self.tasks = TaskGraphService(
             storage, self.rows, graph=self.graph, findings=self.findings
         )
         self.briefs = BriefComposer(
             storage, self.tasks, graph=self.graph, attachments=self.attachments,
-            behaviours=self.behaviours, terms=self.terms,
+            behaviours=self.behaviours,
         )
         self.revision = RevisionService(
             storage, self.graph, self.rows, self.findings, self.warns, self.conflicts
@@ -1194,7 +1262,6 @@ class Surface:
         self.renderer = PlanRender(storage, self.rows, self.findings)
         self.resume = ResumeService(
             storage, gaps=self.gaps, warnings=self.warns, guidance=self.guidance,
-            terms=self.terms,
         )
         self.log = ObservabilityLog(storage.workspace)
         self._resolve = resolver_from(self.rows, self.findings)

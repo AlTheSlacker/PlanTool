@@ -778,9 +778,16 @@ keeps its architecture work and loses its grouping round — which is what `INTE
 says: *"Stage 6 loses the packaging round and the mandatory package cut… It gains labels."*
 
 **What fills the hole is change 4's**, and it is named here so the two changes do not each assume
-the other did it: revision 6 adds a labelling round in the same place, and this change leaves the
-place empty rather than half-filled. A residual packaging round surviving into rev6 would sit
-beside the round that replaced it.
+the other did it: revision 6 adds a labelling round, and this change leaves the place empty rather
+than half-filled. A residual packaging round surviving into rev6 would sit beside the round that
+replaced it.
+
+**Corrected 2026-08-03, when change 4 was built: not "in the same place".** This said the labelling
+round arrives inside stage 6, which is what change 4's own draft said too — and number 6 is
+Architecture. It is **stage 7**, a stage of its own, and adversarial and finalization move to 8 and
+9. Bolted onto an existing stage it would have had no script, no mode, no gate entry and no place
+in `stage_range`. Nothing in the engine hard-codes a stage number, which is what made the
+renumbering affordable.
 
 **Behaviour 4 is why this packet exists, and it is a correctness break, not untidiness.**
 `rev3/package6_architecture.md` tells the planner: "`declare_package()` each one the user agrees

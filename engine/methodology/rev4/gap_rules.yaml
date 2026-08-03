@@ -20,8 +20,6 @@
 #                    `to_table`; `unless_field` exempts rows that explain the absence
 #   open_assumption  live assumed rows, filtered by `assumption_kind`
 #   uncited_section  a stored source has sections no extract has ever drawn from
-#   no_glossary      the plan has rows but has never agreed what any word means
-#   unsettled_term   a definition the planner proposed that the owner has not settled
 
 rules:
   # --- stage 1: context & goals (elicit) ---
@@ -238,31 +236,11 @@ rules:
 
   # --- vocabulary (D23) ---
   #
-  # Deliberately **not** a count. The first design counted how often each word appeared
-  # across submitted rows and asked about any that recurred without a definition; the owner
-  # killed it on sight — "are we going to make a glossary entry for 'the'?" — and he is
-  # right, because the threshold that separates a load-bearing word from ordinary English
-  # is a judgment, and the tool does not make those. So the *planner* names the words that
-  # carried weight (mandate clause 7) and these two rules make sure the owner is asked at
-  # all, and asked again about anything still hanging.
-  # Stage 2, not every stage: the words worth pinning down are the ones a use-case
-  # round has just made you lean on, and a rule that asks in all eight stages is the
-  # cry-wolf failure this file already records once. Asked where it is answerable, once.
-  - id: no_glossary
-    priority: 5
-    stage: 2
-    type: no_glossary
-    ask: >-
-      Nothing in this plan has an agreed meaning yet. Name the words that carried weight
-      in what you have recorded so far, propose a definition for each with define_term,
-      and ask the owner which words of their own they want pinned down — the ones they
-      would be annoyed to see used loosely. Every row after this is written in these words.
-
-  - id: unsettled_term
-    priority: 4
-    stage: null
-    type: unsettled_term
-    ask: >-
-      "{word}" is defined as "{definition}" — but that is your wording, not the owner's.
-      Only they can settle it. Put it to them and record the answer with approve_term,
-      either as it stands or in the words they give you.
+  # `no_glossary` and `unsettled_term` stood here and were removed on 2026-08-03 by v3
+  # change 4. The reasoning is written out in revision 5's copy of this file; the short of
+  # it is that `gaps.py` no longer implements either rule type, so this revision would raise
+  # on its first derive, and `unsettled_term`'s ask named `approve_term`, a tool the
+  # registry can no longer resolve. This revision stays loadable, so it is corrected rather
+  # than left broken — the frozen revisions below the loadable baseline (2 and 3) are not
+  # touched, because nothing loads them and rewriting provenance is the thing this project
+  # refuses to do.

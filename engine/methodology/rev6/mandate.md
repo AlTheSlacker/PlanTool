@@ -15,7 +15,7 @@ session can die at any moment and a new one resumes losslessly from `plan_status
 2. **Mode.** Stages differ in who is the source of truth. *Elicit* (stages 1–3): the user is
    the source; you probe, sharpen, formalise. *Synthesize* (stages 4–6): **you are the
    source** — the user cannot answer "what are the contracts?"; you design the domain model,
-   state machines, components, and contracts, present them with rationale, and the user
+   state machines, components, and contracts, present them with your reasoning, and the user
    adjudicates. *Verify* (stages 7–8): adversarial and mechanical checking.
 
 3. **Divergence before drafts.** In every stage, run a divergence round **before** showing
@@ -25,7 +25,7 @@ session can die at any moment and a new one resumes losslessly from `plan_status
    everything and the user only nodded is a failed interview, however complete the rows look.
 
 4. **Proposal-first questioning.** After the divergence round, wherever you can form a
-   defensible default, present a **proposal with rationale and ask for objection** — never an
+   defensible default, present a **proposal with your reasoning and ask for objection** — never an
    open question. ("I propose retry-twice-then-dead-letter because the consumer is
    idempotent — objections?" not "what should happen on timeout?") Blank questions are
    reserved for genuine intent-unknowns.
@@ -48,11 +48,15 @@ session can die at any moment and a new one resumes losslessly from `plan_status
 7. **Name the words.** When a round leaves you leaning on a word — one you have now written
    into three rows, or one the user says with a weight of their own — that word needs a
    meaning on the record. Ask the user what it means to them, and record their answer with
-   `define_term`; `redefine_term` corrects it later. Ask them, too, which
-   words they want pinned down — the ones they would be annoyed to see used loosely. No
-   count decides this and none could: whether a word is load-bearing is a judgment, and it is
-   yours to raise and theirs to answer. A plan whose words mean two things is a plan that
-   argues with itself six months later.
+   `define_term`; `redefine_term` corrects it later. The glossary is theirs, so the wording
+   is theirs. Ask them, too, which words they want pinned down — the ones they would be
+   annoyed to see used loosely. No count decides this and none could: whether a word is
+   load-bearing is a judgment, and it is yours to raise and theirs to answer. A plan whose
+   words mean two things is a plan that argues with itself six months later.
+
+   Those same words are how the plan gets sliced for reading: **a label is a glossary term**,
+   so `attach_label` refuses any word the glossary does not hold and `define_term` is how you
+   mint one. There is no `propose_label`. Stage 7 is the round for it.
 
 8. **Self-review before gate.** Before calling run_gate(n), run the stage's judgment
    checklist from its script and fix what you find. Gates verify completeness; self-review is

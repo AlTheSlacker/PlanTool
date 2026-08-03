@@ -275,7 +275,8 @@ class BatchReceipt:
 
 @dataclass(slots=True)
 class RowSelector:
-    """contracts:10 — by ids | table | stage | provenance | liveness | link-neighborhood.
+    """contracts:74 — by ids | table | stage | provenance | liveness | labels |
+    link-neighborhood.
 
     Paginated, because requirements:62 forbids a full-plan dump as the default read
     path. The plan names the selector's dimensions but not its field shapes; this
@@ -290,16 +291,55 @@ class RowSelector:
     neighbourhood_of: RowRef | None = None
     limit: int = 100
     offset: int = 0
+    #: v3 change 4 — every word given must be carried by the row's lineage root, as a live
+    #: attachment. **AND, never OR**, which is the owner's decision of 2026-07-30 taken
+    #: against the recommendation that one label is enough; he asked for it "for
+    #: completeness".
+    #:
+    #: A bare `str` is refused rather than accepted, because a `str` *is* a sequence of
+    #: `str`: `labels="engine"` would iterate to four distinct characters after dedupe, none
+    #: of which is a term, and the page would come back empty and correct-looking. The
+    #: payload parser is the one place allowed to be generous — a JSON `"labels": "engine"`
+    #: is coerced to a one-element tuple there — so the friendliness lives at the edge and
+    #: the model stays strict.
+    labels: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
 class RowPage:
-    """contracts:10 — a page of full row contents plus its continuation state."""
+    """contracts:74 — a page of full row contents, its continuation state, and its labels.
+
+    **The labels are on the page and not on `PlanRow`**, which is a modelling decision
+    rather than a convenience, and the obvious shape is wrong twice.
+
+    A `PlanRow` is **one version** of a row, while a label is attached to the row's *lineage
+    root*, so every version shares one set. A field on the version would say labels are a
+    property of that version — the thing `target_root` was chosen to avoid.
+
+    And a field there would make an empty tuple mean two different things. `PlanRow` is
+    hydrated on many paths and only this one would fill it, so a row fetched anywhere else
+    would carry `()` and be indistinguishable from a row that genuinely carries no labels: a
+    value that is only true where something refreshed it, which is the F50 defect this build
+    has already paid for once. On the page, the mapping's presence *is* the statement that
+    somebody looked.
+    """
 
     rows: tuple[PlanRow, ...]
     total: int
     offset: int
     limit: int
+    #: Each row's live labels, alphabetically, keyed by ref — populated whether or not a
+    #: label filter was used. A row carrying none appears here with an empty tuple rather
+    #: than being absent, or a caller could not tell "no labels" from "this page did not
+    #: fetch them" and would write `labels.get(ref, ())`, restoring the ambiguity the
+    #: mapping exists to remove.
+    #:
+    #: `default_factory` and not `= {}`: this dataclass is `frozen=True, slots=True` and a
+    #: bare mutable default is a `ValueError` at class-definition time. Note also that
+    #: `frozen` synthesises `__hash__`, so a page carrying a dict can no longer be hashed —
+    #: harmless today, since nothing puts a page in a set, and recorded here so it is not
+    #: discovered as a `TypeError`.
+    labels: dict[RowRef, tuple[str, ...]] = field(default_factory=dict)
 
     @property
     def has_more(self) -> bool:
@@ -617,4 +657,106 @@ class CatalogueResult:
     comparisons: tuple[Comparison, ...]
     use_instead: CatalogueEntry | None = None
     note: str | None = None
+
+
+# --- labels (v3 D12 as amended, `spec/v3/builds/04-glossary-and-labels.md` §11) -------
+#
+# Every field is listed for the reason the catalogue's five are: a return type's fields are
+# explicitly *not* a convention — they differ per task — so a type named and not defined is
+# a hole in every task that consumes it. The recorded v2 defect is `WriteBatch`,
+# `RowSelector`, `TraversalSpec` and `GraphScope`, four types the plan named and nobody
+# defined, "so two implementers would have built two incompatible interfaces".
+#
+# There is no `Label` type, and that is the design rather than an omission: a label **is** a
+# glossary term, so the word's own row is a `Term` and these describe only its attachments.
+
+
+@dataclass(frozen=True, slots=True)
+class LabelAttachment:
+    """One word attached to one target, live or detached.
+
+    **Not `Attachment`, which the specification called it.** `engine/attachments.py`
+    already defines an `Attachment` — D8's scope attachment, a plan row allocated to a
+    task's context — and two classes of one name in one engine is the collision the
+    catalogue exists to catch, counted eleven times over v2's own modules. The two are not
+    the same kind of thing: that one attaches a *row to a scope*, this one attaches a *word
+    to a row*.
+
+    `target_root` is a `RowRef` and not a string, because every other model here that holds
+    a row address holds a `RowRef`. The column is TEXT; this coerces.
+
+    Detaching stamps `detached_at` and never deletes the row: a detached attachment is the
+    record that the label was once there, which is also why `word` carries no foreign key
+    to `terms` — it must go on naming a word the owner has since removed.
+    """
+
+    id: int
+    word: str
+    target_root: RowRef | None
+    task_id: int | None
+    detached_at: str | None = None
+    created_at: str = ""
+
+    @property
+    def is_live(self) -> bool:
+        return self.detached_at is None
+
+
+@dataclass(frozen=True, slots=True)
+class LabelUsage:
+    """One word in use, its meaning, and how widely it is carried.
+
+    The count is split in two and **never summed**. A word on three rows and a word on four
+    hundred are different decisions, and a summed count hides which one this is — the same
+    two-denominator rule `remove_term`'s refusal follows, for the same reason.
+
+    There is no `is_approved` and no `is_banned`; neither state exists.
+    """
+
+    word: str
+    definition: str
+    row_count: int
+    task_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class LabelTarget:
+    """One thing carrying a label: a plan row, or a task.
+
+    `name` is what makes this a type rather than a bare address — convention 9: an error or
+    a report never emits a bare `table:ordinal`, because an address alone forces the reader
+    to go and look it up. A plan row contributes its name, a task its title.
+    """
+
+    kind: str  # "row" | "task"
+    ref: RowRef | None
+    task_id: int | None
+    name: str
+
+
+@dataclass(frozen=True, slots=True)
+class LabelReport:
+    """What `labels()` answers, with its denominators inside it rather than beside it.
+
+    A count whose denominator is one call away is a count that gets rendered alone, so
+    `live_rows` and `live_tasks` travel with the usages: a label on all 687 rows and a label
+    on one are both useless for filtering, and only the denominator tells them apart.
+
+    **Both halves count the same population as their numerators.** The counts in a
+    `LabelUsage` are of live *attachments*, which key on lineage roots, so the denominator
+    is live **lineages** — one row per lineage, the one with no successor — and not live
+    plan rows. The two sets coincide only for lineages that have never been superseded, so
+    on a plan with any revision history the naive pairing drifts. It is also the population
+    a person means by "how much of the plan carries this label".
+
+    `unattached_terms` is a count and not a list: it says the glossary holds words nothing
+    carries, which is worth knowing, and listing them would make this report grow with the
+    glossary rather than with the labelling.
+    """
+
+    usages: tuple[LabelUsage, ...]
+    live_rows: int
+    live_tasks: int
+    unattached_terms: int
+    targets: tuple[LabelTarget, ...] = ()
 

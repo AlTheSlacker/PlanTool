@@ -695,10 +695,6 @@ Responsibility: Sole owner of persistence behind a backend-neutral storage inter
 
 ### row-service (`components:2` · decided)
 Responsibility: Owns the PlanRow lifecycle: provenance-checked batched submission with per-row verdicts, full and targeted readback, in-place assumption upgrade, supersession lineage, and retirement.
-- **read_rows** (function): (selector: RowSelector (by ids | table | stage | provenance | liveness | link-neighborhood; paginated)) -> RowPage — full contents of the selected rows; targeted reads so resume cost scales with the working set, never a full-plan dump (requirements:62, decisions:49) (`contracts:10` · decided · links: requirements:7, requirements:30, requirements:45, requirements:62, decisions:49)
-  - error UnreadableRows: integrity failure on requested rows; report names unreadable vs surviving rows and routes to recovery (requirements:11)
-  - error InvalidSelector: selector malformed; pedagogical error names the invalid field; nothing read
-  - consumed by: components:15, components:12, components:5, components:6
 - **submit_rows** (function): (batch: list[RowSubmission] (each submission may also carry optional grounds and alternatives: why this content is right, and what was considered and rejected), idempotency_key: str) -> list[RowVerdict] — per-row accept/reject naming the specific problem; accepted rows stand (requirements:14) (`contracts:69` · decided · links: requirements:5, requirements:14, requirements:27, requirements:48, decisions:43, use_cases:3)
   - error ConflictRequired: a submitted row contradicts a stored row; nothing is filed until a conflict is raised and presented (requirements:27)
   - error StorageUnavailable: fail fast; the whole batch is atomic — no partial rows (requirements:6)
@@ -719,6 +715,10 @@ Responsibility: Owns the PlanRow lifecycle: provenance-checked batched submissio
   - error AlreadyRetired: no-op refused so the audit trail records exactly one retirement
   - error RetireNeedsReason: the reason is blank; retiring takes a row out of every live read, so a later reader finding it gone needs the sentence, not the timestamp
   - consumed by: components:15
+- **read_rows** (function): (selector: RowSelector (by ids | table | stage | provenance | liveness | labels | link-neighborhood; paginated)) -> RowPage — full contents of the selected rows, each row's live labels alongside them, and the page's continuation state; targeted reads so resume cost scales with the working set, never a full-plan dump (requirements:62, decisions:49) (`contracts:74` · decided · links: requirements:7, requirements:30, requirements:45, requirements:62, decisions:49)
+  - error UnreadableRows: integrity failure on requested rows; report names unreadable vs surviving rows and routes to recovery (requirements:11)
+  - error InvalidSelector: selector malformed; pedagogical error names the invalid field; nothing read
+  - consumed by: components:15, components:12, components:5, components:6
 
 ### link-graph (`components:3` · decided)
 Responsibility: Owns the typed-edge substrate: edge creation with row submission, closure traversal, impact enumeration, and cycle detection.

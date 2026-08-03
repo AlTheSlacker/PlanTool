@@ -307,7 +307,18 @@ def render(
             for f in fields(value)
         }
     if isinstance(value, dict):
-        return {str(k): render(v, resolve, cites, follow) for k, v in value.items()}
+        # **A `RowRef` key is displayed, not `str()`-ed**, and this is the one place a bare
+        # address could still get out. Layer 2 walks a payload's *values* and never its
+        # keys, so `{str(ref): ...}` would put `requirements:61` in front of a reader with
+        # no name beside it and no check able to see it — D19's rule failing exactly where
+        # nothing enforces it. Added by v3 change 4, whose `RowPage.labels` is the first
+        # ref-keyed mapping to cross this boundary; it costs one lookup per key and closes
+        # the hole for every mapping after it.
+        return {
+            display(k, resolve) if isinstance(k, RowRef) else str(k):
+                render(v, resolve, cites, follow)
+            for k, v in value.items()
+        }
     if isinstance(value, (list, tuple, set, frozenset)):
         return [render(v, resolve, cites, follow) for v in value]
     raise TypeError(

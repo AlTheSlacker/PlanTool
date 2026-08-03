@@ -243,36 +243,48 @@ and how it interacts with supersession.
 
 ---
 
-## D12 — Labels sit outside the breakdown and are governed by the glossary machinery
+## D12 — A label is a glossary term, attached to rows and tasks
 
-**Decided.** A label is a word attached to any row for filtering and review — "GUI", "database",
-"engine". A row may carry none or several, they overlap freely, and they **never** affect build
-order, completion, ownership or what a builder is served. The tool proposes labels from a
-generic starter list and adds to it when nothing fits; the owner changes them at will.
+**Decided.** A label is a word attached to any row or task for filtering and review — "GUI",
+"database", "engine". A row may carry none or several, they overlap freely, and they **never**
+affect build order, completion, ownership or what a builder is served. **The word must be a live
+glossary term**, so `attach_label` looks it up and refuses if nothing holds it; `define_term`
+mints one. The owner defines the contents and changes them at will.
 
 **Reasoning.** This is the owner's scope item: he needs to filter references and tasks for later
-review. Giving the tool proposal rights is safe **because** labels affect nothing in the build —
-the blast radius of a bad label is a slightly worse filter, and the owner can overturn it.
+review. It also replaces the declared build grouping D7 removed, and the replacement is better
+shaped than the thing it replaces: a grouping was a *level*, so a row belonged to exactly one and
+everything under it inherited it, while a label is an attachment, so a row carries as many as
+make sense and none of them claims to be its home.
 
-**The guard:** labels are governed by the glossary — the tool proposes, the owner settles, and a
-near-duplicate is refused. The owner's stated risk is too many specific labels and near-duplicate
-names, which is the same failure the glossary exists to prevent.
+**Rewritten 2026-08-03 by change 4, and four things this decision used to say are now false.**
+It said the tool proposes labels from a starter list and the owner settles them; that there is a
+label vocabulary separate from the glossary; that a near-duplicate is refused; and that labels
+get a table of their own. There is no proposal step, no separate vocabulary, no near-match guard
+and no `labels` table — a label **is** a term, and `label_attachments` records only the
+attachment.
 
-**Corrected 2026-07-29: that guard did not exist, and this decision said it needed no new
-mechanism.** `TermService.define_term` refuses only an **exact** match — it calls `find(word)`, a
-direct lookup — and nothing anywhere in the glossary detects a near-duplicate at proposal time or
-any other time. So the sentence *"a near-duplicate is refused exactly as a near-duplicate term is"*
-described a mechanism by pointing at another mechanism that was equally imaginary, and the only
-thing standing between the owner and a hundred nearly-identical labels was a rule in a document.
-That is this project's oldest recorded failure, made twice in one sentence.
+**The near-match guard is refused deliberately, and this is the part a cold session will want to
+re-add.** The failure the owner named is calling something a "part" one day and a "component" the
+next, and `part` and `component` share no letters: every mechanism proposed against it — a banned
+list, an allowlist over row names, near-match ranking — is lexical, and none of them can see a
+synonym that shares no vocabulary. `terms.py` had admitted that in its own docstring since v2.
+Measured before it was decided: an allowlist would have refused 78 of the frozen v2 plan's 115
+named rows, and 64 of its last 100, so it does not decay. A ranking inside `define_term` would
+also be the tool adjudicating the owner's own word at the moment he writes it, which is
+`decisions:12` inverted.
 
-**It needs a new mechanism, and change 3 built it.** The catalogue refuses a registration until
-the highest-ranked near match has been adjudicated, over a lexical ranking of a name and a
-purpose line. A label is a word with a definition — the same shape with one field fewer. Change 4
-points both label proposal and `define_term` at that one ranking, which gives the glossary the
-guard it was described as having and gives labels theirs at no extra cost. Building a second
-near-match mechanism instead would be the duplication the catalogue exists to catch, in the change
-that inherits the catalogue.
+**So the glossary's job is not to be scanned; it is to be in front of the writer at the moment of
+naming.** It is loaded into a planning session at its start and never written back out. The owner
+called that mechanism not robust and accepted it anyway, and the reason is the one above: the
+alternative is not a better mechanism, it is a mechanism that cannot work.
+
+**What the glossary keeps as its one mechanical role** is the lookup at `attach_label`. That is
+also what stops the owner's stated risk — a hundred nearly-identical labels — from being free: a
+label costs a definition, and a word listed with no meaning beside it is refused.
+
+Full argument, the measurements behind it and the rejected alternatives:
+`spec/v3/builds/04-glossary-and-labels.md` §1–§4.
 
 **Also added in change 4: a label usage report.** Near-duplication is not the only way a label set
 goes bad. A label on one row and a label on all of them are both useless for filtering, and both
@@ -419,6 +431,77 @@ argument alone.
 
 ---
 
+## D18 — The glossary is a table the owner owns, with one mechanical use
+
+**Decided by the owner, 2026-07-30**, in his words:
+
+> Glossary table exists, but the user defines the contents with prompting from you or asking to
+> add to it, labels must exist in the glossary. You only use the glossary for a mechanical look
+> up (assigning labels). At the start of each session you load the glossary as a memory (I know,
+> this is not robust), this might help you use the right words, it might not. If the user want to
+> update the glossary for your memory then they need to restart the session.
+
+And, ruling out the machinery proposed around it: *"retire term is dead, banned is dead,
+use_instead is pointless you will no longer be checking against the glossary or banned for that
+purpose."*
+
+**The failure this exists to prevent**, in his words, and it is the acceptance test for any
+mechanism proposed here: *"you calling something a 'part' one day and a 'component' the next, or
+me using the word 'part' and you assuming I mean something else without checking with me for a
+description."* Two directions — the tool invents a second word for a thing that has one, and the
+owner uses a word the tool does not hold and the tool assumes instead of asking.
+
+**No scan catches it, and this is the finding everything else follows from.** `part` and
+`component` share no letters. Every mechanism proposed before this decision — the banned list, an
+allowlist over structural slots, near-match ranking — is **lexical**, and none of them can see a
+synonym that shares no vocabulary. `terms.py` had said so in its own docstring since v2: *"it
+matches words, so a new name invented for an existing concept, sharing no letters with it, goes
+unseen. Nothing without judgment can catch that."*
+
+**So the glossary's job is not to be scanned. It is to be in front of the writer at the moment of
+naming**, which is what the session load is for, and it is why the owner accepted a mechanism he
+himself called not robust: the alternative is not a better mechanism, it is a mechanism that
+cannot work. **Persisting it is forbidden** — *"that needs a robust mechanism or you will just
+accummulate mixed up glossarys in memory"* — because N stale copies consulted in preference to the
+live table is the exact defect the glossary exists to prevent, committed by the thing meant to
+prevent it.
+
+**Rejected, with the measurement that killed it: an allowlist over row names.** The proposal was
+to refuse a row write when the row's name contains a word not in the glossary. Measured against
+the frozen v2 plan, walking named rows in id order: **78 of 115 rows would have been refused —
+68%** — and 64 of the last 100, so it does not decay. Names are meant to be distinctive, so most
+carry a word nothing else uses. A refusal firing on two thirds of writes forever is a worse
+cry-wolf than the banned list it was meant to replace.
+
+**Rejected: the banned list**, which is a denylist somebody hand-types, in an engine whose subject
+is that a rule in a document is not a mechanism. The owner: *"I hate banned, it adds nothing except
+supporting hand crafted bad words, but that does not automate well."* Nothing replaces it, because
+nothing can.
+
+**Rejected: `use_instead` as a stored column.** It held a replacement word forever, for a scan that
+no longer exists. The same information is now a *parameter of `remove_term`* — supplied at the one
+moment it is needed and consumed immediately, with no stored mirror to go stale.
+
+**Rejected: a word-frequency rule**, on the owner's earlier ruling — *"are we going to make a
+glossary entry for 'the'?"* That ruling was reused in this conversation to argue that checking
+words against the glossary is unbounded, and **he rejected the equivalence**: measured over the
+same plan, `the` appears in **zero** structural slots while `package` appears in them beside
+`plan`, `contract`, `spike` and `finding`. A category, not a threshold. He predicted the size
+unprompted: *"I'm expecting a typical project glossary to have <100 words."*
+
+**Also rejected, and not to be re-proposed:** carrying the glossary in the stage-script payload
+(offered as a fix for the restart limitation; he said no), and carrying it in the brief — *"the
+brief idea is dumb, you don't build it until the plan is finished, but you need the glossary
+context during the plan."* The brief is served after finalization and naming drift happens while
+rows are being written, so it arrives after the damage.
+
+**The one mechanical use is `attach_label`'s lookup** (D12). Nothing else scans the glossary,
+counts it, gates on it or warns from it.
+
+Built as change 4. Full argument and every measurement: `spec/v3/builds/04-glossary-and-labels.md`.
+
+---
+
 ## Still open, and where
 
 Carried forward so nothing is lost. Each is scheduled, not merely noted.
@@ -434,8 +517,11 @@ Carried forward so nothing is lost. Each is scheduled, not merely noted.
 - **The interview design** — how the tool elicits a specification deep enough to build from.
   Nothing has been written on it, and it is where the density problem is won or lost.
 - **How deep the pseudocode goes** before a task counts as specified (D9).
-- **The starter label list** (D12), and whether tool-proposal under glossary rules is the right
-  level of control.
+- ~~**The starter label list** (D12), and whether tool-proposal under glossary rules is the right
+  level of control.~~ **Settled by change 4 and by D18.** There is no starter list and no
+  tool-proposal: the owner defines the glossary's contents, and ten words written by the tool at
+  plan creation would be the tool defining them. The ten in `VOCABULARY.md` stay there as a
+  suggestion to a reader and are seeded nowhere.
 - **Whether the tool must cost a fork before putting it to the owner** — see `INTERVIEW.md` §6.
   Written in 2026-07-28 as a standing owner requirement that had never reached these documents.
 

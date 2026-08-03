@@ -1,79 +1,22 @@
-"""Database schema.
+"""The schema exactly as version 10 created it, retained as a migration fixture.
 
-Owned exclusively by storage-engine (components:1): "no other component touches the
-database". Every other module reaches persistence through storage.py's typed operations.
+`test_schema_parity` builds a version-10 database from this text, migrates it to 11, and
+compares it against a freshly-initialised 11. Without a retained copy there is nothing to
+migrate *from* once `engine/schema.py` has been edited in place.
+
+It lives here and **not** in `engine/schema.py`, for the same reason `schema_v7`,
+`schema_v8` and `schema_v9` do. `tests/test_schema_vocabulary.py` regexes every `CREATE
+TABLE IF NOT EXISTS` out of that whole file, so a retained older DDL sitting there would be
+phantom schema for every one of its checks. v3 change 4 is the sharpest case yet: it drops
+six columns from `terms` and adds a reverse check that every declared role still has a
+column, so a v10 `terms` inside `schema.py` would keep `approved_at` and `ban_reason` alive
+for exactly the checks written to notice that they died.
+
+Generated from the live `engine/schema.py` at schema 10 rather than hand-copied — a
+hand-copy is a second source of truth for a text whose whole job is to be the first one.
 """
 
-#: Bumped to 3 on 2026-07-22 when `findings.name` was added (DEVIATIONS.md D22). There is no
-#: 2 -> 3 migration path and `migrate` therefore refuses it, which is the honest answer:
-#: `name` is NOT NULL and cannot be backfilled, because inventing one from `description` is
-#: precisely what the column exists to prevent. No plan outside this repo's tests has ever
-#: been written at version 2, so there is nothing to migrate; the first plan that matters
-#: starts at 3.
-#:
-#: Bumped to 4 the same day for the `terms` table (D23). This one *does* migrate, and the
-#: difference is worth stating: a plan written before the glossary existed has an empty
-#: glossary, and empty is the truthful answer rather than an invented one. The DDL below
-#: only ever runs at init, so without a step a version-3 store would open fine and fail on
-#: the first read of a table it does not have.
-#:
-#: Bumped to 5 on 2026-07-23 for `findings.resolve_by` and the `finding_reallocations`
-#: audit table (D15 — the gate hard-lock). This migrates too, and honestly: before D15 the
-#: only gate that blocked on an open finding was finalization (requirements:32), so every
-#: finding was *implicitly* "resolve by finalization". The 4 -> 5 step makes that implicit
-#: allocation explicit rather than inventing one — the same test the glossary passed.
-#:
-#: Bumped to 6 on 2026-07-23 for the revision tables (M7). They start empty; a plan that
-#: predates revision-service genuinely has no revisions, so the 5 -> 6 step invents nothing.
-#:
-#: Bumped to 7 on 2026-07-24 for `change_log` (DEVIATIONS.md D28), the GUI's polling feed. The
-#: 6 -> 7 step creates an empty table: a plan written before the feed existed has no change
-#: history to backfill, and an empty feed is the truthful answer — a watching GUI cold-loads
-#: the current state and polls forward from there.
-#:
-#: Bumped to 8 on 2026-07-31 by v3 change 1 (`spec/v3/builds/01-vocabulary-and-levels.md`):
-#: the build grouping is removed, the sub-task level is removed with the name `tasks` moving
-#: down onto what a builder is handed, `obligation` becomes `behaviour`, and the *planning*
-#: package — the ordinal of the interview step that produced a row — becomes `stage`. This
-#: one renames and drops rather than adding, so the 7 -> 8 step refuses rather than invents
-#: where the old store holds something the new shape cannot express: more than one live
-#: declared package, or two live sub-tasks sharing a contract. See storage._migration_steps.
-#:
-#: Bumped to 9 on 2026-07-31 by v3 change 2 (`spec/v3/builds/02-decision-context.md`): a
-#: decision is stored with its context. `plan_rows` gains `grounds` and `alternatives` —
-#: why a row says what it says, and what was considered and rejected — and
-#: `supersede_reason`, closing the asymmetry where retiring a row took a reason and
-#: superseding one took none. `findings.rationale` becomes `findings.reason`, retiring
-#: `rationale` as a second spelling of a word this schema already has. The 8 -> 9 step
-#: backfills nothing: no truth in the old store says what any row's argument was, and the
-#: standing migration rule forbids inventing one. The columns arrive NULL and the gap
-#: engine reports them, which is the instrument's first reading rather than a defect.
-#:
-#: Bumped to 10 on 2026-07-31 by v3 change 3 (`spec/v3/builds/03-catalogue.md`): the
-#: catalogue of every object, method and function the plan intends to exist (D10), with
-#: `catalogue_comparisons` recording each judgment made against a near match — including
-#: the negatives, so the next planner finds that someone already reached this and was sent
-#: to the existing entry. The 9 -> 10 step creates both tables empty and backfills nothing:
-#: a plan written before the catalogue existed has no catalogue, there is no truth in the
-#: old store from which a set of function names could be derived, and a catalogue derived
-#: from a *tree* is the design rejected in `FUNCTION_CATALOGUE.md` §7 for dragging
-#: language-specific declaration-finding into the engine. Same test the glossary passed.
-#:
-#: Bumped to 11 on 2026-08-03 by v3 change 4 (`spec/v3/builds/04-glossary-and-labels.md`):
-#: the glossary reduces to a table the owner owns — word, definition, and nothing else — and
-#: `label_attachments` arrives, because a label *is* a glossary term and attaching one is the
-#: glossary's single mechanical use. `terms` loses six columns with the machinery that read
-#: them: approval, the ban list, the replacement word, and the definition lineage.
-#:
-#: **This is the first migration in this engine that loses data**, and it is stated here as
-#: well as in the step, because every other bump on this list says in its own words that it
-#: invents nothing and this one has to say what it discards. The ban metadata on existing
-#: plans goes, and so does every superseded definition; the words and their live meanings
-#: survive. It is the owner's explicit instruction (§1 of the build document) rather than a
-#: shape the new schema could not express, and exactly one database exists.
-SCHEMA_VERSION = 11
-
-DDL = """
+DDL_V10 = """
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
 
@@ -697,134 +640,25 @@ CREATE TABLE IF NOT EXISTS checkpoints (
     intent     TEXT    NOT NULL,
     created_at TEXT    NOT NULL
 );
-"""
 
-# The plan's glossary (DEVIATIONS.md D23, fixing DEFECTS.md F27 and F40) — **a table the
-# owner owns**, reduced to five columns by v3 change 4.
-#
-# **Its job is not to be scanned.** The failure it exists to prevent is one word for two
-# things, or two words for one — `part` one day and `component` the next — and those two
-# share no letters. Every mechanism tried against that was lexical: a banned-word list, an
-# allowlist over row names, near-match ranking. None of them can see a synonym that shares
-# no vocabulary, and `terms.py` admitted as much in its own docstring from the day it was
-# written. So the glossary is loaded at the start of a planning session and is *in front of
-# the writer at the moment of naming*, which is deliberately not robust and is the only
-# thing that can work. Measured before it was decided: an allowlist would have refused 78 of
-# the frozen v2 plan's 115 named rows, and 64 of its last 100, so it does not decay.
-#
-# **One mechanical use, and this is the whole of it: a label must be a live term.**
-# `attach_label` looks the word up here and refuses if nothing holds it. Nothing else scans
-# this table, counts it, gates on it or warns from it.
-#
-# **A real table, not a plan-row type**, on the owner's decision. D12 settled that an
-# accounting denominator may never be inferred from `content`, which is free-form JSON with
-# no per-table schema, and `label_attachments` keys on the *word* — so the word has to be
-# something a query can resolve. It is also looked up the way a person looks a word up: by
-# the word you were about to type, never by an ordinal.
-#
-# Held apart from DDL above because it always has been, and a fresh `init_plan` still
-# creates it from this one text. **The `migrate` 3 -> 4 step no longer shares it**, and that
-# is the point of `storage._TERMS_DDL_AT_4`: this constant is what the table looks like
-# *now*, while a migration is a point-in-time step and must name a point-in-time text. A
-# store climbing from 3 that was handed this five-column table would then be asked, at
-# 10 -> 11, to drop columns it never had.
-#
-# **What left at schema 11, so a reader of an old plan knows what those columns were.**
-# `approved_at` recorded the owner settling a definition the planner proposed; there is no
-# proposal step now, because the owner writes the contents. `ban_scope`/`ban_reason`/
-# `use_instead` were the retired-word list and the word to say instead, deleted with the
-# scan that read them. `names_ref` pointed at the row a word named, read only by the export.
-# `superseded_at` carried the definition lineage: redefinition wrote a new row and stamped
-# the old, and now it is an `UPDATE` in place, on the ground change 3 settled for purpose
-# lines — nothing cites a definition, so there is no argument resting on last week's wording.
-TERMS_DDL = """
 CREATE TABLE IF NOT EXISTS terms (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     term          TEXT    NOT NULL,
-    definition    TEXT    NOT NULL,        -- what the word means here, in a sentence, in
-                                           -- the owner's terms
+    definition    TEXT    NOT NULL,
+    approved_at   TEXT,                    -- null == the planner proposed it, owner has
+                                           -- not answered yet
+    names_ref     TEXT,                    -- the row this word names, if any
+    ban_scope     TEXT,                    -- null == in use; prose | identifier | both
+    ban_reason    TEXT,
+    use_instead   TEXT,                    -- retired: the word to say instead
+    superseded_at TEXT,                    -- null == the live entry for this word
     created_at    TEXT    NOT NULL,
     updated_at    TEXT    NOT NULL
 );
 
--- Total, not partial. It was `idx_terms_live ... WHERE superseded_at IS NULL` while a
--- redefinition superseded rather than edited; with the lineage gone every row is live and
--- the word is simply unique. It takes a new name rather than keeping `_live`, because a
--- predicate word surviving on an index that no longer has a predicate is the retired word
--- hiding in the place nobody looks — the `idx_subtasks_state` lesson, which this schema
--- has already paid for once.
-CREATE UNIQUE INDEX IF NOT EXISTS idx_terms_word ON terms (term);
-"""
+CREATE UNIQUE INDEX IF NOT EXISTS idx_terms_live ON terms (term)
+    WHERE superseded_at IS NULL;
 
-DDL += TERMS_DDL
-
-
-# A label is a glossary term attached to rows and tasks (v3 D12, as amended by change 4).
-# There is no `labels` table: the word lives in `terms` and this table is the attachment and
-# nothing else. That is what makes `attach_label`'s refusal the glossary's one mechanical
-# use, and it is why a label cannot be minted without saying what it means.
-LABELS_DDL = """
-CREATE TABLE IF NOT EXISTS label_attachments (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    word        TEXT    NOT NULL,  -- the term, as the word, and deliberately NOT
-                                   -- REFERENCES terms (term): a detached attachment must
-                                   -- go on naming a word the owner has since removed,
-                                   -- because it is the record that the label was once
-                                   -- there. A foreign key would either forbid the removal
-                                   -- or delete that record.
-    target_root TEXT,              -- the lineage root of a plan row, so the label neither
-                                   -- re-surfaces nor silently detaches when the row is
-                                   -- superseded (rows.py, lineage_root)
-    task_id     INTEGER REFERENCES tasks (id),
-    detached_at TEXT,              -- null == the label is on this target now
-    created_at  TEXT    NOT NULL,
-    CHECK ((target_root IS NULL) != (task_id IS NULL)),
-    -- Both COALESCE sentinels below are reachable without these. Probed 2026-07-30:
-    -- a task row with id 0 inserts despite AUTOINCREMENT once its NOT NULL columns are
-    -- supplied, and an attachment on it then collides with one whose target_root is ''
-    -- — two different targets sharing the index key (word, '', 0).
-    CHECK (target_root IS NULL OR target_root <> ''),
-    CHECK (task_id IS NULL OR task_id > 0)
-);
-
--- Indexed on the expressions, not the columns. Every row here has exactly one NULL among
--- the two target columns, and SQL compares NULLs as distinct — so the natural form,
--- (word, target_root, task_id), accepts *every* duplicate rather than an unlucky few.
--- Probed at SQLite 3.49.1: it enforces nothing at all for the whole life of the table.
--- `tests/test_schema_parity.py` cannot tell the two forms apart, because PRAGMA index_list
--- reports them identically, so the behaviour is asserted at the store in raw SQL.
-CREATE UNIQUE INDEX IF NOT EXISTS idx_label_attachments_live
-    ON label_attachments (word, COALESCE(target_root, ''), COALESCE(task_id, 0))
-    WHERE detached_at IS NULL;
-
--- Read when a row is rendered with the labels it carries. The live index above leads on
--- word and cannot answer that direction.
-CREATE INDEX IF NOT EXISTS idx_label_attachments_target
-    ON label_attachments (target_root, detached_at);
-
--- The same read for the other target kind. Half the rows here have a null target_root,
--- so the index above cannot serve them: remove_term's refusal has to count the tasks
--- carrying a word, and labels(word) has to list them, and both would be a table scan.
-CREATE INDEX IF NOT EXISTS idx_label_attachments_task
-    ON label_attachments (task_id, detached_at);
-"""
-
-DDL += LABELS_DDL
-
-
-# D15's deferral log and the index the gate reads (DEVIATIONS.md D15, M6_PLAN.md §2.6).
-# Held apart from DDL above for the same reason TERMS_DDL is: the 4 -> 5
-# migration and a fresh init must create these from one text, or the reallocations table and
-# its indexes drift between stores that were migrated and stores that were born.
-#
-# `finding_reallocations` records each deferral of an open finding to a later gate. Re-
-# allocating is legitimate — a finding genuinely belongs to a later stage sometimes — but
-# it is a judgement the owner is entitled to see, so it is a recorded act and not an in-place
-# edit of `resolve_by` that leaves no trace. Same friction shape as behaviour_amendments and
-# scope_attachments' promotion history: the accounting can move, never silently. `to_stage`
-# is always strictly later than `from_stage`; the service enforces it, and the log is the
-# proof it happened.
-REALLOCATIONS_DDL = """
 CREATE TABLE IF NOT EXISTS finding_reallocations (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     finding_id   INTEGER NOT NULL,
@@ -838,20 +672,7 @@ CREATE INDEX IF NOT EXISTS idx_findings_resolve_by
     ON findings (resolve_by, state);
 CREATE INDEX IF NOT EXISTS idx_reallocations_finding
     ON finding_reallocations (finding_id, id);
-"""
 
-DDL += REALLOCATIONS_DDL
-
-
-# revision-service (components:13), state_machines:10. A revision is an owner-initiated change
-# to a finalized plan. At `open_revision` the plan is snapshotted and its version bumped; the
-# owner then walks every affected row, and each `modify` is conflict-checked and superseded on
-# the live plan the moment it clears (owner's decision, M7_PLAN.md D25). The revision closes
-# with `apply_revision`, or `abandon_revision` rewinds the plan to `snapshot_id`. The revision
-# and its repercussions live here, OUTSIDE the plan-row snapshot, so a rewind preserves the
-# analysis record (requirements:72). Born in `walkthrough` (D27): impact analysis is
-# synchronous, so `proposed`/`analyzing` are never persisted.
-REVISIONS_DDL = """
 CREATE TABLE IF NOT EXISTS revisions (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     intent       TEXT    NOT NULL,
@@ -892,97 +713,15 @@ CREATE INDEX IF NOT EXISTS idx_repercussions_revision
 -- unique index enforces it in the store, not only in the service.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_one_open_revision
     ON revisions (state) WHERE state = 'walkthrough';
-"""
 
-DDL += REVISIONS_DDL
-
-
-# change-log (DEVIATIONS.md D28) — the companion GUI's polling feed. A GUI that renders a live
-# plan must learn *what changed* without re-scanning every table on a timer, so this is the one
-# append-only cursor it reads: one monotonic `seq`, one row per mutation, polled `WHERE seq >
-# :last`.
-#
-# Fed at the single write choke point — storage.write_atomic's apply loop — so every service
-# write is recorded with no cooperation from the call sites scattered across a dozen modules.
-# That is what keeps it a *mechanism* and not a convention the next new mutation forgets, which
-# is the failure this codebase keeps relearning (rules need mechanisms).
-#
-# `op_type` is **inferred** from the columns a write touches, because those names are already
-# this schema's universal vocabulary: `superseded_by`/`superseded_at` -> supersede, `retired_at`
-# -> retire, `state` -> state_change, an insert -> create, anything else -> update. The GUI
-# re-fetches the row `ref` names, so op_type is a reliable *hint* and the row stays the ground
-# truth. An inference that is merely coarse is therefore never a lie: detaching a label, which
-# this schema records in `detached_at` rather than `retired_at`, reads here as `update`, and the
-# GUI re-reading the attachment sees that it is off. Only the four universal columns are inferred
-# from; chasing each table's idiosyncratic column would trade a clean rule for a pile of
-# special cases.
-#
-# `ref` is `table:key` — `requirements:32` for a plan row, `findings:5`, `tasks:5` for the
-# rest — self-describing and carrying **no row contents**: the payload is always fetched fresh,
-# so a stale copy can never live here. `replaced_by` carries the new ref on a supersession that
-# has a pointer (plan_rows, briefs); the tables that supersede by stamping
-# `superseded_at` alone have no back-pointer to the replacement, so it is null there and the GUI
-# re-queries the live row.
-#
-# **Absent from every snapshot, deliberately.** It records what *happened*, like `gate_runs` — a
-# plan rewind must not rewrite that history, so it is outside snapshot_version's table set and
-# untouched by _restore_payload. A wholesale rewrite (restore/recover) instead appends a single
-# `resync` marker (`ref` null): the honest signal that a watching GUI's cursor is void and it
-# must full-reload, rather than a flood of synthetic per-row events for a bulk replace it never
-# drove.
-#
-# The GUI's own last-seen `seq` is the GUI's to persist, not ours. It is per-client viewer state,
-# and one client's cursor has no place in the shared plan file, which is snapshotted, copied and
-# versioned. Cold start is a full load pinned to the current head; thereafter the GUI polls
-# forward.
-CHANGE_LOG_DDL = """
 CREATE TABLE IF NOT EXISTS change_log (
     seq         INTEGER PRIMARY KEY AUTOINCREMENT,
-    op_type     TEXT    NOT NULL,   -- create|supersede|retire|state_change|update|delete
-                                    -- |resync. `delete` is only ever a glossary word being
-                                    -- removed (v3 change 4): plan history is append-only,
-                                    -- and storage refuses the op against any other table.
+    op_type     TEXT    NOT NULL,   -- create|supersede|retire|state_change|update|resync
     ref         TEXT,               -- table:key of the changed row; null for a resync marker
     replaced_by TEXT,               -- the new ref on a pointer-carrying supersede; else null
     created_at  TEXT    NOT NULL
 );
-"""
 
-DDL += CHANGE_LOG_DDL
-
-
-# catalogue (v3 D10, `spec/v3/builds/03-catalogue.md`) — every object, method and function
-# the plan intends to exist, each with one owner and a statement of the concept it owns, so
-# that duplication and naming collisions are caught in the plan rather than in the tree.
-#
-# **A real table and not a plan-row type**, for the reason the `terms` comment above gives in
-# its own words: an accounting denominator may never be inferred from `content`. The
-# catalogue is an accounting in three directions — the search's denominator, the
-# cross-container report's grouping, and (from change 5) the count of pseudocode calls with
-# no entry — so `container_id`, `visibility` and `retired_at` all have to be columns
-# something can query.
-#
-# **And the identity does not fit `plan_rows`.** That table enforces one live row per
-# `(table_name, name)`; a catalogue identity is `(name, container)`, and `_hydrate` is a
-# legitimate method name on five service classes in this engine. A qualified name
-# (`RowService._hydrate`) would make the existing index right and the *report* wrong:
-# grouping by container would mean splitting a string, and a string parsed to find a
-# relation is a relation the schema does not have.
-#
-# Held apart from `DDL` above for the reason `TERMS_DDL` is: the 9 -> 10 migration and a
-# fresh init create these from one text. It reads oddly literally here, because this is the
-# table that exists to catch duplication.
-#
-# **An object's owner is a component and a function's owner is a task.** A service class
-# carries the entry points of twenty tasks, so no task owns it; the component is the level
-# directly above, and this is the job that earns `component` its un-retirement (v3 D16).
-#
-# **Modules are not catalogued.** A module is a location, and location is never identity:
-# if a row were identified by location, reorganising files would read as deletion plus
-# addition and destroy the history the catalogue is accumulating. So a module-level entry
-# simply has no container — which is what makes the first index below the most consequential
-# line in this block.
-CATALOGUE_DDL = """
 CREATE TABLE IF NOT EXISTS catalogue (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     name          TEXT    NOT NULL,
@@ -1066,27 +805,5 @@ CREATE TABLE IF NOT EXISTS catalogue_comparisons (
     -- Constrained because a misspelling takes the branch that writes the entry: the typo
     -- does not fail, it inverts the refusal. `same` and `contains` are the two verdicts a
     -- planner reaches for when the match is real, and they are the two that stop the write.
-);
-"""
-
-DDL += CATALOGUE_DDL
-
-
-def statements(ddl: str) -> list[str]:
-    """One executable statement per entry, comments removed.
-
-    `migrate` applies steps one at a time so it can name each in its report, while `DDL`
-    is run as a script. Splitting on `;` alone would cut inside a comment — this schema's
-    comments carry the reasoning, and reasoning has semicolons in it.
-    """
-    stripped = "\n".join(line.split("--")[0] for line in ddl.splitlines())
-    return [s.strip() for s in stripped.split(";") if s.strip()]
-
-# Lexical retrieval (V2_BUILD_PLAN.md 5.4). Separate because FTS5 is a compile-time
-# option; absence degrades search rather than breaking the store.
-FTS_DDL = """
-CREATE VIRTUAL TABLE IF NOT EXISTS source_fts USING fts5(
-    content_hash UNINDEXED,
-    text
 );
 """

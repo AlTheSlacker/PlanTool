@@ -3,8 +3,18 @@
 import pytest
 
 from engine.gates import RESOLVE_BY_LOCK, BlockedByConflict, UnknownStage
+from engine.methodology import load
 from engine.models import LinkSpec, Provenance, RowRef, RowSubmission
 from engine.validation import SpikeSpec
+
+#: The two stages these tests name by *meaning*, resolved from the methodology rather than
+#: written as literals. They were 7 and 8 until v3 change 4 inserted the labelling round at
+#: 7, and the reason this file now asks rather than states is the reason the engine itself
+#: does: a stage's number is methodology content, and every place that hard-codes one is a
+#: place the next revision breaks silently. `gates._is_terminal` already read
+#: `stage_range[1]`; these tests were the half that did not.
+ADVERSARIAL = next(s.number for s in load().stages if s.name.startswith("Adversarial"))
+TERMINAL = load().stage_range[1]
 
 
 def submit(rows, *submissions, key="k"):
@@ -30,9 +40,9 @@ def test_every_hole_names_table_problem_and_fix(gate):
 def test_a_stage_outside_the_range_is_refused_with_the_range(gate):
     with pytest.raises(UnknownStage) as exc:
         gate.run_gate(0)
-    assert "1-8" in str(exc.value)
+    assert f"1-{TERMINAL}" in str(exc.value)
     with pytest.raises(UnknownStage):
-        gate.run_gate(9)
+        gate.run_gate(TERMINAL + 1)
 
 
 def test_results_are_deterministic(gate, rows):
@@ -246,13 +256,20 @@ def test_a_confirmed_spike_closes_the_assumption_so_the_gate_is_moot(
     assert not _backed_holes(gate)
 
 
-def test_stage_eight_folds_in_every_earlier_gate(gate):
-    """An empty plan fails every stage, so freeze must report all seven."""
+def test_the_terminal_gate_folds_in_every_earlier_gate(gate):
+    """An empty plan fails every stage that *can* fail, so freeze must report all of them.
+
+    Stage 7 (labelling, new in methodology revision 6) has no mechanical criteria by design,
+    so it passes vacuously and is absent here. That absence is the check that the empty
+    criteria list in `gate_criteria.yaml` means what it says, rather than being a stage
+    somebody forgot to wire up.
+    """
     holes = [
-        h for h in gate.run_gate(8).holes if h.criterion_id == "all_prior_gates_green"
+        h for h in gate.run_gate(TERMINAL).holes
+        if h.criterion_id == "all_prior_gates_green"
     ]
     reported = {h.problem.split()[1] for h in holes}
-    assert reported == {f"stage-{n}" for n in range(1, 8)}
+    assert reported == {f"stage-{n}" for n in range(1, TERMINAL) if n != 7}
 
 
 def test_an_open_conflict_out_of_scope_still_stops_the_freeze(gate, rows, conflicts):
@@ -260,7 +277,10 @@ def test_an_open_conflict_out_of_scope_still_stops_the_freeze(gate, rows, confli
     anywhere, including in tables no gate's scope covers."""
     submit(rows, RowSubmission("scratch", {"title": "an off-stage row"}, name="an off-stage row"))
     conflicts.raise_conflict([RowRef("scratch", 1)], "contested", "pick one")
-    holes = [h for h in gate.run_gate(8).holes if h.criterion_id == "no_open_conflicts"]
+    holes = [
+        h for h in gate.run_gate(TERMINAL).holes
+        if h.criterion_id == "no_open_conflicts"
+    ]
     assert holes and "contested" in holes[0].problem
 
 
@@ -393,19 +413,19 @@ def test_the_gate_sees_a_finding_filed_the_way_the_script_says_to_file_it(
     which writes the finding service; the criteria used to read `plan_rows`, where findings
     have never been written, so the gate reported "no adversarial findings recorded" no
     matter how many were filed and could not be passed by the prescribed route."""
-    result = gate.run_gate(7)
+    result = gate.run_gate(ADVERSARIAL)
     assert any("no adversarial findings" in hole.problem for hole in result.holes)
 
     findings.file_finding([_attacked(rows)], "the gate is too weak", "high",
-                          name="gate 4 passes with no tests", resolve_by=8)
-    result = gate.run_gate(7)
+                          name="gate 4 passes with no tests", resolve_by=TERMINAL)
+    result = gate.run_gate(ADVERSARIAL)
     assert not any("no adversarial findings" in hole.problem for hole in result.holes)
 
 
 def test_an_unresolved_finding_is_a_hole_that_names_it(gate, rows, findings):
     findings.file_finding([_attacked(rows)], "the gate is too weak", "high",
                           name="gate 4 passes with no tests", resolve_by=8)
-    holes = [h for h in gate.run_gate(7).holes if h.criterion_id == "findings_dispositioned"]
+    holes = [h for h in gate.run_gate(ADVERSARIAL).holes if h.criterion_id == "findings_dispositioned"]
     assert len(holes) == 1
     # D19: the hole names the finding before it addresses it.
     assert "gate 4 passes with no tests (findings:1)" in holes[0].problem
@@ -417,7 +437,7 @@ def test_a_resolved_finding_leaves_no_hole(gate, rows, findings):
                                     name="gate 4 passes with no tests", resolve_by=8)
     findings.resolve_finding(finding.id, "addressed", "criteria tightened in stage 4")
     assert not [
-        h for h in gate.run_gate(7).holes if h.criterion_id == "findings_dispositioned"
+        h for h in gate.run_gate(ADVERSARIAL).holes if h.criterion_id == "findings_dispositioned"
     ]
 
 
@@ -429,7 +449,7 @@ def test_an_accepted_risk_still_needs_its_reason(gate, rows, findings):
                                     name="gate 4 passes with no tests", resolve_by=8)
     findings.resolve_finding(finding.id, "accepted_risk", "the owner will live with it")
     assert not [
-        h for h in gate.run_gate(7).holes if h.criterion_id == "findings_dispositioned"
+        h for h in gate.run_gate(ADVERSARIAL).holes if h.criterion_id == "findings_dispositioned"
     ]
 
 
@@ -480,27 +500,27 @@ def test_reallocating_moves_the_lock_to_the_later_gate(gate, rows, findings):
 
 
 def test_the_lock_stands_aside_where_a_findings_catchall_already_runs(gate, rows, findings):
-    """The adversarial stage (7) carries `findings_dispositioned`, which already refuses
-    every open finding regardless of allocation. The D15 lock stands aside there rather than
+    """The adversarial stage carries `findings_dispositioned`, which already refuses every
+    open finding regardless of allocation. The D15 lock stands aside there rather than
     naming the same finding twice — but `findings_dispositioned` still fires, so the finding
     is not let through."""
     findings.file_finding(
         [_attacked(rows)], "the gate is too weak", "high",
-        name="a hole in the gate", resolve_by=7,
+        name="a hole in the gate", resolve_by=ADVERSARIAL,
     )
-    result = gate.run_gate(7)
+    result = gate.run_gate(ADVERSARIAL)
     assert _lock_holes(result) == []
     assert [h for h in result.holes if h.criterion_id == "findings_dispositioned"]
 
 
 def test_a_finding_bound_to_freeze_cannot_reach_a_frozen_plan(gate, rows, findings):
-    """A finding allocated to the terminal gate is named there by the lock, and stage 8
+    """A finding allocated to the terminal gate is named there by the lock, and that gate
     also re-runs the adversarial catch-all through prior_gates_green — so an open finding
     cannot pass finalization however it was allocated."""
     findings.file_finding(
         [_attacked(rows)], "the gate is too weak", "high",
-        name="a hole in the gate", resolve_by=8,
+        name="a hole in the gate", resolve_by=TERMINAL,
     )
-    result = gate.run_gate(8)
+    result = gate.run_gate(TERMINAL)
     assert result.passed is False
     assert len(_lock_holes(result)) == 1

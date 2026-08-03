@@ -43,10 +43,8 @@ from engine.gaps import GapEngine, name_of
 from engine.methodology import Criterion, Methodology, load
 from engine.models import PlanRow, RowRef, RowSelector, RowState
 from engine.rows import RowService
-from engine.terms import TermService, Usage
 from engine.warnings import (
     OPEN_GAP,
-    RETIRED_TERM,
     SETTLEABLE_KINDS,
     UNRESOLVED_ASSUMPTION,
     Warning,
@@ -122,7 +120,6 @@ class GateEngine:
         gaps: GapEngine | None = None,
         methodology: Methodology | None = None,
         findings: FindingService | None = None,
-        terms: TermService | None = None,
     ):
         self.storage = storage
         self.rows = rows
@@ -131,10 +128,6 @@ class GateEngine:
         self.findings = findings or FindingService(storage, rows)
         self.methodology = methodology or load()
         self.gaps = gaps or GapEngine(storage, rows, methodology=self.methodology)
-        #: The glossary, so the gate counts what submission only mentioned in passing.
-        #: Rows submitted *before* a word was retired are the case only this side catches:
-        #: the submission scan cannot warn about a rule that did not exist yet.
-        self.terms = terms or TermService(storage)
 
     # --- contracts:22 ---
 
@@ -337,13 +330,6 @@ class GateEngine:
                 message=f"unresolved {kind}-assumption: {label(name_of(row), row.ref)}",
                 source_ref=row.ref,
             )
-        for warning_key, row, usage in self._retired_words():
-            self.warnings.raise_warning(
-                warning_key=warning_key,
-                kind=RETIRED_TERM,
-                message=usage.about(label(name_of(row), row.ref)),
-                source_ref=row.ref,
-            )
         self._clear_settled_warnings()
         return self.warnings.active_warnings()
 
@@ -380,24 +366,16 @@ class GateEngine:
         page = self.rows.read_rows(RowSelector(live_only=True, limit=1000))
         return [r for r in page.rows if r.state == RowState.ASSUMED]
 
-    def _retired_words(self) -> list[tuple[str, PlanRow, Usage]]:
-        """Every live row using a word the glossary has retired, with the warning key it
-        is raised under.
-
-        This is "count at the gate", and it is not a duplicate of the submission scan.
-        Submission can only warn about the rules that existed when the row was written; the
-        common case is the other order — a word is retired *because* the plan has been
-        using it two ways, and the rows carrying it are already filed. Only a re-scan finds
-        those, and only re-scanning (rather than remembering) lets the warning settle when
-        the row is superseded or the word comes back.
-        """
-        page = self.rows.read_rows(RowSelector(live_only=True, limit=1000))
-        out = []
-        for row in sorted(page.rows, key=lambda r: (r.ref.table, r.ref.ordinal)):
-            root = self.gaps.lineage_root(row.ref)
-            for usage in self.terms.violations(row.content):
-                out.append((f"term:{root}:{usage.term}", row, usage))
-        return out
+    # `_retired_words` stood here until v3 change 4, raising one warning per live row using
+    # a word the glossary had retired. It was "count at the gate", and it was genuinely not
+    # a duplicate of the submission scan: the common case is that a word is retired
+    # *because* the plan has been using it two ways, so the rows carrying it are already
+    # filed and only a re-scan finds them.
+    #
+    # Losing it is the deliberate half of removing the banned list. The gate counted a
+    # denominator that came from that list, and with no list there is no denominator — a
+    # coverage check with an empty denominator reports success, which is F23's shape and
+    # worse than not running at all.
 
     # --- criterion evaluation ---
 

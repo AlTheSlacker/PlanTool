@@ -41,6 +41,46 @@ WRITE_BUDGET_SECONDS = 30.0
 
 PLAN_FILENAME = "plan.db"
 
+#: The tables a `delete` op may name. One, and the list is the mechanism rather than the
+#: comment: a later change that wants to delete from a second table has to add it here, in a
+#: diff a reader sees, instead of discovering that the op kind already existed.
+DELETABLE_TABLES = frozenset({"terms"})
+
+#: `terms` exactly as schema 4 created it, frozen here for the 3 -> 4 migration step.
+#:
+#: **A migration is a point-in-time step and must name a point-in-time text.** That branch
+#: read `schema.TERMS_DDL` until v3 change 4, which was right for as long as the table never
+#: changed shape: `schema.py` says in its own words that two copies of a `CREATE TABLE` is a
+#: schema that drifts between the stores that were migrated and the stores that were born.
+#: Change 4 drops six of those columns. Left sharing the constant, a store climbing from 3
+#: would be handed the *five*-column table of 2026-08-03 and would then reach the 10 -> 11
+#: step and be asked to drop `superseded_at`, a column it never had — failing inside the one
+#: migration that discards data.
+#:
+#: So this is not a second spelling of the live table; it is what schema 4 actually produced,
+#: and it is inert. It lives here rather than in `engine/schema.py` because
+#: `tests/test_schema_vocabulary.py` regexes every `CREATE TABLE IF NOT EXISTS` out of that
+#: file and would read these eleven columns as live schema — the same reason the retained
+#: per-version fixtures live under `tests/fixtures/`.
+_TERMS_DDL_AT_4 = """
+CREATE TABLE IF NOT EXISTS terms (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    term          TEXT    NOT NULL,
+    definition    TEXT    NOT NULL,
+    approved_at   TEXT,
+    names_ref     TEXT,
+    ban_scope     TEXT,
+    ban_reason    TEXT,
+    use_instead   TEXT,
+    superseded_at TEXT,
+    created_at    TEXT    NOT NULL,
+    updated_at    TEXT    NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_terms_live ON terms (term)
+    WHERE superseded_at IS NULL;
+"""
+
 
 @dataclass(frozen=True, slots=True)
 class FromOp:
@@ -66,7 +106,19 @@ class Op:
     backend)").
     """
 
-    kind: Literal["insert", "update", "insert_row"]
+    #: **`delete` is permitted on `terms` and nowhere else**, and the narrowness is the
+    #: guard. This vocabulary was insert/update-only by design, and `briefs.py` states the
+    #: reason in the source: plan history is append-only, because a superseded row is the
+    #: record of what the plan used to say.
+    #:
+    #: That rule is about **plan history** — `plan_rows` and the ledgers keyed to it — and it
+    #: does not reach the glossary. `terms` was deliberately made a real table rather than a
+    #: plan-row type, and v3 change 4 makes its contents the owner's to edit: a table you may
+    #: add to and rewrite but never remove from is not a table he owns. So the vocabulary
+    #: gains one op kind, `_apply` refuses it against any other table, and a later change
+    #: wanting to delete from somewhere else has to argue for it in its own words rather than
+    #: inherit permission from here.
+    kind: Literal["insert", "update", "insert_row", "delete"]
     table: str
     values: dict[str, Any]
     where: dict[str, Any] | None = None
@@ -346,6 +398,23 @@ class Storage:
                 (*op_values.values(), *op.where.values()),
             )
             op.result = {"rows": cur.rowcount}
+        elif op.kind == "delete":
+            if op.table not in DELETABLE_TABLES:
+                raise ValueError(
+                    f"delete is not permitted on {op.table!r}: plan history is append-only, "
+                    f"and the only table this store deletes from is "
+                    f"{', '.join(sorted(DELETABLE_TABLES))} (v3 change 4). A row that should "
+                    "no longer apply is superseded or retired, which keeps the record of "
+                    "what the plan used to say"
+                )
+            if not op.where:
+                raise ValueError("delete op requires a where clause")
+            conds = " AND ".join(f"{k} = ?" for k in op.where)
+            cur = self.conn.execute(
+                f"DELETE FROM {op.table} WHERE {conds}",  # noqa: S608
+                tuple(op.where.values()),
+            )
+            op.result = {"rows": cur.rowcount}
         else:
             raise ValueError(f"unknown op kind {op.kind!r}")
 
@@ -398,6 +467,15 @@ class Storage:
             return (op.result["ref"], "create", None)
         if op.kind == "insert":
             return (f"{op.table}:{op.result['id']}", "create", None)
+        if op.kind == "delete":
+            # Announced rather than passed over. A watching GUI re-fetches the row a `ref`
+            # names, and there is now nothing there to fetch — so a deletion that recorded
+            # nothing would leave a removed word on screen until the next full reload. It
+            # gets its own op_type because none of the existing five is true of it: a
+            # deleted row is not superseded, not retired, and not an update.
+            if not op.result or op.result.get("rows", 0) == 0:
+                return None
+            return (self._ref_of_update(op), "delete", None)
         if op.kind == "update":
             # An update that matched no row changed nothing: no phantom change is announced.
             if not op.result or op.result.get("rows", 0) == 0:
@@ -513,11 +591,36 @@ class Storage:
             # that dropped these would silently unblock gates on restore (open conflicts
             # gone) and re-surface dismissals the owner had already answered.
             "gap_overlay", "conflicts", "conflict_refs", "warnings",
+            # v3 change 4. An overlay keyed on lineage roots, the same primitive as
+            # gap_overlay, holding judgments that cannot be recomputed from the rows.
+            # Outside the set, `restore_snapshot` on an abandoned revision would rewind
+            # `plan_rows` and strand attachments on roots that no longer exist, and
+            # `recover('restart')` would orphan every one of them — neither column carries
+            # a foreign key that would catch it, and `remove_term`'s refusal would then
+            # count rows that are not there. `terms` itself stays out: it is not derived
+            # from the plan and a revision does not rewind it, but the attachment of a
+            # word to a row is a judgment *about* the plan.
+            "label_attachments",
         )
         # source_fts is a derived index, rebuilt from source_texts on restore.
+        #
+        # **A table the store does not have yet is skipped, and that is a migration
+        # requirement rather than defensiveness.** `migrate` snapshots *before* it applies
+        # any step (decisions:45), so the moment a schema change adds a table to this set,
+        # every store below that version snapshots a table it is about to be given.
+        # `label_attachments` is the first: without this, `migrate(11)` on the one real
+        # database fails on its own safety snapshot, before touching anything. A store that
+        # predates the table genuinely has no rows in it, and `_restore_payload` writes only
+        # the tables the payload names, so a rewind of that snapshot leaves it alone.
+        present = {
+            r["name"] for r in self.query(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            )
+        }
         payload = {
             t: [dict(r) for r in self.query(f"SELECT * FROM {t}")]  # noqa: S608
             for t in tables
+            if t in present
         }
         version = self.plan_handle()["version"]
         try:
@@ -680,8 +783,10 @@ class Storage:
     def _migration_steps(self, current: int, target: int) -> list[str]:
         """The SQL that moves the store from one schema version to the next.
 
-        Two paths exist, and both pass the same test — the migrated value is a truth the
-        old store already implied, never one invented to satisfy a NOT NULL:
+        Eight paths exist. Seven of them pass the same test — the migrated value is a truth
+        the old store already implied, never one invented to satisfy a NOT NULL — and the
+        eighth, 10 -> 11, is the first that **discards** something, which it says out loud
+        below rather than leaving to be discovered by its absence:
 
           **3 -> 4** adds the glossary. A plan that predates it genuinely has an empty one.
           (A `2 -> 3` step is *absent* on purpose: it would have to invent a name for every
@@ -733,9 +838,31 @@ class Storage:
           catalogue of a plan that no longer exists. That is v2's behaviour for every table
           outside the eight, and fixing it would be a change about recovery.
 
+          **10 -> 11** is v3 change 4, and it is the first step in this engine that **loses
+          data**. `terms` drops `approved_at`, `names_ref`, `ban_scope`, `ban_reason`,
+          `use_instead` and `superseded_at`, so the ban metadata on an existing plan and
+          every superseded definition go with them; the words and their live meanings
+          survive. Nothing is invented — a record is dropped on the owner's explicit
+          instruction, which is the difference between this and `_guard_7_to_8`'s refusals:
+          there, collapsing several declared groupings would have manufactured a claim about
+          the owner's grouping, and here he has said what to discard. `label_attachments` is
+          created empty, which is the glossary's own test again.
+
+          It reduces `terms` **in place**, with `ALTER TABLE ... DROP COLUMN`, and that was
+          settled by probe rather than by argument: the draft asserted a table rebuild was
+          required. `DROP COLUMN` has existed since SQLite 3.35 and this engine runs 3.49.1.
+          Probed on 2026-07-30 against a v10 `terms` holding a redefined word and a banned
+          one — the drops and the index swap work inside `BEGIN IMMEDIATE`, `sqlite_sequence`
+          is preserved so ids are never reused, and forcing a failure on the last step rolls
+          back to all eleven columns with every row intact. A rebuild would have needed a
+          second `CREATE TABLE terms` written here, which `schema.py` forbids in as many
+          words.
+
         Anything else is an error and never a silent no-op (decisions:45) — including a
         downgrade, which would have to drop rows to succeed.
         """
+        if (current, target) == (10, 11):
+            return self._steps_10_to_11()
         if (current, target) == (9, 10):
             # v3 change 3. Both tables are created from `CATALOGUE_DDL` rather than from SQL
             # restated here, which is what three of the four older branches do (3 -> 4, 5 -> 6,
@@ -758,7 +885,10 @@ class Storage:
             self._guard_7_to_8()
             return self._steps_7_to_8()
         if (current, target) == (3, 4):
-            return schema.statements(schema.TERMS_DDL)
+            # The frozen text, not `schema.TERMS_DDL` — see `_TERMS_DDL_AT_4` above. This
+            # step creates the table schema 4 had, and the 10 -> 11 step below is what
+            # reduces it, exactly as it does for a store that was born at 4.
+            return schema.statements(_TERMS_DDL_AT_4)
         if (current, target) == (4, 5):
             return [
                 "ALTER TABLE findings ADD COLUMN resolve_by INTEGER NOT NULL DEFAULT 8",
@@ -776,6 +906,52 @@ class Storage:
         raise ValueError(
             f"no migration path from schema version {current} to {target}"
         )
+
+    def _steps_10_to_11(self) -> list[str]:
+        """v3 change 4: the glossary reduces, and labels arrive.
+
+        **The order is not stylistic. Two of its three dependencies were probed and both
+        bite**, and they bite inside the step that is discarding data:
+
+        - The `DELETE` runs **first**, because after the drops there is no `superseded_at`
+          left to filter on. Under the old schema a redefinition wrote a new row and stamped
+          the old one, so a word that has ever been redefined has several rows and one live.
+          The new `UNIQUE (term)` is total, so keeping them all makes the index creation
+          fail — and a copy written to tolerate that would keep an arbitrary definition.
+        - `DROP INDEX idx_terms_live` precedes the column drops. Dropping `superseded_at`
+          while that partial index still names it fails with *"error in index idx_terms_live
+          after drop column: no such column: superseded_at"*: SQLite validates the surviving
+          indexes against the reduced table.
+
+        The retired-word warnings are settled rather than left standing, and that is not
+        tidying. `RETIRED_TERM` leaves `SETTLEABLE_KINDS` in this change, so from here
+        neither `WarningService._reconcile` nor the gate's settling pass would ever touch
+        such a row again: it would sit `active` forever, with nothing able to produce it and
+        nothing able to settle it — a permanent nag, in the digest that exists to de-noise,
+        about a rule that no longer exists. Suppressed ones are settled too, since a
+        suppression resurfaces at every critical point.
+        """
+        stamp = now()
+        settled = (
+            "the retired-word scan was removed at schema 11 (v3 change 4): the glossary no "
+            "longer holds a banned list, so nothing can raise or clear this warning"
+        )
+        return [
+            # Only live terms survive: the lineage is what this change deletes.
+            "DELETE FROM terms WHERE superseded_at IS NOT NULL",
+            "DROP INDEX idx_terms_live",
+            "ALTER TABLE terms DROP COLUMN approved_at",
+            "ALTER TABLE terms DROP COLUMN names_ref",
+            "ALTER TABLE terms DROP COLUMN ban_scope",
+            "ALTER TABLE terms DROP COLUMN ban_reason",
+            "ALTER TABLE terms DROP COLUMN use_instead",
+            "ALTER TABLE terms DROP COLUMN superseded_at",
+            "CREATE UNIQUE INDEX idx_terms_word ON terms (term)",
+            *schema.statements(schema.LABELS_DDL),
+            f"UPDATE warnings SET state = 'resolved', reason = '{settled}', "
+            f"updated_at = '{stamp}' "
+            "WHERE kind = 'retired_term' AND state <> 'resolved'",
+        ]
 
     def _guard_7_to_8(self) -> None:
         """Refuse, before any write, what schema 8 cannot express without inventing a truth.

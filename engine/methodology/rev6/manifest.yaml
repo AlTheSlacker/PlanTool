@@ -39,29 +39,65 @@
 # authored through the surface (F39); a round leading a planner to make a call that no
 # longer exists is the same failure from the other end, and is why revision 4 exists.
 
-revision: 4
-# Revision 4, 2026-07-31 — v3 change 1. `package` becomes `stage` throughout (a revert:
-# rev 2 was keyed `stages:` before v2 renamed it), `obligation` becomes `behaviour`, the
-# scripts are renamed to match, and stage 6 loses its grouping round entirely. Minted rather
-# than edited into rev 3, because the stamp exists precisely so a plan can say which
-# methodology produced it, and editing in place would retroactively change what already-run
-# sessions were scripted with.
+revision: 6
+# Revision 6, 2026-08-03 — v3 change 4: the glossary becomes a table the owner owns, and
+# **the labelling round arrives as a stage of its own**, numbered 7, with adversarial and
+# finalization moving up to 8 and 9. It is the round that replaces the declared build
+# grouping: a grouping was a level and everything inherited it, a label is an attachment and
+# a row carries as many as make sense.
 #
-# This is *not* PLAN.md item 10, which is the eleven-stage rewrite. That is revision 5 and
-# keeps its position at the end, to be written against what was actually built. This
-# revision is the same eight stages, correctly worded, with the dead calls removed — the
-# door turns stale asset text into a failed call the moment the tools go, so it could not
-# wait.
-# **Corrected in place on 2026-08-03 by v3 change 4, and the stamp moves with it.** Two gap
-# rules (`no_glossary`, `unsettled_term`) and one mandate clause named machinery that change
-# deletes: `gaps.py` implements neither rule type any more, so this revision would raise on
-# its first derive, and both texts told a planner to call `approve_term`, which the registry
-# can no longer resolve. Editing a revision in place is the thing the note above refuses to
-# do — and the case it refuses is a *rewording*, where minting a successor keeps the record
-# of what earlier sessions were scripted with. This is not that: left alone, this asset does
-# not work at all. So it is corrected, and the stamp moves, which is what keeps the change
-# visible to a plan that recorded the old one rather than silently retroactive.
-revision_stamp: "plantool-rev4-2026-08-03"
+# The stage list grew rather than a round being bolted onto an existing stage, and the
+# alternative was worse in a specific way: the draft called this "a stage-6 labelling
+# round", and in this manifest number 6 is Architecture. A round with no number of its own
+# has no script, no mode, no gate entry and no place in `stage_range`.
+#
+# **Nothing in the engine hard-codes a stage number**, which is what makes the renumbering
+# affordable: the terminal stage is `stage_range[1]` everywhere it matters (`gates.py`'s
+# `_is_terminal`, `findings.py`'s allocation of an integrity finding, `gaps.py`'s advance
+# rule). The renumbering is a fact about *stored plan data*, not about the code — see the
+# migration note below.
+#
+# **Is a plan sitting on revision 5 owed a migration to 6? No plan is on revision 5**, so
+# nothing is owed today — and that answer expires, so the remap is written down here rather
+# than left to be re-derived by whoever first needs it. A plan authored under revision 5 and
+# moved to 6 must remap `plan_rows.stage`, `gate_runs.stage` and `journal_notes.stage` 7 -> 8
+# and 8 -> 9, and `findings.resolve_by` the same way, descending so the two do not collide.
+# Rows written at stages 1-6 are unaffected. Without that remap an adversarial finding would
+# read as a labelling one and every gate history would be a stage out.
+#
+# Two things this revision deliberately is **not**. It is not PLAN.md item 10, the
+# eleven-stage rewrite, which keeps its position at the end and is now revision 7. And the
+# glossary is not carried in the stage-script payload: that was offered as a fix for the
+# session-load's restart limitation and the owner said no.
+#
+# Revision 5, 2026-07-31 — v3 change 2, the decision context. Five `unreasoned` rules ask
+# for `grounds` and `alternatives` on the synthesize-stage tables whose rows are design
+# decisions, and the script lines that stated that obligation in prose are gone: stage 6
+# asked for "what you rejected and why, one line each" and no row in the plan it produced
+# ever carried one, which is the profile of a rule with no mechanism. What the scripts keep
+# is the half a rule cannot express — what makes an argument any good.
+#
+# Three sentences spoke a dialect nothing reads. Stage 5 told a planner to record "no
+# external dependencies" as a `decisions` row and stage 6 to defer a requirement by one;
+# the gate reads `no_dependencies_decision` and `deferrals`. There is no `decisions` table
+# in this vocabulary — it is v1's shape, and the manifest's own stage-1 comment records
+# when the last of it left the table list. A script that tells a planner to file where
+# nothing reads costs them the work twice.
+#
+# `rationale` is gone from these assets with the column that carried it (schema 9). Stage
+# 7 quoted the gate's own wording — "an outcome and a rationale" — which the gate stopped
+# saying, so the quotation had become false as well as retired.
+#
+# Minted rather than edited into rev 4, for the reason rev 4 was minted rather than edited
+# into rev 3: the stamp exists so a plan can say which methodology produced it, and editing
+# in place would retroactively change what already-run sessions were scripted with.
+#
+# This is *not* PLAN.md item 10, which is the eleven-stage rewrite. That was going to be
+# revision 5 and is now revision 6; it keeps its position at the end, to be written against
+# what was actually built. The number is not the lesson — every change that touches a stage
+# script costs a revision, so the plan should expect the number to climb once per such
+# change rather than treating a bump as an event.
+revision_stamp: "plantool-rev6-2026-08-03"
 vendored_from: "PlanTool v1 (archive/v1/server/prompts/)"
 mandate: mandate.md
 
@@ -109,15 +145,33 @@ stages:
     mode: synthesize
     script: stage6_architecture.md
     tables: [components, contracts]
+  # New in revision 6 (v3 change 4), and **inserted here rather than appended**, which is
+  # the one decision in this file worth arguing for.
+  #
+  # It replaces the packaging round that lived inside stage 6 until revision 4, so it sits
+  # directly after architecture, where the thing it replaces was. It has to come before
+  # finalization, which freezes the plan and whose gate folds in every earlier one — a
+  # round after that could not affect what it labels. And the red team is the first reader
+  # who wants the plan in slices, so it comes before them too.
+  #
+  # `tables: []` because a labelling round files no plan rows. What it writes is glossary
+  # terms and their attachments, and neither is a plan row: the glossary is a real table on
+  # the owner's decision (D12 — an accounting may never be inferred from `content`), and an
+  # attachment is keyed on a lineage root.
   - number: 7
+    name: "Labelling"
+    mode: synthesize
+    script: stage7_labelling.md
+    tables: []
+  - number: 8
     name: "Adversarial findings"
     mode: verify
-    script: stage7_adversarial.md
+    script: stage8_adversarial.md
     tables: [findings]
-  - number: 8
+  - number: 9
     name: "Finalization"
     mode: verify
-    script: stage8_finalization.md
+    script: stage9_finalization.md
     tables: []
 
 # Containment: child row type -> its mandatory owning parent row type.

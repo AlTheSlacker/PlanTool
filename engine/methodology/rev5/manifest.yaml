@@ -67,7 +67,12 @@ revision: 5
 # what was actually built. The number is not the lesson — every change that touches a stage
 # script costs a revision, so the plan should expect the number to climb once per such
 # change rather than treating a bump as an event.
-revision_stamp: "plantool-rev5-2026-07-31"
+# **Corrected in place on 2026-08-03 by v3 change 4, and the stamp moves with it**, for the
+# reason set out in revision 4's manifest: the two vocabulary gap rules and the mandate's
+# `approve_term` clause name machinery that change deletes, so this asset would raise on its
+# first derive rather than merely read oddly. The labelling round and the eleven-stage
+# rewrite are revision 6's work, not a second edit here.
+revision_stamp: "plantool-rev5-2026-08-03"
 vendored_from: "PlanTool v1 (archive/v1/server/prompts/)"
 mandate: mandate.md
 

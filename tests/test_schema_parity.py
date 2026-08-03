@@ -23,12 +23,13 @@ from engine.storage import Storage
 from tests.fixtures.schema_v7 import DDL_V7
 from tests.fixtures.schema_v8 import DDL_V8
 from tests.fixtures.schema_v9 import DDL_V9
+from tests.fixtures.schema_v10 import DDL_V10
 
 #: Each retained DDL, with the version it created and the version it migrates to. One entry
 #: joins this per schema change; the parametrisation is what stops the check from silently
-#: covering one hop forever while the schema moves on. The 7 entry now crosses *three* hops,
+#: covering one hop forever while the schema moves on. The 7 entry now crosses *four* hops,
 #: which is what `Storage._chained_steps` exists for.
-RETAINED = {7: DDL_V7, 8: DDL_V8, 9: DDL_V9}
+RETAINED = {7: DDL_V7, 8: DDL_V8, 9: DDL_V9, 10: DDL_V10}
 
 
 def _structure(conn: sqlite3.Connection) -> dict:
@@ -154,6 +155,23 @@ def test_the_retained_ddl_is_the_version_it_claims(tmp_path):
     # the catalogue has not.
     assert {"grounds", "alternatives", "supersede_reason"} <= rows
     assert not {"catalogue", "catalogue_comparisons"} & tables
+
+    theirs = tmp_path / "v10"
+    theirs.mkdir()
+    _built_at(theirs / "plan.db", DDL_V10, 10)
+    conn = sqlite3.connect(theirs / "plan.db")
+    tables = {
+        r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+    }
+    terms = {r[1] for r in conn.execute("PRAGMA table_info(terms)")}
+    conn.close()
+    # Schema 10 is after change 3 and before change 4: the catalogue has landed, the label
+    # attachments have not, and `terms` is still the eleven-column table with approval, the
+    # ban list and the definition lineage on it.
+    assert {"catalogue", "catalogue_comparisons"} <= tables
+    assert "label_attachments" not in tables
+    assert {"approved_at", "ban_scope", "ban_reason", "use_instead", "names_ref",
+            "superseded_at"} <= terms
 
 
 def test_the_8_to_9_step_backfills_nothing_and_renames_in_place(tmp_path):

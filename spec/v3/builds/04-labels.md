@@ -12,6 +12,12 @@ and the measurements — so nothing below needs re-deriving.
 **Keep reading below only for those carried items and for §12**, the cold read of the first draft.
 Everything else here describes a design that was overtaken twice.
 
+**Built 2026-08-03, and one address in here has moved.** This file says several times that
+`contracts:10` is the contract `read_rows` answers to and that this change supersedes it. It did:
+`contracts:10` → **`contracts:74`**, with the selector's dimension list extended by `labels` and
+the page description extended to say it carries them. The citations below keep the original
+address, because they record what the plan said when the change was specified.
+
 ---
 
 ## Status — §1–§11 were rewritten against §0 on 2026-07-30, then superseded the same day.

@@ -49,7 +49,6 @@ from engine.fingerprint import DriftFlag, capture, compare
 from engine.idempotency import key
 from engine.models import RowRef
 from engine.storage import Op, Storage
-from engine.terms import TermService
 
 #: `requirements:69` — the workspace path shapes that mean a network mount. Purely lexical:
 #: a UNC path, or a drive letter Windows maps to a share. The tool never probes the network
@@ -195,20 +194,20 @@ class PlanStatus:
     earlier_gate_runs: Fetch
     warnings: tuple[str, ...]
     gaps: Fetch
-    #: The plan's agreed vocabulary. In the digest because a cold planner is about to write
-    #: rows, and the words are a constraint on what they write — one nothing else would tell
-    #: them exists. A count and the call that fetches it, like every other count here (D17).
-    glossary: Fetch
     journal: tuple[JournalNote, ...]
     earlier_journal: Fetch
     next_action: str
     next_action_source: str
     drift: Drift
     advisories: tuple[str, ...] = ()
-    #: Definitions a planner proposed that the owner has not answered. Its own line because
-    #: it is the one thing in a glossary only he can clear, and a proposal nobody puts in
-    #: front of him becomes the definition by default.
-    terms_awaiting_approval: int = 0
+
+    # A `glossary` count and a `terms_awaiting_approval` count stood here until v3 change 4,
+    # each with a rendered line. Both go on the owner's instruction — "plan_status reporting
+    # of glossary is pointless, the user can look at it in the gui later" — and the second
+    # had nothing left to count, there being no approval step. The glossary reaches a
+    # planning session by being loaded into it at the start, which is a better delivery than
+    # a count in a digest: the words are then in front of the writer at the moment of
+    # naming, which is the only moment at which they change anything.
 
     def present(self) -> str:
         """The digest as text — the string a human or a plain caller reads.
@@ -258,27 +257,13 @@ class PlanStatus:
         else:
             lines.append("No active warnings")
         lines.append(self.gaps.present())
-        if self.glossary.count:
-            lines.append(self.glossary.present())
-            if self.terms_awaiting_approval:
-                waiting = self.terms_awaiting_approval
-                subject = (
-                    "is a definition" if waiting == 1 else "are definitions"
-                )
-                lines.append(
-                    f"  {waiting} of them {subject} proposed by a planner and not yet "
-                    f"settled by the owner — put them to him and record his answer with "
-                    f"approve_term()"
-                )
-        else:
-            # Said even at zero, and that is the point of saying it. Every other count here
-            # reports something the plan already has; this one has to reach a planner who
-            # does not know the glossary exists, and a line that appears only once there
-            # are terms can never be the line that produces the first one.
-            lines.append(
-                "No agreed terms yet — define_term() records what a word means in this "
-                "plan, and every row after it is written in those words"
-            )
+        # The "No agreed terms yet — define_term() records what a word means" line stood
+        # here, deliberately said even at zero so it could reach a planner who did not know
+        # the glossary existed. It is the one a builder will want to keep, because it reads
+        # as onboarding rather than as a nag — and it is the mechanical prompt the owner
+        # struck: "forget you prompting the user, it's another friction point". It fired on
+        # exactly the plans where he had not yet decided he wanted a glossary. The line that
+        # survives is the one in a reply; what goes is the mechanism that interrupts him.
         if self.journal:
             lines.append(f"Journal, this stage ({len(self.journal)}):")
             # The planner's own words, Verbatim for the same reason, with the composed task
@@ -301,12 +286,11 @@ class PlanStatus:
 class ResumeService:
     """session-service (`components:14`)."""
 
-    def __init__(self, storage: Storage, gaps, warnings, guidance, terms=None):
+    def __init__(self, storage: Storage, gaps, warnings, guidance):
         self.storage = storage
         self.gaps = gaps
         self.warnings = warnings
         self.guidance = guidance
-        self.terms = terms or TermService(storage)
 
     # --- contracts:48 ---
 
@@ -417,10 +401,6 @@ class ResumeService:
             earlier_gate_runs=earlier_gates,
             warnings=tuple(w.present() for w in self.warnings.active_warnings()),
             gaps=Fetch("open gap", "next_gaps()", len(open_gaps)),
-            glossary=Fetch(
-                "agreed term", "glossary()", len(self.terms.glossary())
-            ),
-            terms_awaiting_approval=len(self.terms.awaiting_approval()),
             journal=notes,
             earlier_journal=earlier,
             next_action=next_action,

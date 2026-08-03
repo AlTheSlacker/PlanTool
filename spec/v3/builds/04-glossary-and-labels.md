@@ -1444,7 +1444,7 @@ of the results.
 | 2 | Added: `remove_term`, `attach_label`, `detach_label`, `labels` — to the registry **and** to `ADDED`, each with the reason it exists. |
 | 3 | `define_term` and `redefine_term` keep their registry rows; `define_term` loses its `names_ref` parameter. |
 | 4 | **`labels` is a field of the `selector` payload, not a top-level `read_rows` parameter**, and `as_selector`'s whitelist gains `"labels"` and constructs it. |
-| 4a | The rendered form of a page shows each row's labels, and `contracts:10` — the contract `RowPage` answers to — is amended to say the page carries them. |
+| 4a | The rendered form of a page shows each row's labels, and `contracts:10` — the contract `RowPage` answers to — is amended to say the page carries them. **Done: superseded as `contracts:74` (§16.4).** |
 | 4b | The labels mapping is rendered with a **name beside every address**, never as a dict keyed on a bare `table:ordinal`. |
 | 4c | `redefine_term` **also** loses its `names_ref` parameter. |
 | 4d | The surviving glossary tools' summaries are rewritten: `define_term`'s "the owner settles it", `redefine_term`'s "keeping the old wording as history. Also how a retired word comes back", `glossary`'s "retired ones included", and `define_term`'s `ADDED` reason. |
@@ -1827,6 +1827,11 @@ their live heads for the filter, backward along `supersedes` from a page of refs
   against a denominator of live rows — two populations that coincide only for lineages never
   superseded.
 
+### 15.7 Built 2026-08-03 — see §16 for what the building found
+
+The cold read is the record of what the specification was *before* it was corrected. §16 is the
+record of what the specification still got wrong, found by building it.
+
 ### 15.6 What the readers found that nothing else would have
 
 The test packet was the worst result of the four: roughly **sixty of ninety-nine behaviours** across
@@ -1835,3 +1840,128 @@ the change had no test that would fail if a builder skipped them. `labels()` had
 sentence asserting that no test exists — a claim about the repository rather than code that runs.
 That is not a thing a specification's author can see, because the author knows what the code is
 supposed to do and reads the intent rather than the assertion.
+
+---
+
+## 16. The build record — 2026-08-03
+
+**Built as one pull request over eight commits**, in the landing order §7.1 sets. The suite is
+**680 tests** green, `SCHEMA_VERSION` is **11**, the surface is **58 tools**, `ADDED` is **17**, and
+the methodology is **revision 6** with nine stages.
+
+### 16.1 What the specification got wrong, found by building it
+
+Six things, and the first two are the ones that would have shipped.
+
+- **The idempotency fix in 4D.2 does not work.** The specification says the key must carry "the
+  resolved live set" so that attach → detach → re-attach is not swallowed as a replay of the first
+  attach. After the detach the live set is *empty again*, so the third call re-derives the first
+  key exactly and `Storage.replay` returns the original receipt. The live set is a function of
+  current state and what distinguishes the third call from the first is **history**. It now carries
+  the count of every attachment the word has ever had, which detaching never reduces because
+  detaching stamps rather than deletes. Caught by the test written for the finding — which is the
+  argument for writing the test the specification asks for rather than the one that passes.
+- **`snapshot_version` runs before the table it names exists.** 4A.2 behaviour 6 puts
+  `label_attachments` in the snapshot set, and `migrate` takes its pre-migration snapshot *before*
+  applying any step (decisions:45), so every migration of a pre-11 store failed on its own safety
+  snapshot before touching anything. `snapshot_version` now skips a table the store does not have.
+  This fires for **every future change that adds a snapshot table**, so it is a general fix and not
+  this change's patch.
+- **`JUSTIFICATION_ROLES` loses a member; the specification said it was unchanged.** §14's own
+  correction table says the timestamp register goes 7 → 7 because `approved_at` leaves with its
+  column — and then says the justification register is "unchanged at 18: nothing this change adds
+  carries a reason", which is true about additions and forgets the deletion. `terms.ban_reason` is
+  one of the six columns 4A.1 drops. It is **17**. Caught by
+  `test_the_declared_justification_set_is_the_whole_of_it`, which already asserted that every
+  declared member is a live column — the mirror of the check 4A.0 behaviour 3a adds for timestamps.
+- **`Attachment` is a name this engine already uses.** 4D.0 behaviour 1 names the model
+  `Attachment`; `engine/attachments.py` has defined one since M5 for D8's scope attachments. Two
+  classes of one name in one engine is the collision the catalogue exists to catch, counted eleven
+  times over v2's own modules. It is `LabelAttachment`. Third change running that the codebase has
+  refused a name the specification chose.
+- **A `RowRef` dict key escapes the door.** `RowPage.labels` is the first ref-keyed mapping to cross
+  the boundary, and `door.render` did `str(k)` on dict keys while layer 2's `_walk` yields values
+  and never keys — so every page would have printed bare `table:ordinal` addresses with nothing
+  able to see it, which is D19 failing exactly where nothing enforces it. `render` now displays a
+  ref key.
+- **4C.3 behaviour 5 names a revision that is no longer loadable.** It says the two gap rules leave
+  "rev3, rev4, rev5 and rev6"; change 1 froze rev3 on 2026-07-31, so the loadable set is rev4, rev5
+  and the new rev6. rev2 and rev3 are left exactly as written, which is the rule this project
+  already applies to frozen provenance.
+
+### 16.2 Where the labelling round actually goes
+
+**Stage 7, not "the stage-6 labelling round"** — §12 called it that, and in the manifest number 6 is
+Architecture. It is a stage of its own with all five fields, and adversarial and finalization move
+to **8 and 9**.
+
+Every other placement is wrong in a specific way. Bolted onto stage 6 it has no script, no mode, no
+gate entry and no place in `stage_range`. Appended after finalization it becomes the *terminal*
+stage — the one whose gate folds in every earlier one — and it labels a plan that has already been
+frozen. At 7 it sits where the packaging round it replaces used to sit, and before the red team,
+who is the first reader who wants the plan in slices.
+
+**The renumbering was affordable because nothing in the engine hard-codes a stage number**:
+`gates._is_terminal`, `findings`'s allocation of an integrity finding and `gaps`'s advance rule all
+read `stage_range[1]`. The tests were the half that did not, and they now resolve `ADVERSARIAL` and
+`TERMINAL` from the methodology. `test_findings.py` was the sharp one — it asserted that
+`resolve_by=9` is refused, in a revision where 9 is the terminal stage.
+
+**The remap a rev5 plan would need is written into rev6's manifest** rather than left to be
+re-derived: `plan_rows.stage`, `gate_runs.stage`, `journal_notes.stage` and `findings.resolve_by`
+all move 7 → 8 and 8 → 9, descending. No plan is on revision 5, so nothing is owed today — and that
+answer expires, which is the reason to write the remap down rather than the reason not to.
+
+### 16.3 Editing a loadable revision in place, which this project normally refuses
+
+rev4 and rev5 were **corrected**, not left alone and not frozen. Their `gap_rules.yaml` declares two
+rule types `gaps.py` no longer implements, so a plan on either would raise on its first derive, and
+`unsettled_term`'s ask told the planner to call `approve_term`, which the registry can no longer
+resolve. rev4's own manifest refuses in-place editing — "the stamp exists precisely so a plan can
+say which methodology produced it" — and the case it refuses is a *rewording*, where minting a
+successor preserves the record. This is not that: left alone, those assets do not work at all.
+
+**So both stamps move with their content**, which is F31's rule as those manifests state it
+themselves. rev2 and rev3 are untouched: nothing loads them, and rewriting provenance is the thing
+this project does not do.
+
+### 16.4 The contract this change made stale, measured not assumed
+
+**One: `contracts:10` → `contracts:74`.** Its `params` enumerated the selector's dimensions — "by
+ids | table | stage | provenance | liveness | link-neighborhood" — and this change adds a seventh;
+its `returns` described the page as the rows' contents, and the page now carries each row's live
+labels. Superseded through `archive/v1`'s `lineage.supersede_row`, which repointed **4
+`contract_deps` children** that hand-written SQL would have missed; `gate_stage8` green; both
+exports regenerated.
+
+**Two calls looked like candidates and were not**, which is why the measurement is worth running
+rather than guessing. `plan_status` (`contracts:64`) loses its glossary count and `compose_brief`
+(`contracts:68`) loses the brief's glossary section — and **neither contract ever named one**. Both
+were D23 deviations layered on top, so removing them moves the code back *toward* the contract.
+
+**The dry run earned its keep again.** The first attempt passed `params` as a JSON string, which the
+v1 layer rejects because it serialises the list itself — a failure that would have hit the real
+`plan.db` had the copy not been run first.
+
+### 16.5 The counts, re-derived rather than carried
+
+| §14 said | measured at build time |
+|---|---|
+| `SCHEMA_VERSION` 10 → 11 | **10 → 11** ✓ |
+| `TIMESTAMP_ROLES` 7 → 7 | **7 → 7** ✓ |
+| `JUSTIFICATION_ROLES` unchanged at 18 | **18 → 17** — it loses `terms.ban_reason` |
+| 54 registrations, 12 `ADDED`, `EXCLUDED` 3 | **57 → 58**, **16 → 17**, `EXCLUDED` **4** — the spec's figures were measured before changes 1–3 landed, exactly as §11 said to expect |
+| `LABELS_DDL` yields four statements | **four**, verified through `schema.statements` rather than counted by eye |
+| `tests/test_terms.py` holds 41 tests, six survive | **41, and exactly six survive** ✓ |
+| the rule table holds seven handlers | **eight** — change 2 added `unreasoned` after §10 was written |
+
+### 16.6 What change 5 inherits from this change
+
+- **`RowVerdict.note` has no producer.** The field stays, `CatalogueResult.note` documents the same
+  shape, and change 3's retired-namesake note is the obvious candidate to fill it.
+- **`serve_brief` is still on no surface** (carried from change 3, raised to Al, unfixed here).
+- **The labelling round cannot label a task until change 5 moves task creation to stage 8.** Tasks
+  are derived at finalization today, so a task can only be labelled on a finalized plan. Plan-row
+  targets are unaffected. This is the same constraint change 3 recorded for function entries.
+- **`MAX_PAGE` is 1000 and `read_rows` now refuses above it.** Anything that paged in larger chunks
+  has to page.
