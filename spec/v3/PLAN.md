@@ -177,9 +177,12 @@ added.
 replacement and measured it away: 92% of a plan's rows have no path to a component, so a place-name
 is not the redundant filter the replacement assumed (`builds/04-labels.md` §3.2).
 
-**Settled by the owner, 2026-07-29:** tool-proposed labels under glossary rules **is** the right
-level of control — the tool proposes, he adds and assigns freely and overturns anything. Specifying
-it against the code then found the guard underneath it was imaginary; see D12 and change 4.
+~~**Settled by the owner, 2026-07-29:** tool-proposed labels under glossary rules **is** the right
+level of control — the tool proposes, he adds and assigns freely and overturns anything.~~
+**Reversed by him on 2026-07-30 and built as change 4**: there is no tool proposal and no approval
+step, because he defines the glossary's contents. Specifying it against the code had already found
+the guard underneath it was imaginary, and the reversal removed the apparatus rather than building
+one. See D12, D18, and `builds/04-glossary-and-labels.md`.
 
 Still the owner's, at the build-phase discussion: whether `component` should be un-retired, which
 is currently my call. Change 3 is evidence for keeping it — it gives the word a job nothing else

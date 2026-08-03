@@ -165,8 +165,14 @@ Small and worth listing so the fix stays targeted.
   that they are now load-bearing rather than descriptive.
 - **Stage 5** binds the technical-claims rule.
 - **Stage 6** loses the packaging round and the mandatory package cut, which die with packages.
-  It gains **labels** — the tool proposes from the starter list, the owner settles, and glossary
-  rules refuse a near-duplicate.
+  **Corrected 2026-08-03, when change 4 was built — this said stage 6 "gains labels", and all
+  three clauses after it were false.** Labelling is **a stage of its own** (7 in methodology
+  revision 6, pushing adversarial and finalization to 8 and 9), because a round bolted onto
+  architecture has no script, no mode, no gate entry and no place in `stage_range`. The tool does
+  **not** propose from a starter list and the owner does **not** settle a proposal — he defines
+  the glossary's contents, and a label is a live glossary term. There is **no near-duplicate
+  refusal** and there will not be one: the failure it was aimed at is a synonym sharing no
+  letters, which nothing lexical sees (D18).
 - **Stage 6** keeps contracts, but they stop being the build unit and become what they always
   were: the architecture's statement of a component's obligations, which stage 8 turns into
   tasks.
@@ -247,6 +253,8 @@ judgment made silently during coding by whoever was standing there.
   not. Stages 1 to 3 are all elicitation but carry different denominators and so different gap
   rules; folding them loses the rules. The conventions register needs no stage of its own: it is
   a table opened at stage 6 and grown from stage 10's output.
-- **Whether the owner wants tool-proposed labels under glossary rules** at all (D12). His call,
-  and the starter list is in `VOCABULARY.md`.
+- ~~**Whether the owner wants tool-proposed labels under glossary rules** at all (D12).~~
+  **Settled 2026-07-30 and built as change 4: he does not.** There is no tool proposal and no
+  approval step — the owner defines the glossary's contents, a label is a live glossary term, and
+  the ten words in `VOCABULARY.md` are a suggestion to a reader that is seeded nowhere. See D18.
 - **Whether `component` stays un-retired** (D16). Currently my call.
