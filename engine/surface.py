@@ -96,6 +96,7 @@ from engine.revision import RevisionService
 from engine.rows import RowService
 from engine.storage import Storage
 from engine.tasks import TaskGraphService
+from engine.labels import LabelService
 from engine.terms import TermService
 from engine.validation import SpikeSpec, ValidationService
 from engine.warnings import WarningService
@@ -286,7 +287,7 @@ def as_selector(field_name: str, value: Any) -> RowSelector:
     got = as_dict(field_name, value)
     unknown = set(got) - {
         "ids", "table", "stage", "provenance", "live_only", "neighbourhood_of",
-        "limit", "offset",
+        "limit", "offset", "labels",
     }
     if unknown:
         raise _fail(
@@ -306,7 +307,30 @@ def as_selector(field_name: str, value: Any) -> RowSelector:
         ),
         limit=got.get("limit", 100),
         offset=got.get("offset", 0),
+        # **A field of the selector, not a top-level `read_rows` parameter.** That row takes
+        # exactly one argument and dispatch calls `read_rows(**args)` against
+        # `read_rows(self, selector)`, so a top-level `labels` would be a `TypeError` caught
+        # by the blanket handler and reported as the caller's mistake. Both halves — the
+        # whitelist above and this construction — have to move together, since `as_selector`
+        # refuses any key it does not know.
+        #
+        # **This is the one place allowed to be generous about a bare string.** The model
+        # refuses `labels="engine"` outright, because a `str` is a sequence of `str` and
+        # would filter on its own letters; here a JSON `"labels": "engine"` is plainly one
+        # word, so it is coerced. The friendliness lives at the edge and the model stays
+        # strict.
+        labels=_as_labels(f"{field_name}.labels", got.get("labels")),
     )
+
+
+def _as_labels(field_name: str, value: Any) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if isinstance(value, str):
+        return (value,)
+    if not isinstance(value, list):
+        raise _fail(field_name, "a list of words, or one word", value)
+    return tuple(as_str(f"{field_name}[{i}]", v) for i, v in enumerate(value))
 
 
 def as_spike_spec(field_name: str, value: Any) -> SpikeSpec:
@@ -1214,6 +1238,13 @@ class Surface:
         # unpassed collaborator skip its guard and proceed — a catalogue missing both would
         # look identical to a working one.
         self.catalogue = CatalogueService(storage, self.rows)
+        # **`label_service`, not `labels`.** Four things would otherwise be called `labels` —
+        # the tool, the `RowSelector` field, the `RowPage` field, and the service method —
+        # plus this attribute, which the registry's `service` column resolves to, as a
+        # fifth. The three data fields are fine, each qualified by what holds it; this one
+        # would sit beside the tool name in dispatch, and `renderer` a few lines below
+        # records the precedent against exactly that.
+        self.label_service = LabelService(storage, self.rows, self.terms)
         self.tasks = TaskGraphService(
             storage, self.rows, graph=self.graph, findings=self.findings
         )

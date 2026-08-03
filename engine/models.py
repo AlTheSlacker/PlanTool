@@ -671,8 +671,15 @@ class CatalogueResult:
 
 
 @dataclass(frozen=True, slots=True)
-class Attachment:
+class LabelAttachment:
     """One word attached to one target, live or detached.
+
+    **Not `Attachment`, which the specification called it.** `engine/attachments.py`
+    already defines an `Attachment` — D8's scope attachment, a plan row allocated to a
+    task's context — and two classes of one name in one engine is the collision the
+    catalogue exists to catch, counted eleven times over v2's own modules. The two are not
+    the same kind of thing: that one attaches a *row to a scope*, this one attaches a *word
+    to a row*.
 
     `target_root` is a `RowRef` and not a string, because every other model here that holds
     a row address holds a `RowRef`. The column is TEXT; this coerces.

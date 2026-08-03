@@ -55,6 +55,58 @@ from engine.validation import (
     spike_spec_problem,
 )
 
+#: The live rows carrying **every** word in a label filter (v3 change 4).
+#:
+#: **The join it performs has no other primitive.** Attachments key on lineage roots and
+#: this is a `WHERE` clause over rows, and the only root primitive in the engine —
+#: `lineage_root` — is a Python loop issuing one query per supersession hop. Resolving in
+#: Python would break `total` and paging, which both ride in SQL; matching roots against
+#: refs directly is correct only for rows that have never been superseded, and so silently
+#: drops exactly the lineages root-keying exists to preserve.
+#:
+#: So it walks the chain the other way: rather than resolving every candidate row *back* to
+#: its root, it resolves the small attached set *forward* to its live heads. Probed at
+#: SQLite 3.49.1 against a lineage superseded twice and labelled at its root — the live row
+#: is still found, and the result is a plain set of refs that composes with every other
+#: selector dimension.
+#:
+#: **`COUNT(DISTINCT word)` and not `COUNT(*)`, and that was probed rather than reasoned.**
+#: The live unique index is supposed to guarantee one live attachment per word per target,
+#: which would make the two spellings equivalent — but this change measured that the
+#: *natural* spelling of that index enforces nothing whatsoever, every row having exactly
+#: one NULL among the target columns. So the duplicate the two forms disagree about is
+#: reachable in exactly the case where the constraint was got wrong, and `DISTINCT` makes
+#: the filter correct independently of it.
+#:
+#: The AND is the owner's decision of 2026-07-30, taken against the recommendation that one
+#: label is enough: he asked for it "for completeness". The `HAVING` is the whole of it.
+LABELLED_HEADS = """
+    WITH RECURSIVE attached(root) AS (
+        SELECT target_root FROM label_attachments
+         WHERE word IN ({marks}) AND detached_at IS NULL AND target_root IS NOT NULL
+         GROUP BY target_root
+        HAVING COUNT(DISTINCT word) = ?
+    ),
+    chain(root, ref) AS (
+        SELECT root, root FROM attached
+        UNION ALL
+        SELECT c.root, p.superseded_by
+          FROM chain c
+          JOIN plan_rows p ON p.table_name || ':' || p.ordinal = c.ref
+         WHERE p.superseded_by IS NOT NULL
+    )
+    SELECT DISTINCT ref FROM chain
+     WHERE ref IN (SELECT table_name || ':' || ordinal FROM plan_rows
+                    WHERE superseded_by IS NULL)
+"""
+
+#: The most rows one page may ask for. `read_rows` validated only that `limit` is positive,
+#: and both of this change's queries bind one parameter per element — a caller asking for
+#: fifty thousand rows would build a fifty-thousand-parameter statement and get a driver
+#: error rather than a refusal naming the field. Well above any sensible page and well below
+#: SQLite's own default parameter limit.
+MAX_PAGE = 1000
+
 #: A contradiction detector: given a candidate submission and the store, return a
 #: human-readable description of what stored row it contradicts, or None.
 #:
@@ -570,6 +622,14 @@ class RowService:
         if selector.limit <= 0:
             raise InvalidSelector("limit must be positive", field="limit",
                                   value=selector.limit)
+        if selector.limit > MAX_PAGE:
+            raise InvalidSelector(
+                f"limit may not exceed {MAX_PAGE}: a label filter and the label read both "
+                "bind one query parameter per element, so an unbounded page fails as a "
+                "driver error rather than as a refusal naming the field. Page through with "
+                "offset",
+                field="limit", value=selector.limit,
+            )
         if selector.offset < 0:
             raise InvalidSelector("offset cannot be negative", field="offset",
                                   value=selector.offset)
@@ -603,6 +663,15 @@ class RowService:
                 " UNION SELECT source_ref FROM links WHERE target_ref = ?)"
             )
             params.extend([ref, ref])
+        if selector.labels:
+            words = self._label_words(selector.labels)
+            marks = ", ".join("?" for _ in words)
+            where.append(
+                "(table_name || ':' || ordinal) IN ("
+                + LABELLED_HEADS.format(marks=marks)
+                + ")"
+            )
+            params.extend([*words, len(words)])
 
         clause = f"WHERE {' AND '.join(where)}" if where else ""
         total = self.storage.query(
@@ -612,10 +681,58 @@ class RowService:
             f"SELECT * FROM plan_rows {clause} ORDER BY id LIMIT ? OFFSET ?",  # noqa: S608
             (*params, selector.limit, selector.offset),
         )
+        page = tuple(self._hydrate(r) for r in rows)
         return RowPage(
-            tuple(self._hydrate(r) for r in rows), total, selector.offset,
-            selector.limit,
+            page, total, selector.offset, selector.limit,
+            labels=self._labels_for(page),
         )
+
+    @staticmethod
+    def _label_words(labels: Any) -> list[str]:
+        """The words a label filter asks for: normalised, deduplicated, order kept.
+
+        **A bare `str` is refused**, and it is the same class of trap as `isinstance(True,
+        int)`: a `str` *is* a sequence of `str`, so `labels="engine"` iterates to `'e'`,
+        `'n'`, `'g'`, `'i'` — four distinct characters after dedupe — none of which is a
+        term, so the page comes back empty and correct-looking. The payload parser is the one
+        place allowed to be generous about this; the model stays strict.
+
+        **Deduplicating is not tidying either.** `("engine", "engine")` would set the
+        `HAVING` count to two while the query can only ever reach one, so the filter would
+        silently match nothing because the caller repeated a word. Normalising first also
+        collapses `("Engine", "engine")` rather than guaranteeing an empty page.
+        """
+        if isinstance(labels, str):
+            raise InvalidSelector(
+                "labels is a tuple of words, not one word: a bare string is itself a "
+                "sequence of characters, so it would filter on its letters and return an "
+                "empty page that looks correct. Pass ('engine',)",
+                field="labels", value=labels,
+            )
+        words = list(dict.fromkeys(w.strip().lower() for w in labels))
+        if any(not w for w in words):
+            raise InvalidSelector(
+                "a label is a word; one of these is empty", field="labels", value=labels
+            )
+        return words
+
+    def _labels_for(self, rows: tuple[PlanRow, ...]) -> dict[RowRef, tuple[str, ...]]:
+        """Each row's live labels, in one query, populated whether or not a filter was used.
+
+        Imported inside the call because `engine/labels.py` takes this service as a
+        collaborator; the two would otherwise import each other at module level. The service
+        is constructed here rather than injected for the reason the reverse would fail:
+        `read_rows` is called on a `RowService` built in a dozen tests and in five other
+        modules, and a label mapping that is only populated where somebody remembered to
+        pass a collaborator is the F50 shape — a value that is true only where refreshed.
+        """
+        if not rows:
+            return {}
+        from engine.labels import LabelService
+        from engine.terms import TermService
+
+        service = LabelService(self.storage, self, TermService(self.storage))
+        return service.labels_for_page([r.ref for r in rows])
 
     def get(self, ref: RowRef | str) -> PlanRow:
         ref = RowRef.coerce(ref)
