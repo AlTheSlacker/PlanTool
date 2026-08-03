@@ -43,6 +43,8 @@ TIMESTAMP_ROLES = {
     "resolved_at": "state_machines — an open thing reached its terminal state",
     "concluded_at": "spikes:  the experiment produced its outcome",
     "approved_at": "terms: the owner settled a definition the planner proposed",
+    "detached_at": "label_attachments: the attachment was taken off its target; the row "
+                   "stays as the record that it was once there",
 }
 
 #: Suffixes whose vocabulary is closed: the declared types a column with that suffix may
@@ -71,6 +73,15 @@ SHAPES = {
     # what is true.
     "_by": (("INTEGER", "TEXT"), "who or what caused this — an id, a ref, or (resolve_by) "
                                  "the gate ordinal it answers to"),
+    # Declared by v3 change 4, which supplies the third occurrence. The schema already held
+    # two names for one concept — `gap_overlay.root_ref` and `scope_attachments.target_root`
+    # are both *the lineage root of the row this record is keyed to*, spelt two ways — and
+    # `SHAPES` had no entry for `_root`, so `target_root` had never been checked by
+    # anything. `label_attachments.target_root` is the third, which is the moment this map
+    # either does its job or becomes the thing it exists to prevent. Declaring it does not
+    # rename either existing column; it makes the next one a deliberate act. Renaming
+    # `root_ref` is a separate change's work.
+    "_root": (("TEXT",), "the lineage root of a target row, as a `table:ordinal` ref"),
 }
 
 #: Every column that records a justification, keyed `table.column`, with the role it plays.
