@@ -590,52 +590,110 @@ class TestTheGlossary:
         assert result.ok
         assert [t["term"] for t in result.payload] == ["component"]
 
-    def test_retiring_a_word_needs_a_scope_the_tool_names(self, surface):
+    def test_the_struck_tools_are_gone_from_the_door(self, surface):
+        """`approve_term`, `retire_term` and `export_glossary` went with the machinery
+        behind them — the proposal lifecycle, the banned list, and a manifest nothing ever
+        read. Asserted through `dispatch`, because the registry is what the door resolves
+        against and a tool removed from one list and not the other is the failure this
+        surface's own coverage tests exist for."""
+        for name in ("approve_term", "retire_term", "export_glossary"):
+            result = surface.dispatch(ToolCall(name, {}))
+            assert not result.ok
+            assert result.error == "UnknownTool"
+        assert not (surface.storage.workspace / "glossary.json").exists()
+
+    def test_redefining_changes_the_meaning_in_place(self, surface):
         self.define(surface)
-        result = surface.dispatch(ToolCall("retire_term", {
-            "term": "component", "ban_scope": "everywhere", "ban_reason": "two spellings",
-        }))
-        assert not result.ok
-        assert "prose" in str(result.problem)
-
-    def test_a_row_using_a_retired_word_is_filed_with_the_word_said_back(self, surface):
-        self.define(surface, "task", "the work of realising one component")
-        self.define(surface)
-        assert surface.dispatch(ToolCall("retire_term", {
-            "term": "component", "ban_scope": "prose",
-            "ban_reason": "one entity, two spellings", "use_instead": "task",
-        })).ok
-
-        result = surface.dispatch(ToolCall("submit_rows", {
-            "batch": [{
-                "table": "requirements",
-                "name": "each component owns one responsibility",
-                "content": {"text": "Each component shall own one responsibility."},
-            }],
-            "idempotency_key": "vocabulary",
-        }))
-        assert result.ok
-        verdict = result.payload["verdicts"][0]
-        assert verdict["accepted"] is True
-        assert "say 'task'" in verdict["note"]
-
-    def test_the_names_of_a_term_arrive_named(self, surface):
-        """`names_ref` is an address, so it may never travel alone (D19)."""
-        row = a_row(surface)
-        ref = row.payload["verdicts"][0]["ref"]
-        assert surface.dispatch(ToolCall("define_term", {
-            "term": "widget", "definition": "the thing that settles", "names_ref": ref,
+        assert surface.dispatch(ToolCall("redefine_term", {
+            "term": "component", "definition": "a unit of the design",
         })).ok
         result = surface.dispatch(ToolCall("glossary", {}))
-        assert result.payload[0]["names_ref"] == ref
-        assert ref == "the widget settles in 40 ms (requirements:1)"
+        assert [(t["term"], t["definition"]) for t in result.payload] == [
+            ("component", "a unit of the design")
+        ]
 
-    def test_the_export_reports_where_it_went(self, surface):
-        self.define(surface)
-        result = surface.dispatch(ToolCall("export_glossary", {}))
-        assert result.ok
-        assert "glossary.json" in result.payload["summary"]
-        assert (surface.storage.workspace / "glossary.json").exists()
+    def test_a_label_must_be_a_word_the_glossary_holds(self, surface):
+        """The glossary's one mechanical use, through the door."""
+        row = a_row(surface)
+        ref = row.payload["verdicts"][0]["ref"]
+        refused = surface.dispatch(ToolCall("attach_label", {
+            "word": "widget", "targets": [ref],
+        }))
+        assert not refused.ok
+        assert "define_term" in str(refused.problem)
+
+        assert self.define(surface, "widget", "the thing that settles").ok
+        assert surface.dispatch(ToolCall("attach_label", {
+            "word": "widget", "targets": [ref],
+        })).ok
+
+    def test_a_page_shows_each_row_s_labels_with_a_name_beside_the_address(self, surface):
+        """D19 through a mapping, which is the shape that would have escaped: `render` walks
+        a payload's values and never its keys, so a ref-keyed dict would have printed a bare
+        `table:ordinal` with no check able to see it."""
+        row = a_row(surface)
+        ref = row.payload["verdicts"][0]["ref"]
+        self.define(surface, "widget", "the thing that settles")
+        surface.dispatch(ToolCall("attach_label", {"word": "widget", "targets": [ref]}))
+
+        page = surface.dispatch(ToolCall("read_rows", {"selector": {"table": "requirements"}}))
+        assert page.ok
+        assert page.payload["labels"] == {
+            "the widget settles in 40 ms (requirements:1)": ["widget"]
+        }
+
+    def test_the_label_filter_is_a_field_of_the_selector(self, surface):
+        """A top-level `labels` parameter would be a `TypeError` caught by the blanket
+        handler and reported as the caller's mistake, and `as_selector` refuses any key it
+        does not whitelist — so both halves had to move together."""
+        row = a_row(surface)
+        ref = row.payload["verdicts"][0]["ref"]
+        self.define(surface, "widget", "the thing that settles")
+        surface.dispatch(ToolCall("attach_label", {"word": "widget", "targets": [ref]}))
+
+        found = surface.dispatch(ToolCall("read_rows", {
+            "selector": {"labels": ["widget"]},
+        }))
+        assert found.ok, found.problem
+        assert found.payload["total"] == 1
+
+        # The parser is the one place allowed to be generous about a bare string.
+        one = surface.dispatch(ToolCall("read_rows", {"selector": {"labels": "widget"}}))
+        assert one.ok and one.payload["total"] == 1
+
+        stray = surface.dispatch(ToolCall("read_rows", {
+            "selector": {"labels": ["widget"], "nosuchfield": 1},
+        }))
+        assert not stray.ok
+
+    def test_removing_a_word_in_use_refuses_through_the_door(self, surface):
+        row = a_row(surface)
+        ref = row.payload["verdicts"][0]["ref"]
+        self.define(surface, "widget", "the thing that settles")
+        surface.dispatch(ToolCall("attach_label", {"word": "widget", "targets": [ref]}))
+
+        refused = surface.dispatch(ToolCall("remove_term", {"term": "widget"}))
+        assert not refused.ok
+        assert refused.error == "TermInUse"
+        assert "1 plan row(s)" in str(refused.problem)
+
+        assert surface.dispatch(ToolCall("remove_term", {
+            "term": "widget", "detach_all": True,
+        })).ok
+        assert surface.dispatch(ToolCall("glossary", {})).payload == []
+
+    def test_the_label_report_names_every_target(self, surface):
+        row = a_row(surface)
+        ref = row.payload["verdicts"][0]["ref"]
+        self.define(surface, "widget", "the thing that settles")
+        surface.dispatch(ToolCall("attach_label", {"word": "widget", "targets": [ref]}))
+
+        report = surface.dispatch(ToolCall("labels", {"word": "widget"}))
+        assert report.ok, report.problem
+        usage = report.payload["usages"][0]
+        assert (usage["row_count"], usage["task_count"]) == (1, 0)
+        assert report.payload["live_rows"] == 1
+        assert report.payload["targets"][0]["ref"] == ref
 
     def test_terms_cannot_be_submitted_as_plan_rows(self, surface):
         result = surface.dispatch(ToolCall("submit_rows", {
@@ -678,78 +736,54 @@ class TestWhatGoesOutComesBack:
         assert result.error == "MalformedCall"
 
 
-class TestSettlingADefinition:
-    """A definition is proposed by the planner and settled by the owner (D23). The tool
-    records the judgment; it never makes it."""
+class TestTheWarningLedgerStaysReconciled:
+    """DEFECTS.md F50 — the digest may not nag about a condition it has already dropped.
 
-    def test_the_digest_puts_unsettled_proposals_in_front_of_the_planner(self, surface):
-        surface.dispatch(ToolCall("define_term", {
-            "term": "stage", "definition": "a declared grouping of tasks",
-        }))
-        digest = surface.dispatch(ToolCall("plan_status", {})).payload["summary"]
-        assert "approve_term()" in digest
+    This class tested the same mechanism through the glossary until v3 change 4: a gate
+    raised an `unsettled_term` warning, `approve_term` settled the definition, and the
+    digest had to stop nagging without waiting for the next gate. Approval and that warning
+    kind are both gone, and **the reconciliation is not** — it is what `SETTLEABLE_KINDS`
+    and `GapEngine.live_warning_keys` exist for. So the check moves to a kind that survives
+    rather than being deleted with its old subject, which would have taken a live mechanism
+    out of the suite along with the dead one.
+    """
 
-        surface.dispatch(ToolCall("approve_term", {"term": "stage"}))
-        settled = surface.dispatch(ToolCall("plan_status", {})).payload["summary"]
-        assert "approve_term()" not in settled
-        assert "1 agreed term — glossary()" in settled
-
-    def test_the_owner_s_own_wording_wins_and_the_proposal_survives(self, surface):
-        surface.dispatch(ToolCall("define_term", {
-            "term": "stage", "definition": "a declared grouping of tasks",
-        }))
-        result = surface.dispatch(ToolCall("approve_term", {
-            "term": "stage", "definition": "the level where I say 'the GUI'",
-        }))
-        assert result.ok, result.problem
-        assert result.payload["definition"] == "the level where I say 'the GUI'"
-        assert result.payload["approved_at"] is not None
-
-    def test_the_manifest_says_which_definitions_are_still_proposals(self, surface):
-        surface.dispatch(ToolCall("define_term", {
-            "term": "stage", "definition": "a declared grouping of tasks",
-        }))
-        result = surface.dispatch(ToolCall("export_glossary", {}))
-        assert "waiting on the owner" in result.payload["summary"]
-        written = json.loads(
-            (surface.storage.workspace / "glossary.json").read_text(encoding="utf-8")
-        )
-        assert written["terms"][0]["approved"] is False
-
-    def test_plan_status_drops_a_term_s_warning_the_moment_the_owner_settles_it(
-        self, surface
-    ):
-        """DEFECTS.md F50 — the digest may not nag about a condition it has already dropped.
-
-        Warnings are persisted rows the gate raises and settles; gaps are recomputed live.
-        A gate raises an `unsettled_term` warning, the owner runs `approve_term`, and the
-        term stops being an open gap — but the warning row stays `active` until the *next*
-        gate runs the settle sweep. Between the two, `plan_status` headlined a gap count
-        that had dropped the term while its warnings list still nagged about it: one digest
-        contradicting itself. The fix reconciles the settleable warnings against live state
-        at read time, so no second gate is needed. Asserted on what the resuming planner
+    def test_the_digest_drops_a_warning_the_moment_its_condition_clears(self, surface):
+        """Warnings are persisted rows the gate raises and settles; gaps are recomputed
+        live. Between two gates the ledger is stale, and the reconciliation at read time is
+        what stops one digest contradicting itself. Asserted on what the resuming planner
         sees (the digest text), not on the ledger row (F22)."""
-        surface.dispatch(ToolCall("define_term", {
-            "term": "widget", "definition": "a unit under test",
-        }))
         surface.dispatch(ToolCall("run_gate", {"stage": 1}))
         raised = surface.dispatch(ToolCall("plan_status", {})).payload["summary"]
-        assert "unsettled_term" in raised  # the gate put it in front of the planner
+        assert "goals" in raised, "the gate put the empty stage in front of the planner"
 
-        surface.dispatch(ToolCall("approve_term", {"term": "widget"}))
+        surface.dispatch(ToolCall("submit_rows", {
+            "batch": [
+                {"table": "goals", "name": "ship it",
+                 "content": {"title": "ship it", "success_criteria": "it lands"}},
+                {"table": "non_goals", "name": "no GUI", "content": {"title": "no GUI"}},
+                {"table": "stack", "name": "Python", "content": {"title": "Python 3.12"}},
+            ],
+            "idempotency_key": "fill-stage-one",
+        }))
         settled = surface.dispatch(ToolCall("plan_status", {})).payload["summary"]
-        assert "unsettled_term" not in settled  # ...and settling it clears it, no re-gate
+        assert "goals_recorded" not in settled, "no second gate should be needed"
 
-    def test_an_unsettled_definition_reaches_the_planner_as_a_gap(self, surface):
-        """The gap text quotes the proposed definition and names the call that settles it,
-        so it has to survive the door like anything else the tool composes."""
+    def test_the_retired_word_kind_has_no_producer_left(self, surface):
+        """Its only producer was the glossary's lexical scan. A kind table listing a kind
+        nothing can raise is a menu item that is never cooked — and worse, once it left
+        `SETTLEABLE_KINDS` nothing could settle an existing row either, which is why the
+        10 -> 11 migration settles them rather than leaving them active forever."""
+        import engine.warnings as warnings_module
+
         surface.dispatch(ToolCall("define_term", {
             "term": "widget", "definition": "the thing that settles",
         }))
-        result = surface.dispatch(ToolCall("next_gaps", {"stage": 2}))
-        assert result.ok, result.problem
-        asks = [g["ask"] for g in result.payload["gaps"]]
-        assert any("approve_term" in a and "widget" in a for a in asks)
+        surface.dispatch(ToolCall("run_gate", {"stage": 1}))
+        assert not hasattr(warnings_module, "RETIRED_TERM")
+        assert all(
+            w.kind != "retired_term" for w in surface.warns.all_warnings()
+        )
 
 
 class TestTheDecisionContext:

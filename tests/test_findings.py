@@ -290,9 +290,16 @@ def test_a_finding_carries_the_gate_it_must_be_resolved_by(rows, findings):
 
 
 def test_resolve_by_must_be_a_real_gate(rows, findings):
-    """An allocation to a stage that does not exist is one no gate can ever discharge."""
+    """An allocation to a stage that does not exist is one no gate can ever discharge.
+
+    The out-of-range value is read from the methodology rather than written as a literal: it
+    was 9 until methodology revision 6 made 9 the terminal stage, at which point a test
+    asserting that 9 is refused was asserting the opposite of what it meant.
+    """
+    from engine.methodology import load
+
     ref = _row(rows)
-    for bad in (0, 9, True, "8"):
+    for bad in (0, load().stage_range[1] + 1, True, "8"):
         with pytest.raises(InvalidAllocation):
             findings.file_finding(
                 [ref], "a problem", "high", name=f"a problem {bad}", resolve_by=bad,

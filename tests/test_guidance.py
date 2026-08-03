@@ -65,7 +65,7 @@ def test_elicit_scripts_actually_contain_the_divergence_round(guidance):
 def test_unknown_stage_names_the_valid_range(guidance):
     with pytest.raises(UnknownStage) as exc:
         guidance.get_stage_script(99)
-    assert exc.value.detail["valid_range"] == "1-8"
+    assert exc.value.detail["valid_range"] == f"1-{load(DEFAULT_REVISION).stage_range[1]}"
 
 
 def test_script_carries_the_revision_stamp(guidance):

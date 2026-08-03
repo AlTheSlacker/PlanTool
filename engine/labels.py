@@ -122,7 +122,7 @@ class LabelService:
             if (root, task_id) not in live
         ]
         if ops:
-            self.storage.write_atomic(ops, self._key("attach_label", term.term, keys, live))
+            self.storage.write_atomic(ops, self._key("attach_label", term.term, keys))
         return self._attachments(term.term)
 
     def detach_label(
@@ -146,9 +146,7 @@ class LabelService:
         ]
         if ops:
             self.storage.write_atomic(
-                ops,
-                self._key("detach_label", term.term, sorted(keys),
-                          {self._key_of(a) for a in current}),
+                ops, self._key("detach_label", term.term, sorted(keys))
             )
         return self._attachments(term.term)
 
@@ -402,26 +400,34 @@ class LabelService:
                 ))
         return tuple(out)
 
-    def _key(self, act: str, word: str, keys, live) -> str:
-        """The idempotency key, carrying **the act's own name** and the current live set.
+    def _key(self, act: str, word: str, keys) -> str:
+        """The idempotency key, carrying **the act's own name** and the word's history depth.
 
         Neither call takes a key from the caller, and the honest reason is that both are
-        idempotent by construction: a repeat attach is a no-op returning the same answer, so
+        idempotent by construction: a repeat attach is a no-op that writes nothing at all, so
         there is nothing to protect against replaying.
 
         **The act is in the key because without it the two calls collide.** Derived from the
         word and the targets alone, `attach_label('part', refs)` and
         `detach_label('part', refs)` produce the *same* key — and `Storage.replay` returns
         the original receipt and skips execution, so a detach following an attach on the
-        same targets would be swallowed as a replay and write nothing, silently.
-        `terms.py` already carried the fix as a pattern: the act is always part of the key.
+        same targets would be swallowed as a replay and write nothing, silently. `terms.py`
+        already carried the fix as a pattern: the act is always part of the key.
 
-        **And the live set is in it** because attach → detach → re-attach on the same
-        targets would otherwise re-derive the first attach's key. The third call is a
-        different act from the first, and what distinguishes them is what was attached at
-        the time.
+        **The third element is the count of every attachment this word has ever had**, live
+        or detached, and it is *not* what the specification asked for. That said "include the
+        current live-attachment keys", which does not work and was caught by the test written
+        for it: after attach → detach the live set is empty again, so a re-attach re-derives
+        the first attach's key exactly and is swallowed. The live set is a function of current
+        state, and what distinguishes the third call from the first is history, not state.
+        This count is monotonic — detaching stamps rather than deletes, so a row is never
+        removed — and every attach that writes increments it, which makes each write of each
+        act distinct without a caller having to supply anything.
         """
-        return key(act, word, sorted(str(k) for k in keys), sorted(str(k) for k in live))
+        depth = self.storage.query(
+            "SELECT COUNT(*) AS n FROM label_attachments WHERE word = ?", (word,)
+        )[0]["n"]
+        return key(act, word, sorted(str(k) for k in keys), depth)
 
     @staticmethod
     def _key_of(attachment: LabelAttachment) -> tuple[str | None, int | None]:

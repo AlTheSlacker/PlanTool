@@ -64,16 +64,22 @@ class TestTheTokeniser:
     def test_a_plural_folds_onto_the_singular_and_keeps_both(self):
         assert tokens("rows") == {"rows", "row"}
 
-    def test_terms_delegates_rather_than_carrying_a_second_copy(self):
-        """v3 change 4's ruling, applied here: the catalogue is the second thing to need
-        word-splitting, so one copy is canonical and the other is a copy — in the change
-        whose own subject is duplication."""
+    def test_the_catalogue_is_the_only_owner_of_the_tokeniser(self):
+        """This asserted a *delegation* from `terms.py` until v3 change 4, which was right
+        while the glossary still had a lexical scan to delegate for. That scan is gone —
+        nothing without judgment can catch a synonym sharing no letters, which is the
+        failure it existed for — so the catalogue is the only caller and there is no second
+        occurrence to extract a shared module for.
+
+        Asserted as an absence in both directions, because the argument runs both ways: a
+        `WORD` left behind in `terms.py` would be a second copy of the regex, and a
+        `_tokens` left behind would be a delegation with no caller.
+        """
         from engine import terms
 
-        assert terms.TermService._tokens("plan rows", terms.PROSE) == tokens("plan rows")
-        assert not hasattr(terms, "WORD"), (
-            "the regex moved to engine.catalogue with the tokeniser that reads it"
-        )
+        assert tokens("plan rows") == {"plan", "rows", "row"}
+        assert not hasattr(terms, "WORD")
+        assert not hasattr(terms.TermService, "_tokens")
 
 
 class TestTheRanking:
@@ -625,14 +631,17 @@ class TestTheSearchAndTheReport:
 class TestTheSurfaceAndTheCrossTaskBehaviours:
     """3E.2 — the assertions no single task would fail on its own."""
 
-    def test_the_planning_registry_holds_57_tools_and_added_holds_16(self):
+    def test_the_planning_registry_holds_58_tools_and_added_holds_17(self):
         """Stated because a coverage test asserting a number nobody wrote down cements
         whichever number the builder guessed — and the draft's number was wrong at both
-        ends. 51 today (54 in v2, minus change 1's four, plus change 2's one), plus six."""
+        ends. 51 today (54 in v2, minus change 1's four, plus change 2's one), plus change
+        3's six, plus change 4's net one: it removes `approve_term`, `retire_term` and
+        `export_glossary` and adds `remove_term`, `attach_label`, `detach_label` and
+        `labels`."""
         from engine.surface import ADDED, REGISTRY
 
-        assert len(REGISTRY) == 57
-        assert len(ADDED) == 16
+        assert len(REGISTRY) == 58
+        assert len(ADDED) == 17
 
     def test_the_six_are_deviations_and_each_says_why(self):
         from engine.surface import ADDED, DEVIATION, REGISTRY
@@ -726,7 +735,13 @@ class TestTheSurfaceAndTheCrossTaskBehaviours:
         from engine.mcp import tool_list
 
         advertised = {t["name"]: t for t in tool_list()}
-        assert len(advertised) == 57
+        assert len(advertised) == 58
+        # v3 change 4's `targets` kind is the second test of this: it takes plan-row
+        # addresses and task ids in one list, and a kind with no `SCHEMA_OF` entry raises
+        # inside `input_schema` before any tool is advertised.
+        assert advertised["attach_label"]["inputSchema"]["properties"]["targets"][
+            "type"
+        ] == "array"
         schema = advertised["catalogue_object"]["inputSchema"]
         assert schema["properties"]["comparisons"]["type"] == "array"
         assert set(schema["required"]) == {

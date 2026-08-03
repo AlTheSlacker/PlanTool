@@ -254,7 +254,11 @@ class TestTheDDLAndTheMigration:
 
         from engine.storage import Storage as S
 
-        source = inspect.getsource(S.snapshot_version)
+        # Read out of the tuple rather than out of the whole method's source, which is what
+        # this did until v3 change 4 added `label_attachments` — and a comment mentioning
+        # the catalogue would then have failed a check about the table set. The two live
+        # together in that method for opposite reasons and the check has to tell them apart.
+        source = inspect.getsource(S.snapshot_version).split("tables = (")[1].split(")")[0]
         assert "catalogue" not in source, (
             "the catalogue joined the snapshot set; `tasks` is not in it, so its task_id "
             "references would survive a rewind that removed the tasks"
@@ -267,7 +271,12 @@ class TestTheDDLAndTheMigration:
             )[0]["payload"]
             import json
 
-            assert len(json.loads(payload)) == 9
+            # Ten since v3 change 4, which adds `label_attachments` — an overlay keyed on
+            # lineage roots, the same primitive as `gap_overlay`, holding judgments that
+            # cannot be recomputed from the rows. The catalogue's exclusion is the point of
+            # this test and is asserted on the next line; the size is asserted so that a
+            # table joining the set is a deliberate act rather than a silent one.
+            assert len(json.loads(payload)) == 10
             assert "catalogue" not in json.loads(payload)
 
 

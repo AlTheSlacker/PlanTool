@@ -342,21 +342,31 @@ def _store_baseline(storage, fingerprint: dict) -> None:
     )
 
 
-# --- the glossary in the digest (D23) ---
+# --- the glossary is not in the digest, and that is a decision (v3 change 4) ---
 
 
-def test_a_cold_planner_is_told_the_glossary_exists(services):
-    """The chicken and egg the packaging defect taught: a line that appears only once
-    there are terms can never be the line that produces the first one."""
-    _, _, resume = services
-    assert "define_term()" in resume.plan_status().present()
+def test_the_digest_says_nothing_about_the_glossary(services):
+    """Two tests stood here — one asserting that a cold planner is told the glossary exists
+    even at zero terms, one counting the agreed terms. Both go on the owner's instruction:
+    *"plan_status reporting of glossary is pointless, the user can look at it in the gui
+    later"*, and *"forget you prompting the user, it's another friction point"*.
 
+    The zero-term line is the one that looks like onboarding and was the nag: it fired on
+    exactly the plans where he had not yet decided he wanted a glossary. What replaces it is
+    the session load — the words in front of the writer at the moment of naming, which is
+    the only moment at which they change anything.
 
-def test_the_digest_counts_the_agreed_terms(services):
+    Asserted **with a term defined**, so the check is that the digest stays silent when it
+    has something it could have said, rather than passing because the plan is empty.
+    """
     from engine.terms import TermService
 
     storage, _, resume = services
-    TermService(storage).define_term("stage", "a declared grouping of tasks")
+    TermService(storage).define_term("stage", "an ordered step of the interview")
     digest = resume.plan_status()
-    assert digest.glossary.count == 1
-    assert "1 agreed term — glossary()" in digest.present()
+    assert not hasattr(digest, "glossary")
+    assert not hasattr(digest, "terms_awaiting_approval")
+    text = digest.present()
+    assert "define_term" not in text
+    assert "glossar" not in text.lower()
+    assert "agreed term" not in text
