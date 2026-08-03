@@ -139,11 +139,19 @@ def test_detaching_something_unattached_is_a_no_op(labels, terms, rows):
 
 
 def test_attach_detach_reattach_leaves_the_label_on(labels, terms, rows, store):
-    """The replay hazard that produces **wrong data** rather than a loud failure. The key
-    must carry the act's own name — without it, `attach_label(w, refs)` and
+    """The replay hazard that produces **wrong data** rather than a loud failure.
+
+    The key must carry the act's own name — without it, `attach_label(w, refs)` and
     `detach_label(w, refs)` derive the same key and `Storage.replay` swallows the second as
-    a replay of the first — and it must carry the live set, or the re-attach re-derives the
-    first attach's key."""
+    a replay of the first.
+
+    It must also distinguish the *third* call from the first, and **the specification's fix
+    for that does not work**: it said to carry the resolved live set, and after attach →
+    detach the live set is empty again, so the re-attach re-derives the first attach's key
+    exactly. Current state cannot tell the two apart; history can. The key carries the
+    word's total attachment count, which detaching never reduces because detaching stamps
+    rather than deletes. See `LabelService._key`.
+    """
     _rows(rows, 1)
     terms.define_term("engine", "the planning engine")
     labels.attach_label("engine", ["requirements:1"])
