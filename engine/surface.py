@@ -429,6 +429,32 @@ def as_comparisons(field_name: str, value: Any) -> tuple[Comparison, ...]:
     return tuple(out)
 
 
+def as_targets(field_name: str, value: Any) -> list[RowRef | int]:
+    """What a label is being put on: plan-row addresses, task ids, or a mix of both.
+
+    `DECODERS` had `refs` and `ints` and nothing that accepts both, and a label attaches to
+    either kind — so a caller labelling three rows and a task had no way to say so in one
+    call.
+
+    **The `bool` rejection is not defensive.** `bool` subclasses `int`, so a bare
+    `isinstance(v, int)` reads `True` as task 1 and writes an attachment to whichever task
+    happens to hold that id. It is checked here and again in the service, because the
+    service is reachable without the door.
+    """
+    if not isinstance(value, list):
+        raise _fail(field_name, "a list of addresses and task ids", value)
+    out: list[RowRef | int] = []
+    for i, item in enumerate(value):
+        where = f"{field_name}[{i}]"
+        if type(item) is int:
+            out.append(as_int(where, item))
+        elif isinstance(item, str):
+            out.append(as_ref(where, item))
+        else:
+            raise _fail(where, "an address like 'requirements:61' or a task id", item)
+    return out
+
+
 DECODERS: dict[str, Callable[[str, Any], Any]] = {
     "str": as_str,
     "int": as_int,
@@ -445,6 +471,7 @@ DECODERS: dict[str, Callable[[str, Any], Any]] = {
     "change_request": as_change_request,
     "owner_decision": as_owner_decision,
     "comparisons": as_comparisons,
+    "targets": as_targets,
 }
 
 
@@ -710,48 +737,56 @@ REGISTRY: dict[str, Tool] = {
         _t("get_auxiliary", "guidance", "get_auxiliary", DEVIATION,
            "A script that belongs to no single stage — the red team's, for one.",
            Param("name", "str", note="which auxiliary script")),
-        # --- the glossary (components:2, by deviation) ---
+        # --- the glossary and its labels (components:2, by deviation) ---
+        #
+        # The glossary is the owner's table and there is no approval step: whatever is
+        # written was authorised by him at the moment it was written, so there is no queue
+        # of unsettled proposals and nothing to settle. `approve_term`, `retire_term` and
+        # `export_glossary` were struck by v3 change 4 with the machinery behind them — the
+        # proposal lifecycle, the banned list, and a manifest with no consumer.
         _t("define_term", "terms", "define_term", DEVIATION,
-           "Propose what a word means in this plan; the owner settles it. Draft the "
-           "definition yourself — you have just read the rows it appears in.",
+           "Record what a word means in this plan, in the owner's terms.",
            Param("term", "str", note="the word itself"),
            Param("definition", "str",
-                 note="what you believe it means here, in a sentence, for the owner to "
-                      "accept or rewrite"),
-           Param("names_ref", "ref", required=False,
-                 note="the row this word names, if it names one"),
-           writes=True),
-        _t("approve_term", "terms", "approve_term", DEVIATION,
-           "Record the owner settling a definition — as proposed, or in his own words.",
-           Param("term", "str", note="the word being settled"),
-           Param("definition", "str", required=False,
-                 note="the owner's own wording, when he rewrote it; omit to accept the "
-                      "proposal as it stands"),
+                 note="what it means here, in a sentence. A word listed with no meaning "
+                      "beside it is a word two readers read two ways"),
            writes=True),
         _t("redefine_term", "terms", "redefine_term", DEVIATION,
-           "Sharpen what a word means, keeping the old wording as history. Also how a "
-           "retired word comes back.",
+           "Change what a word means, in place.",
            Param("term", "str", note="the word being redefined"),
            Param("definition", "str", note="what it means now"),
-           Param("names_ref", "ref", required=False,
-                 note="the row it names, if that changed too"),
            writes=True),
-        _t("retire_term", "terms", "retire_term", DEVIATION,
-           "Take a word out of use, saying where it may no longer appear and what to say "
-           "instead.",
-           Param("term", "str", note="the word being retired"),
-           Param("ban_scope", "str",
-                 note="where it is out: prose, identifier, or both"),
-           Param("ban_reason", "str", note="why, so the next writer can agree with it"),
-           Param("use_instead", "str", required=False,
-                 note="the word to say instead; it must be defined already"),
+        _t("remove_term", "terms", "remove_term", DEVIATION,
+           "Take a word out of the glossary. If anything carries it as a label, this "
+           "refuses and says how widely, so you can supply a replacement or take it off "
+           "everything.",
+           Param("term", "str", note="the word to remove"),
+           Param("replacement", "str", required=False,
+                 note="a word every attachment moves to; it must itself be defined"),
+           Param("detach_all", "bool", required=False,
+                 note="true to take the label off everything instead of moving it"),
            writes=True),
         _t("glossary", "terms", "glossary", DEVIATION,
-           "Every word this plan has agreed the meaning of, retired ones included."),
-        _t("export_glossary", "terms", "export_glossary", DEVIATION,
-           "Publish the vocabulary as a manifest in the workspace for your own checks to "
-           "read.",
-           writes=False),
+           "Every word this plan has agreed the meaning of, alphabetically."),
+        _t("attach_label", "label_service", "attach_label", DEVIATION,
+           "Put a label on plan rows or tasks. A label is a glossary term, so the word must "
+           "be defined first.",
+           Param("word", "str", note="the label, which must be a live glossary term"),
+           Param("targets", "targets",
+                 note="what to label: plan-row addresses like 'requirements:61', task ids "
+                      "as whole numbers, or a mix"),
+           writes=True),
+        _t("detach_label", "label_service", "detach_label", DEVIATION,
+           "Take a label off plan rows or tasks. The attachment is stamped, not deleted: it "
+           "stays as the record that the label was once there.",
+           Param("word", "str", note="the label to take off"),
+           Param("targets", "targets", note="which rows and tasks to take it off"),
+           writes=True),
+        _t("labels", "label_service", "labels", DEVIATION,
+           "Which labels are in use and how widely — as two counts, rows and tasks, never "
+           "their sum. Naming one lists everything carrying it.",
+           Param("word", "str", required=False,
+                 note="one label, to see every row and task carrying it")),
         # --- the render (components:15, by deviation) ---
         _t("render_plan", "renderer", "render_plan", DEVIATION,
            "Write the plan to a document in the workspace for the owner to read; the "
@@ -936,22 +971,29 @@ ADDED: tuple[Absence, ...] = (
     Absence(DEVIATION, "define_term",
             "the eight planning stages never ask what the words mean, so a plan could "
             "not say — and a vocabulary nothing records is the one F27 broke (D23)"),
-    Absence(DEVIATION, "approve_term",
-            "a definition the tool took from a planning session and filed as settled is "
-            "the tool deciding what the owner's words mean; he accepts it or writes his "
-            "own (D23)"),
     Absence(DEVIATION, "redefine_term",
-            "a meaning sharpens, and the old wording has to stay readable or the change "
-            "reads as a contradiction later (D23)"),
-    Absence(DEVIATION, "retire_term",
-            "retiring a word is the act the whole mechanism exists to make visible, and "
-            "the banned list is what every check downstream counts against (D23)"),
+            "a meaning sharpens, and a word that could be defined once and never corrected "
+            "is a glossary nobody keeps true (D23)"),
+    Absence(DEVIATION, "remove_term",
+            "the glossary is the owner's to edit, and a table you may add to and rewrite "
+            "but never remove from is not one he owns. It is also the only place the "
+            "replacement word belongs: supplied at the moment it is needed and consumed "
+            "immediately, rather than stored forever in a column (v3 change 4)"),
     Absence(DEVIATION, "glossary",
             "a writer needs the words before typing, and a resuming planner has no other "
             "way back to them (D23)"),
-    Absence(DEVIATION, "export_glossary",
-            "the delivery point that achieves the most: the tool publishes the vocabulary "
-            "and the codebase's own checks enforce it, with no judgment exercised (D23)"),
+    Absence(DEVIATION, "attach_label",
+            "labels replace the declared build grouping as the way a review list is "
+            "filtered (v3 D7/D12), and the lookup this call performs is the whole of the "
+            "glossary's mechanical role: a label must be a word the plan has defined"),
+    Absence(DEVIATION, "detach_label",
+            "a label put on wrongly has to come off, and it must come off by stamping "
+            "rather than deleting — the attachment is the record that the label was once "
+            "there (v3 change 4)"),
+    Absence(DEVIATION, "labels",
+            "a label on all 687 rows and a label on one are both useless for filtering, "
+            "and only a count against its denominator tells them apart; without this the "
+            "only way to find what a row carries was one call per word (v3 change 4)"),
     Absence(DEVIATION, "reallocate_finding",
             "D15 gives a finding two exits, resolve or defer-to-a-later-gate; without a tool "
             "for the second, the gate lock could only ever be satisfied by resolving, and a "

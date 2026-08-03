@@ -66,6 +66,18 @@ SCHEMA_OF: dict[str, dict[str, Any]] = {
             "required": ["matched", "relationship", "reason"],
         },
     },
+    # v3 change 4. A label goes on plan rows and on tasks, which are addressed two
+    # different ways, so the items are advertised as either — the registry had `refs` and
+    # `ints` and nothing that takes both.
+    #
+    # **Every kind used by a `Param` needs an entry here.** `input_schema` indexes this map
+    # directly, so a missing kind is a `KeyError` inside `tools/list`, which does not fail
+    # one tool: it kills the advertisement for the whole registry. Change 3's build found
+    # that by driving, after a green suite.
+    "targets": {
+        "type": "array",
+        "items": {"anyOf": [{"type": "string"}, {"type": "integer"}]},
+    },
 }
 
 
