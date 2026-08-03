@@ -567,7 +567,7 @@ REGISTRY: dict[str, Tool] = {
                                        "attack it (question, hypothesis, method, budget)"),
            Param("idempotency_key", "str", note="replaying this key returns the first receipt"),
            writes=True),
-        _t("read_rows", "rows", "read_rows", "contracts:10",
+        _t("read_rows", "rows", "read_rows", "contracts:74",
            "Read the rows a selector picks out, a page at a time.",
            Param("selector", "selector", note="which rows: by address, table, stage, "
                                               "provenance, liveness or neighbourhood")),

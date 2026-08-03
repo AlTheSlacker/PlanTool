@@ -167,26 +167,34 @@ Labels sit **outside the breakdown entirely.** A row may carry none or several, 
 freely, and they never affect build order, completion, ownership or what a builder is served.
 That is what makes them safe to let the tool propose.
 
-**Labels are governed by the glossary's rules**, not by a second mechanism of their own: the tool
-proposes a label with a definition, the owner settles it, and a near-duplicate is refused. That is
-the guard against a hundred nearly-identical labels, which is the failure mode the owner named.
+**A label IS a glossary term** — not a separate vocabulary governed by the glossary's rules, which
+is what this entry said until change 4 was built on 2026-08-03. `attach_label` looks the word up
+in `terms` and refuses if nothing holds it; `define_term` mints one. There is no `propose_label`,
+no `labels` table, and no approval step, because the owner defines the glossary's contents.
 
-**This entry said the near-duplicate was "refused exactly as a near-duplicate term is", and no such
-refusal existed anywhere.** `define_term` refuses only an exact match. Corrected in D12 on
-2026-07-29; **change 4 builds the refusal, for labels and for the glossary both**, over the same
-ranking the catalogue uses. Labels get their own table rather than glossary rows, because
-`idx_terms_live` allows one live row per word and a word can legitimately be both a term and a
-label — "engine" is both in this plan.
+**Four things this entry used to say are false, and each is worth naming so nobody restores it.**
+That the tool proposes and the owner settles — there is no proposal state. That a near-duplicate
+is refused — no such refusal exists or will: `part` and `component` share no letters, so nothing
+lexical can see the failure it was meant to catch, and a ranking inside `define_term` would be the
+tool adjudicating the owner's own word (D18). That labels need a table of their own because a word
+can be both a term and a label, as `engine` is here — that argument dissolves, since under this
+design a label *is* a term and the two cannot collide. And that letting the tool propose is safe
+because labels affect nothing in the build; it is not the blast radius that decides it, it is
+whose vocabulary it is.
 
-**The starter list — ten, deliberately.** Every one names a *place in the system* rather than a
-kind of work, because "refactor", "bugfix" and "cleanup" describe an activity that is over once
-it is done, and a label has to stay true for the life of the row.
+**What guards against a hundred nearly-identical labels** is that a label costs a definition. The
+word has to be in the glossary, and a word listed with no meaning beside it is refused.
+
+**The list below is a suggestion to a reader and is seeded nowhere.** Every one names a *place in
+the system* rather than a kind of work, because "refactor", "bugfix" and "cleanup" describe an
+activity that is over once it is done, and a label has to stay true for the life of the row.
 
 `engine` · `surface` · `storage` · `schema` · `methodology` · `interview` · `execution` ·
 `tests` · `docs` · `gui`
 
-Ten because the failure mode is too many, not too few, and the tool adds one only when nothing
-fits — which is a proposal the guard can refuse. The list is deliberately coarse: a label's
+**They are not written into `terms` at plan creation**, and that is change 4's ruling rather than
+an omission: the owner defines the contents, and ten words written by the tool would be the tool
+defining them. The list is deliberately coarse: a label's
 job is to shrink a review list from everything to something a person can read, not to classify.
 If a filter on `engine` returns too much, the answer is a dependency query or a search, not a
 finer label.
@@ -197,7 +205,15 @@ through the component a row belongs to. Measured against the frozen v2 plan: **5
 carry a component and 4 more link to one — 92% of a plan has no path to a component at all.**
 Requirements, decisions, entities, use cases, steps, extensions, state-machine cells and the CRUD
 grid are most of a plan and none of them belongs anywhere. The place-name is the only filter they
-will ever have. See `builds/04-labels.md` §3.2.
+will ever have. See `builds/04-labels.md` §3.2 — that document is superseded by
+`builds/04-glossary-and-labels.md`, but its §3.2 measurement is one of the things §5.8 of the
+successor carries forward whole.
+
+**Where a label is recorded.** `label_attachments`, keyed on the **word** and on the target's
+lineage root — never on a term id, which would detach every target the moment a definition was
+edited, and never on a row ref, which would detach the moment the row was superseded. Detaching
+stamps rather than deletes, so a detached attachment goes on naming a word even after the owner
+removes it: it is the record that the label was once there.
 
 ### Catalogue entry
 One object, method or function the plan intends to exist, with **one owner** and a statement of

@@ -161,11 +161,11 @@ class ConflictRequired(PlanToolError):
 
 
 class UnreadableRows(PlanToolError):
-    """contracts:10 — integrity failure; names unreadable vs surviving rows."""
+    """contracts:74 — integrity failure; names unreadable vs surviving rows."""
 
 
 class InvalidSelector(PlanToolError):
-    """contracts:10 — pedagogical error naming the invalid field; nothing read."""
+    """contracts:74 — pedagogical error naming the invalid field; nothing read."""
 
 
 # --- link-graph (components:3) ---

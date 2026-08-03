@@ -133,8 +133,12 @@ both.
 
     **The number climbs once per change that edits a script, and this line kept saying 5 while it
     did.** Change 2 minted revision 5 for the `record_grounds` asks, change 3 minted none, and
-    change 4 mints revision 6 for the stage-6 labelling round that replaces the deleted packaging
-    round. So this item is **revision 7**. The lesson is not about numbering: it is that nothing
+    change 4 mints revision 6 for the labelling round that replaces the deleted packaging round.
+    So this item is **revision 7**. **Built 2026-08-03, and the round is a stage of its own**:
+    "the stage-6 labelling round" was how this line and change 4's own draft described it, and
+    number 6 is Architecture — a round bolted onto an existing stage has no script, no mode, no
+    gate entry and no place in `stage_range`. Labelling is **stage 7** in revision 6, with
+    adversarial and finalization moving to 8 and 9. The lesson is not about numbering: it is that nothing
     cold-reads this document, so it went stale for two changes with nobody looking — the same way
     D12 asserted a guard that had never existed.
 

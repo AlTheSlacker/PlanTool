@@ -275,7 +275,8 @@ class BatchReceipt:
 
 @dataclass(slots=True)
 class RowSelector:
-    """contracts:10 — by ids | table | stage | provenance | liveness | link-neighborhood.
+    """contracts:74 — by ids | table | stage | provenance | liveness | labels |
+    link-neighborhood.
 
     Paginated, because requirements:62 forbids a full-plan dump as the default read
     path. The plan names the selector's dimensions but not its field shapes; this
@@ -306,7 +307,7 @@ class RowSelector:
 
 @dataclass(frozen=True, slots=True)
 class RowPage:
-    """contracts:10 — a page of full row contents, its continuation state, and its labels.
+    """contracts:74 — a page of full row contents, its continuation state, and its labels.
 
     **The labels are on the page and not on `PlanRow`**, which is a modelling decision
     rather than a convenience, and the obvious shape is wrong twice.

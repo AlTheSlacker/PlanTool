@@ -4,7 +4,7 @@ Owns the PlanRow lifecycle: provenance-checked batched submission with per-row v
 full and targeted readback, in-place assumption upgrade, supersession lineage, and
 retirement.
 
-Contracts: contracts:69 submit_rows, contracts:10 read_rows, contracts:70
+Contracts: contracts:69 submit_rows, contracts:74 read_rows, contracts:70
 resolve_assumption, contracts:71 supersede_row, contracts:72 retire_row.
 """
 
@@ -614,7 +614,8 @@ class RowService:
             )
         return None
 
-    # --- contracts:10 ---
+    # --- contracts:74 (contracts:10 until v3 change 4 gave the selector its seventh
+    # dimension and put each row's labels on the page) ---
 
     def read_rows(self, selector: RowSelector) -> RowPage:
         """Targeted reads, so resume cost scales with the working set rather than total
