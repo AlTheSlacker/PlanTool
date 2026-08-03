@@ -40,9 +40,9 @@ exposed call satisfies this invariant?** Every tool with no contract behind it a
 `ADDED` with the reason it exists.
 
 The glossary is the third such group (D23) and the plan has nothing to say about it at all —
-it never asks what the words mean (DEFECTS.md F40). `plan_status` names `glossary()` even
-when the plan has no terms yet, because a line that appears only once there are terms can
-never be the line that produces the first one.
+it never asks what the words mean (DEFECTS.md F40). Its labels are the fourth: they replace
+the declared build grouping as the way a review list is filtered (v3 D7/D12), and a
+grouping's replacement is no more anticipated by the frozen plan than the grouping's death.
 
 **`NotWriter` is moot, not implemented.** `contracts:50` declares it for "a write tool
 invoked without holding the writer lease"; there is no lease, the lock having been removed
@@ -1186,27 +1186,22 @@ class Surface:
     def __init__(self, storage: Storage, *, guidance: Guidance | None = None):
         self.storage = storage
         self.terms = TermService(storage)
-        # The glossary is built before the row service, which consults it at submission:
-        # the moment of typing is the only moment at which saying "that word is retired"
-        # changes what gets written (D23).
-        self.rows = RowService(storage, terms=self.terms)
-        self.terms.rows = self.rows
+        self.rows = RowService(storage)
         self.graph = LinkGraph(storage)
         self.conflicts = ConflictService(storage, self.rows)
         self.warns = WarningService(storage)
         self.gaps = GapEngine(storage, self.rows)
         # The warning ledger mirrors conditions the gap-engine computes (open gaps, open
-        # assumptions, retired-word uses). Late-bound here — the gap-engine is built after
-        # the warning service — so `active_warnings` reconciles those against live state and
-        # never reports one a mutation has already cleared (DEFECTS.md F50). Same late-bind
-        # shape as `terms.rows = rows` above.
+        # assumptions). Late-bound here — the gap-engine is built after the warning service
+        # — so `active_warnings` reconciles those against live state and never reports one a
+        # mutation has already cleared (DEFECTS.md F50).
         self.warns.live_warning_keys = self.gaps.live_warning_keys
         # Findings are built before the gate that reads them: the stage-7 criteria go
         # through the finding service now, not through plan_rows (D22).
         self.findings = FindingService(storage, self.rows)
         self.gates = GateEngine(
             storage, self.rows, self.conflicts, self.warns, gaps=self.gaps,
-            findings=self.findings, terms=self.terms,
+            findings=self.findings,
         )
         self.validation = ValidationService(
             storage, self.rows, self.graph, self.conflicts
@@ -1224,7 +1219,7 @@ class Surface:
         )
         self.briefs = BriefComposer(
             storage, self.tasks, graph=self.graph, attachments=self.attachments,
-            behaviours=self.behaviours, terms=self.terms,
+            behaviours=self.behaviours,
         )
         self.revision = RevisionService(
             storage, self.graph, self.rows, self.findings, self.warns, self.conflicts
@@ -1236,7 +1231,6 @@ class Surface:
         self.renderer = PlanRender(storage, self.rows, self.findings)
         self.resume = ResumeService(
             storage, gaps=self.gaps, warnings=self.warns, guidance=self.guidance,
-            terms=self.terms,
         )
         self.log = ObservabilityLog(storage.workspace)
         self._resolve = resolver_from(self.rows, self.findings)

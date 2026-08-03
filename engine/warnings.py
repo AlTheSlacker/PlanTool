@@ -31,18 +31,24 @@ RESOLVED = "resolved"
 
 OPEN_GAP = "open_gap"
 UNRESOLVED_ASSUMPTION = "unresolved_assumption"
-#: A live row using a retired word. Its own kind, not folded into open_gap: it settles when
-#: the glossary changes or the row is superseded — a different lifecycle — and a shared kind
-#: would leave one settling rule guessing at two conditions.
-RETIRED_TERM = "retired_term"
+
+# `RETIRED_TERM = "retired_term"` stood here until v3 change 4 — a live row using a word the
+# glossary had retired. Its only producer was the glossary's lexical scan, and a kind with
+# no producer cannot fire: a kind table listing one is a menu item that is never cooked.
+#
+# Rows already carrying it are settled by the 10 -> 11 migration rather than left standing.
+# Once the kind leaves `SETTLEABLE_KINDS` neither `_reconcile` nor the gate's settling pass
+# would ever touch such a row again, so it would sit `active` forever — nothing able to
+# produce it and nothing able to settle it, which is a permanent nag in the digest that
+# exists to de-noise.
 
 #: The warning kinds whose active/settled state mirrors a condition the gap-engine computes,
-#: rather than being owned here: an open gap, an unresolved assumption, a retired-word use.
-#: Their state must never be read stale, so `active_warnings` reconciles them against the
-#: live derivation (`GapEngine.live_warning_keys`) before returning, and the gate settles
-#: them for real from the *same* derivation, so read and gate cannot disagree (DEFECTS.md
-#: F50). Every other kind owns its own lifecycle and is passed through untouched.
-SETTLEABLE_KINDS = frozenset({OPEN_GAP, UNRESOLVED_ASSUMPTION, RETIRED_TERM})
+#: rather than being owned here: an open gap, an unresolved assumption. Their state must
+#: never be read stale, so `active_warnings` reconciles them against the live derivation
+#: (`GapEngine.live_warning_keys`) before returning, and the gate settles them for real from
+#: the *same* derivation, so read and gate cannot disagree (DEFECTS.md F50). Every other
+#: kind owns its own lifecycle and is passed through untouched.
+SETTLEABLE_KINDS = frozenset({OPEN_GAP, UNRESOLVED_ASSUMPTION})
 
 
 class CriticalPoint(StrEnum):

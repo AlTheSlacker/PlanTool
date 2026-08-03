@@ -52,7 +52,16 @@ revision: 4
 # revision is the same eight stages, correctly worded, with the dead calls removed — the
 # door turns stale asset text into a failed call the moment the tools go, so it could not
 # wait.
-revision_stamp: "plantool-rev4-2026-07-31"
+# **Corrected in place on 2026-08-03 by v3 change 4, and the stamp moves with it.** Two gap
+# rules (`no_glossary`, `unsettled_term`) and one mandate clause named machinery that change
+# deletes: `gaps.py` implements neither rule type any more, so this revision would raise on
+# its first derive, and both texts told a planner to call `approve_term`, which the registry
+# can no longer resolve. Editing a revision in place is the thing the note above refuses to
+# do — and the case it refuses is a *rewording*, where minting a successor keeps the record
+# of what earlier sessions were scripted with. This is not that: left alone, this asset does
+# not work at all. So it is corrected, and the stamp moves, which is what keeps the change
+# visible to a plan that recorded the old one rather than silently retroactive.
+revision_stamp: "plantool-rev4-2026-08-03"
 vendored_from: "PlanTool v1 (archive/v1/server/prompts/)"
 mandate: mandate.md
 

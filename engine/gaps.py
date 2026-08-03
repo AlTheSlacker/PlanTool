@@ -21,7 +21,6 @@ from engine.methodology import Methodology, Rule, load
 from engine.models import PlanRow, RowRef, RowSelector
 from engine.references import EXTRACTS_TABLE, SOURCES_TABLE, ReferenceService
 from engine.rows import RowService
-from engine.terms import TermService
 from engine.clock import now
 from engine.idempotency import key
 from engine.storage import Op, Storage
@@ -106,16 +105,11 @@ class GapEngine:
         rows: RowService,
         references: ReferenceService | None = None,
         methodology: Methodology | None = None,
-        terms: TermService | None = None,
     ):
         self.storage = storage
         self.rows = rows
         self.references = references
         self.methodology = methodology or load()
-        #: The glossary, because "which words does this plan agree the meaning of" is an
-        #: interview question like any other — and an unsettled definition is an open
-        #: question only the owner can close, which is exactly what a gap is (D23).
-        self.terms = terms or TermService(storage)
         self._check_unreasoned_rules()
 
     def _check_unreasoned_rules(self) -> None:
@@ -210,8 +204,13 @@ class GapEngine:
             "untraced": self._rule_untraced,
             "open_assumption": self._rule_open_assumption,
             "uncited_section": self._rule_uncited_section,
-            "no_glossary": self._rule_no_glossary,
-            "unsettled_term": self._rule_unsettled_term,
+            # `no_glossary` and `unsettled_term` stood here until v3 change 4. The first
+            # asked once whether the plan had agreed the meaning of a single word; the
+            # second reported every definition awaiting the owner's approval. Both go on the
+            # owner's instruction — "forget you prompting the user, it's another friction
+            # point" — and the second had nothing left to report anyway, since there is no
+            # approval step. Their declarations leave `gap_rules.yaml` in every loadable
+            # revision, not only the newest.
             "unreasoned": self._rule_unreasoned,
         }.get(rule.type)
         if handler is None:
@@ -342,35 +341,6 @@ class GapEngine:
                 )
         return gaps
 
-    def _rule_no_glossary(self, rule: Rule) -> list[Gap]:
-        """The plan has content and has never agreed what a single word means.
-
-        Conditioned on there being rows, so it does not fire into an empty workspace where
-        the stage-1 rule is already saying the same thing in more useful words. It asks
-        once and is dismissible: a plan whose vocabulary is genuinely uncontentious is a
-        legitimate answer, and one recorded on the owner's say-so rather than by silence.
-        """
-        if self.terms.glossary():
-            return []
-        if not self.rows.read_rows(RowSelector(live_only=True, limit=1)).total:
-            return []
-        return [self._make(rule)]
-
-    def _rule_unsettled_term(self, rule: Rule) -> list[Gap]:
-        """A definition the planner proposed and the owner has not answered.
-
-        The same shape as an assumed-intent row, and for the same reason: it carries the
-        planner's best answer, it is visible as unsettled, and only the owner can close it.
-        Keyed on the word, which is this table's identity everywhere else, so a dismissal
-        survives the entry being superseded by a redefinition.
-        """
-        return [
-            self._make(
-                rule, extra_key=term.term, word=term.term, definition=term.definition
-            )
-            for term in self.terms.awaiting_approval()
-        ]
-
     # --- the live conditions the warning ledger mirrors (DEFECTS.md F50) ---
 
     def _all_live_rows(self) -> list[PlanRow]:
@@ -397,8 +367,11 @@ class GapEngine:
             root = self.lineage_root(row.ref)
             if row.state == "assumed":
                 keys.add(f"assumption:{root}")
-            for usage in self.terms.violations(row.content):
-                keys.add(f"term:{root}:{usage.term}")
+        # A third branch added `term:{root}:{word}` for every live row using a retired word,
+        # until v3 change 4. It goes with the scan that produced it: this method reconciles
+        # live warnings against what still holds, and a warning kind with no producer has
+        # nothing to reconcile. Rows already carrying that kind are settled by the 10 -> 11
+        # migration rather than left active forever.
         return keys
 
     # --- overlay ---

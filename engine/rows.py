@@ -81,11 +81,16 @@ RESERVED_TABLES = {
         "is write-once, so findings have a store of their own. File it with file_finding, "
         "which addresses it as findings:N and links it to the rows it attacks"
     ),
+    # The reservation survives v3 change 4; its old reason did not. It argued that the
+    # glossary is a real table "because a word being redefined and a word being replaced are
+    # two different relations that supersession collapses into one" — and after that change
+    # a redefinition is an in-place UPDATE, a replacement is a parameter of the delete, and
+    # supersession is gone from this table entirely. The plain reason is the one that holds:
+    # a real table owns that name, so plan rows must not be written into it.
     "terms": (
-        "'terms' is not a plan-row table: the glossary is a real table, because a word "
-        "being *redefined* and a word being *replaced* are two different relations that "
-        "supersession collapses into one. Record it with define_term, which takes the word "
-        "and what it means here"
+        "'terms' is not a plan-row table: the glossary is a real table of its own, so this "
+        "name is taken. Record it with define_term, which takes the word and what it means "
+        "here"
     ),
 }
 
@@ -134,19 +139,9 @@ class RowService:
         storage: Storage,
         detector: ContradictionDetector = _no_contradictions,
         containment: dict[str, str] | None = None,
-        terms=None,
     ):
         self.storage = storage
         self.detect_contradiction = detector
-        #: The plan's glossary, consulted at submission so a retired word is mentioned at
-        #: the moment of typing rather than at a gate a week later. Constructed here rather
-        #: than injected by the surface alone, because a scan that is on only when somebody
-        #: remembered to pass it is a check that reports success by being absent.
-        if terms is None:
-            from engine.terms import TermService
-
-            terms = TermService(storage)
-        self.terms = terms
         #: Child row type -> mandatory parent row type, from the methodology revision in
         #: force. The engine holds no opinion about which row types these are; it
         #: enforces the map it is handed. Pass `{}` to disable (used by tests that
@@ -262,7 +257,12 @@ class RowService:
                 )
             )
             op_index.append(index)
-            verdicts.append(RowVerdict(index, True, note=self._vocabulary_note(submission)))
+            # `note` carries no producer in this module since v3 change 4 deleted the
+            # retired-word scan. The field stays: `CatalogueResult.note` documents the same
+            # shape for the catalogue's retired namesake, and a verdict is the natural place
+            # for advice that rides along with a row that stands. Said here rather than left
+            # to be discovered, because a field nothing fills reads as an oversight.
+            verdicts.append(RowVerdict(index, True))
 
         # Links ride in the SAME batch as the rows they belong to.
         #
@@ -443,23 +443,18 @@ class RowService:
             )
         return None
 
-    def _vocabulary_note(self, submission: RowSubmission) -> str | None:
-        """Retired words this row used, said back to the submitter as it is filed.
-
-        This is the delivery point that attacks F27's actual cause. The vocabulary was not
-        broken by anyone disagreeing with it; it was broken because naming happens at the
-        point of least attention, and the moment of typing is the only moment at which
-        saying so changes anything. A word noticed at a gate three days later has already
-        been copied into six more rows.
-
-        It warns and never rejects. A retired word inside a quotation of the owner is
-        legitimate, and a check that refuses those would have the tool editing his words —
-        which is the line the whole output design is drawn along.
-        """
-        found = self.terms.violations(submission.content)
-        if not found:
-            return None
-        return "; ".join(str(usage) for usage in found)
+    # `_vocabulary_note` stood here until v3 change 4. It ran every submitted row's content
+    # past the glossary's retired-word scan and returned what it found as a verdict note —
+    # the delivery point aimed at F27's actual cause, since naming happens at the point of
+    # least attention and the moment of typing is the only moment at which saying so changes
+    # anything.
+    #
+    # It goes because the scan goes, and the argument is that no scan could ever have worked
+    # for the failure it was built for: `part` and `component` share no letters. Something
+    # lexical catches a *retired* word being reused and never catches a second word being
+    # invented for a thing that already has one, which is what F27 actually was. The
+    # glossary's job is now to be in front of the writer at the moment of naming — loaded
+    # into the session — and its one mechanical use is that a label must be a live term.
 
     def _duplicate_name_problem(
         self, submission: RowSubmission, index: int, batch: list[RowSubmission]
