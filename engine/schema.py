@@ -938,7 +938,10 @@ DDL += REVISIONS_DDL
 CHANGE_LOG_DDL = """
 CREATE TABLE IF NOT EXISTS change_log (
     seq         INTEGER PRIMARY KEY AUTOINCREMENT,
-    op_type     TEXT    NOT NULL,   -- create|supersede|retire|state_change|update|resync
+    op_type     TEXT    NOT NULL,   -- create|supersede|retire|state_change|update|delete
+                                    -- |resync. `delete` is only ever a glossary word being
+                                    -- removed (v3 change 4): plan history is append-only,
+                                    -- and storage refuses the op against any other table.
     ref         TEXT,               -- table:key of the changed row; null for a resync marker
     replaced_by TEXT,               -- the new ref on a pointer-carrying supersede; else null
     created_at  TEXT    NOT NULL

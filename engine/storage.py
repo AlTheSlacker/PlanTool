@@ -41,6 +41,11 @@ WRITE_BUDGET_SECONDS = 30.0
 
 PLAN_FILENAME = "plan.db"
 
+#: The tables a `delete` op may name. One, and the list is the mechanism rather than the
+#: comment: a later change that wants to delete from a second table has to add it here, in a
+#: diff a reader sees, instead of discovering that the op kind already existed.
+DELETABLE_TABLES = frozenset({"terms"})
+
 #: `terms` exactly as schema 4 created it, frozen here for the 3 -> 4 migration step.
 #:
 #: **A migration is a point-in-time step and must name a point-in-time text.** That branch
@@ -101,7 +106,19 @@ class Op:
     backend)").
     """
 
-    kind: Literal["insert", "update", "insert_row"]
+    #: **`delete` is permitted on `terms` and nowhere else**, and the narrowness is the
+    #: guard. This vocabulary was insert/update-only by design, and `briefs.py` states the
+    #: reason in the source: plan history is append-only, because a superseded row is the
+    #: record of what the plan used to say.
+    #:
+    #: That rule is about **plan history** — `plan_rows` and the ledgers keyed to it — and it
+    #: does not reach the glossary. `terms` was deliberately made a real table rather than a
+    #: plan-row type, and v3 change 4 makes its contents the owner's to edit: a table you may
+    #: add to and rewrite but never remove from is not a table he owns. So the vocabulary
+    #: gains one op kind, `_apply` refuses it against any other table, and a later change
+    #: wanting to delete from somewhere else has to argue for it in its own words rather than
+    #: inherit permission from here.
+    kind: Literal["insert", "update", "insert_row", "delete"]
     table: str
     values: dict[str, Any]
     where: dict[str, Any] | None = None
@@ -381,6 +398,23 @@ class Storage:
                 (*op_values.values(), *op.where.values()),
             )
             op.result = {"rows": cur.rowcount}
+        elif op.kind == "delete":
+            if op.table not in DELETABLE_TABLES:
+                raise ValueError(
+                    f"delete is not permitted on {op.table!r}: plan history is append-only, "
+                    f"and the only table this store deletes from is "
+                    f"{', '.join(sorted(DELETABLE_TABLES))} (v3 change 4). A row that should "
+                    "no longer apply is superseded or retired, which keeps the record of "
+                    "what the plan used to say"
+                )
+            if not op.where:
+                raise ValueError("delete op requires a where clause")
+            conds = " AND ".join(f"{k} = ?" for k in op.where)
+            cur = self.conn.execute(
+                f"DELETE FROM {op.table} WHERE {conds}",  # noqa: S608
+                tuple(op.where.values()),
+            )
+            op.result = {"rows": cur.rowcount}
         else:
             raise ValueError(f"unknown op kind {op.kind!r}")
 
@@ -433,6 +467,15 @@ class Storage:
             return (op.result["ref"], "create", None)
         if op.kind == "insert":
             return (f"{op.table}:{op.result['id']}", "create", None)
+        if op.kind == "delete":
+            # Announced rather than passed over. A watching GUI re-fetches the row a `ref`
+            # names, and there is now nothing there to fetch — so a deletion that recorded
+            # nothing would leave a removed word on screen until the next full reload. It
+            # gets its own op_type because none of the existing five is true of it: a
+            # deleted row is not superseded, not retired, and not an update.
+            if not op.result or op.result.get("rows", 0) == 0:
+                return None
+            return (self._ref_of_update(op), "delete", None)
         if op.kind == "update":
             # An update that matched no row changed nothing: no phantom change is announced.
             if not op.result or op.result.get("rows", 0) == 0:

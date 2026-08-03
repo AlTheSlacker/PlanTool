@@ -72,13 +72,9 @@ class InvalidTarget(PlanToolError):
     """A label goes on a plan row or a task, and this is neither."""
 
 
-class TermInUse(PlanToolError):
-    """The word is carried as a label; removing it silently would strip the label from
-    every row that uses it, which the owner ruled out in as many words."""
-
-
-class AmbiguousRemoval(PlanToolError):
-    """A replacement word and "take it off everything" are two answers to one question."""
+# `TermInUse` and `AmbiguousRemoval` belong to `terms.py`, which raises them: they are
+# refusals of `remove_term`, not of anything here. Defining a second copy beside the first
+# is the eleven-times-over collision this engine's catalogue exists to catch.
 
 
 class LabelService:
