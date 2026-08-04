@@ -65,7 +65,7 @@ def parse(value: str | datetime) -> datetime:
 
 
 # `age_seconds()` stood here, answering "how long ago was this?". Deleted 2026-07-22 along
-# with its three callers — a lock takeover after ten minutes of silence, a task judged
+# with its three callers — a lock takeover after ten minutes of silence, a sub-task judged
 # abandoned after a day, and a windowed idempotency key. All three let elapsed time decide
 # what the program did next, and elapsed time cannot carry that: a clock is not monotonic,
 # not shared between machines, and not ordered between two things inside one tick, so every

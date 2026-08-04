@@ -57,8 +57,8 @@ from engine.models import RowRef
 #: (`10:39`) and ratios out of the net.
 ADDRESS = re.compile(r"\b[a-z][a-z0-9_]*:[1-9][0-9]*\b")
 
-#: A call name as our output writes one: `next_gaps()`, `get_stage_script(1)`,
-#: `get_stage_script(N)`. An identifier, an open bracket, and then either the close or an
+#: A call name as our output writes one: `next_gaps()`, `get_package_script(1)`,
+#: `get_package_script(N)`. An identifier, an open bracket, and then either the close or an
 #: argument position — never a letter. The letter is what keeps English out: prose is full
 #: of `row(s)`, `hole(s)` and `assumed(intent)`, and an earlier version of this pattern
 #: matched all of them. A false rejection here fails a call that was working, which is a
@@ -307,18 +307,7 @@ def render(
             for f in fields(value)
         }
     if isinstance(value, dict):
-        # **A `RowRef` key is displayed, not `str()`-ed**, and this is the one place a bare
-        # address could still get out. Layer 2 walks a payload's *values* and never its
-        # keys, so `{str(ref): ...}` would put `requirements:61` in front of a reader with
-        # no name beside it and no check able to see it — D19's rule failing exactly where
-        # nothing enforces it. Added by v3 change 4, whose `RowPage.labels` is the first
-        # ref-keyed mapping to cross this boundary; it costs one lookup per key and closes
-        # the hole for every mapping after it.
-        return {
-            display(k, resolve) if isinstance(k, RowRef) else str(k):
-                render(v, resolve, cites, follow)
-            for k, v in value.items()
-        }
+        return {str(k): render(v, resolve, cites, follow) for k, v in value.items()}
     if isinstance(value, (list, tuple, set, frozenset)):
         return [render(v, resolve, cites, follow) for v in value]
     raise TypeError(

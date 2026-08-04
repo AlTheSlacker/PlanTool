@@ -53,8 +53,7 @@ def test_plain_insert_records_create_with_table_id_ref(store):
 def test_supersede_records_create_and_supersede_with_pointer(store, rows):
     old = _submit(rows, name="original")
     result = rows.supersede_row(
-        old, RowSubmission("requirements", {"text": "v2"}, name="sharper"),
-        "the first wording was ambiguous", "sup-1"
+        old, RowSubmission("requirements", {"text": "v2"}, name="sharper"), "sup-1"
     )
     new = result["new"]
 

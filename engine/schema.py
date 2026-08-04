@@ -30,48 +30,7 @@ database". Every other module reaches persistence through storage.py's typed ope
 #: 6 -> 7 step creates an empty table: a plan written before the feed existed has no change
 #: history to backfill, and an empty feed is the truthful answer — a watching GUI cold-loads
 #: the current state and polls forward from there.
-#:
-#: Bumped to 8 on 2026-07-31 by v3 change 1 (`spec/v3/builds/01-vocabulary-and-levels.md`):
-#: the build grouping is removed, the sub-task level is removed with the name `tasks` moving
-#: down onto what a builder is handed, `obligation` becomes `behaviour`, and the *planning*
-#: package — the ordinal of the interview step that produced a row — becomes `stage`. This
-#: one renames and drops rather than adding, so the 7 -> 8 step refuses rather than invents
-#: where the old store holds something the new shape cannot express: more than one live
-#: declared package, or two live sub-tasks sharing a contract. See storage._migration_steps.
-#:
-#: Bumped to 9 on 2026-07-31 by v3 change 2 (`spec/v3/builds/02-decision-context.md`): a
-#: decision is stored with its context. `plan_rows` gains `grounds` and `alternatives` —
-#: why a row says what it says, and what was considered and rejected — and
-#: `supersede_reason`, closing the asymmetry where retiring a row took a reason and
-#: superseding one took none. `findings.rationale` becomes `findings.reason`, retiring
-#: `rationale` as a second spelling of a word this schema already has. The 8 -> 9 step
-#: backfills nothing: no truth in the old store says what any row's argument was, and the
-#: standing migration rule forbids inventing one. The columns arrive NULL and the gap
-#: engine reports them, which is the instrument's first reading rather than a defect.
-#:
-#: Bumped to 10 on 2026-07-31 by v3 change 3 (`spec/v3/builds/03-catalogue.md`): the
-#: catalogue of every object, method and function the plan intends to exist (D10), with
-#: `catalogue_comparisons` recording each judgment made against a near match — including
-#: the negatives, so the next planner finds that someone already reached this and was sent
-#: to the existing entry. The 9 -> 10 step creates both tables empty and backfills nothing:
-#: a plan written before the catalogue existed has no catalogue, there is no truth in the
-#: old store from which a set of function names could be derived, and a catalogue derived
-#: from a *tree* is the design rejected in `FUNCTION_CATALOGUE.md` §7 for dragging
-#: language-specific declaration-finding into the engine. Same test the glossary passed.
-#:
-#: Bumped to 11 on 2026-08-03 by v3 change 4 (`spec/v3/builds/04-glossary-and-labels.md`):
-#: the glossary reduces to a table the owner owns — word, definition, and nothing else — and
-#: `label_attachments` arrives, because a label *is* a glossary term and attaching one is the
-#: glossary's single mechanical use. `terms` loses six columns with the machinery that read
-#: them: approval, the ban list, the replacement word, and the definition lineage.
-#:
-#: **This is the first migration in this engine that loses data**, and it is stated here as
-#: well as in the step, because every other bump on this list says in its own words that it
-#: invents nothing and this one has to say what it discards. The ban metadata on existing
-#: plans goes, and so does every superseded definition; the words and their live meanings
-#: survive. It is the owner's explicit instruction (§1 of the build document) rather than a
-#: shape the new schema could not express, and exactly one database exists.
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 7
 
 DDL = """
 PRAGMA journal_mode = WAL;
@@ -103,23 +62,6 @@ CREATE TABLE IF NOT EXISTS plan (
 -- accurate when written stops being true when the content moves, so a write that changes
 -- content cannot carry the old name forward silently — it must be supplied again. Passing
 -- the same name a second time is a deliberate act; silence is not. See rows.py.
---
--- `grounds` and `alternatives` are the decision context (v3 D11): why this row's content is
--- what it is, and what else was considered and why it lost. They attach to the row, not to a
--- transition — a row has grounds from the moment it exists. The reason an *act* was
--- performed is a different thing with a different word, and is prefixed by the act, as in
--- `retire_reason` and `supersede_reason`. A new justification column belongs to one of those
--- two roles; there is not a third, and `tests/test_schema_vocabulary.py` refuses a second
--- spelling of either.
---
--- All three are nullable, deliberately. `NOT NULL DEFAULT ''` would have every row satisfy
--- the column while satisfying nothing; absence is countable and is reported as a gap.
---
--- They are declared **last, in the order the 8 -> 9 migration adds them**, and that is
--- load-bearing rather than cosmetic: `ALTER TABLE ... ADD COLUMN` appends, so declaring
--- `grounds` next to `retire_reason` — where it reads more naturally — would give a fresh
--- database and a migrated one the same columns at different `cid`s, and
--- `tests/test_schema_parity.py` compares raw pragma output.
 CREATE TABLE IF NOT EXISTS plan_rows (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     table_name      TEXT    NOT NULL,
@@ -130,16 +72,13 @@ CREATE TABLE IF NOT EXISTS plan_rows (
     provenance      TEXT    NOT NULL,
     assumption_kind TEXT,
     state           TEXT    NOT NULL,
-    stage           INTEGER,
+    package           INTEGER,
     supersedes      TEXT,                      -- ref
     superseded_by   TEXT,                      -- ref; null == live (requirements:61)
     superseded_at   TEXT,
     retired_at      TEXT,
     retire_reason   TEXT,
     created_at      TEXT    NOT NULL,
-    grounds          TEXT,                     -- why this row's content is what it is
-    alternatives     TEXT,                     -- what was considered, and why it lost
-    supersede_reason TEXT,                     -- why the old row was abandoned
     UNIQUE (table_name, ordinal)
 );
 
@@ -165,12 +104,12 @@ CREATE INDEX IF NOT EXISTS idx_rows_live   ON plan_rows (superseded_by, state);
 -- the one statement in between, and reject a replacement that legitimately keeps its name.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_rows_live_name ON plan_rows (table_name, name)
     WHERE superseded_by IS NULL AND state NOT IN ('retired', 'superseded');
--- `stage` is the ordinal of the interview step that produced the row (1..8 under the
--- methodology shipped today). It was called `package` until schema 8, alongside a
--- `packages` table holding the owner's declared build groupings — one word for two things,
--- which is the disease this schema exists to catch. The build grouping is gone (v3 D7) and
--- the surviving meaning takes the word the interview's steps already use.
-CREATE INDEX IF NOT EXISTS idx_rows_stage ON plan_rows (stage);
+-- `package` here is the *planning* package that produced the row — the ordinal of the
+-- methodology's standard package set (1..8), not a row in the `packages` table. Planning
+-- packages and build packages are the same concept in two layers, kept in separate tables:
+-- the standard set ships with the methodology and is identical for every plan, whereas
+-- build packages are declared per plan. See GLOSSARY.md.
+CREATE INDEX IF NOT EXISTS idx_rows_package ON plan_rows (package);
 CREATE INDEX IF NOT EXISTS idx_rows_prov   ON plan_rows (provenance);
 
 -- Typed edges (entities:15): immutable, owned by the source row, created with it.
@@ -327,9 +266,6 @@ CREATE TABLE IF NOT EXISTS technical_claims (
     state        TEXT    NOT NULL,      -- identified | validating | validated | failed
                                         -- | risk_accepted
     outcome      TEXT,                  -- validated | failed | risk_accepted
-    -- What was found when the claim was tested. Not a justification, and deliberately not
-    -- renamed to `reason` in schema 9: it was the *parameter* `fence_claim(rationale)` that
-    -- was misspelt, and it now takes the column's word.
     evidence     TEXT,
     red_flag     INTEGER NOT NULL DEFAULT 0,   -- requirements:4, blocks dependent planning
     fenced       INTEGER NOT NULL DEFAULT 0,   -- red flag explicitly fenced off
@@ -365,7 +301,7 @@ CREATE TABLE IF NOT EXISTS claim_tracks (
 -- A finding lives here and NOT in plan_rows, and the difference is not storage taste
 -- (DEVIATIONS.md D22). A plan row is write-once — content is never edited and changing your
 -- mind writes a successor (requirements:61) — while a finding *moves*: filed, then addressed
--- or accepted-as-risk or withdrawn, with a reason attached at the transition. Putting it
+-- or accepted-as-risk or withdrawn, with a rationale attached at the transition. Putting it
 -- in plan_rows would mean either a supersession per disposition, so every finding leaves a
 -- two-row lineage recording nothing but its own paperwork, or mutable columns on plan_rows,
 -- which ends requirements:61 for one table. A finding is also *about* the plan rather than
@@ -378,12 +314,10 @@ CREATE TABLE IF NOT EXISTS claim_tracks (
 -- the failure D12 argued out of the row schema and F32 then found three copies of.
 --
 -- `resolve_by` is the D15 hard-lock (M6_PLAN.md §2.6). A finding is an outstanding item,
--- and every outstanding item is allocated to the stage gate that must not pass while it
--- is still open. The column keeps its name deliberately: it carries no retired word, only
--- its *meaning* is a stage ordinal, and a migration to improve a comment is not a trade
--- this change makes. It is NOT NULL and supplied at filing: an item with no gate to answer to
+-- and every outstanding item is allocated to the package gate that must not pass while it
+-- is still open. It is NOT NULL and supplied at filing: an item with no gate to answer to
 -- is one that only finalization catches, which is the pile-up D15 exists to break up. The
--- two exits are `resolve_finding` (contracts:73) and a *recorded* reallocation to a later
+-- two exits are `resolve_finding` (contracts:34) and a *recorded* reallocation to a later
 -- gate — the deferral costs a reason the owner reads (finding_reallocations), which is what
 -- keeps it from being silent procrastination. Gaps are deliberately outside this scheme:
 -- they are closable by the agent now, so a deferred gap is procrastination with no cost.
@@ -394,14 +328,9 @@ CREATE TABLE IF NOT EXISTS findings (
     severity    TEXT    NOT NULL,
     state       TEXT    NOT NULL,       -- filed | disputed | addressed | accepted_risk
     outcome     TEXT,                   -- addressed | accepted_risk | withdrawn
-    -- Why the finding was closed the way it was: for accepted_risk, the owner's acceptance;
-    -- for a dispute upheld, why it stands. It was `rationale` until schema 9, which was a
-    -- second spelling of the word this schema already uses for why an act was performed
-    -- (v3 change 2 §2). One column written by two acts is correct here — both close the
-    -- finding — and it is role 1, not the row-level `grounds` that `plan_rows` carries.
-    reason      TEXT,
+    rationale   TEXT,                   -- for accepted_risk: the owner's acceptance
     dispute     TEXT,                   -- the standing argument against the finding
-    resolve_by  INTEGER NOT NULL,       -- D15: the stage gate that locks until resolved
+    resolve_by  INTEGER NOT NULL,       -- D15: the package gate that locks until resolved
     created_at  TEXT    NOT NULL,
     resolved_at TEXT
 );
@@ -415,18 +344,65 @@ CREATE TABLE IF NOT EXISTS finding_refs (
 CREATE INDEX IF NOT EXISTS idx_finding_refs_ref ON finding_refs (ref);
 CREATE INDEX IF NOT EXISTS idx_findings_state   ON findings (state);
 
--- A `packages` table stood here until schema 8, holding the owner's declared build
--- groupings (DEVIATIONS.md D13), and above it a `tasks` table that was the execution
--- layer's *middle* level. Both are gone, with the level itself: v3 D7 removed the build
--- grouping, and D5 moved the name `tasks` down onto the unit a builder is actually handed.
--- Filtering a review list is what the grouping was really used for, and labels (v3 change
--- 4) do that without a level. What is given up is recorded in 1D.3 of
--- `spec/v3/builds/01-vocabulary-and-levels.md`: a subsystem-wide attachment has nowhere
--- between plan and task to sit, so it sits at plan scope and is served to every task.
+-- Packages (DEVIATIONS.md D13, GLOSSARY.md) — the one *declared* level of the structural
+-- hierarchy Plan -> Package -> Task -> Sub-task. A named grouping of tasks: "the GUI", "the
+-- controller". Not in the frozen plan; introduced because with only plan/task/sub-task a
+-- subsystem is bigger than any task and smaller than the plan, so every subsystem-wide
+-- attachment is forced to plan scope — D8 section 2.5's silent "too high" failure, made
+-- certain rather than merely possible on a large plan.
+--
+-- A row with an id, not a free-text label: a name-keyed grouping yields an empty context set
+-- on a typo, which is exactly the mistake the retired `milestone` column made.
+--
+-- Packages do NOT nest. There is deliberately no parent_id: nesting is confusing to users
+-- and awkward to draw (owner, 2026-07-21), and it reintroduces an arbitrary depth through
+-- the back door when the whole point of scope levels is that the bound is structural.
+CREATE TABLE IF NOT EXISTS packages (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    name          TEXT    NOT NULL,
+    intent        TEXT    NOT NULL DEFAULT '',   -- why this grouping exists
+    superseded_at TEXT,                          -- null == live
+    created_at    TEXT    NOT NULL,
+    updated_at    TEXT    NOT NULL
+);
 
--- A node in the implementation task graph (entities:9, state_machines:9). One task is the
--- implementation unit of exactly one contract, and — from v3 D5 — one externally-callable
--- function plus the private helpers serving only it.
+CREATE INDEX IF NOT EXISTS idx_packages_live ON packages (superseded_at);
+
+-- Tasks — the execution layer's middle level. Derived at finalization from the plan rows
+-- that describe the architecture, exactly as `subtasks` are derived from contract rows.
+--
+-- This is the second half of a deliberate two-layer store. The *planning* layer is generic
+-- (`plan_rows`, JSON content) so supersession lineage, typed links and provenance work
+-- identically for twenty-odd row types — DEVIATIONS.md D3. The *execution* layer is typed:
+-- packages, tasks and subtasks are real tables with real foreign keys. F20 and F24 are both
+-- relations that vanished when v1's typed tables were flattened, so the execution structures
+-- that carry the build's own relations do not get flattened.
+--
+-- Membership is mandatory and exclusive: `package_id NOT NULL` makes "every task belongs to
+-- exactly one package" a constraint the database enforces, rather than an invariant
+-- finalize_plan has to remember to check.
+--
+-- There is deliberately no default/catch-all package. A catch-all satisfies the invariant
+-- while quietly restoring a three-level model, and a grouping nobody chose is a grouping
+-- nobody reviews. A one-package plan is fine — declared, not defaulted.
+--
+-- Which package a task belongs to is a *judgment*, so the tool does not choose it
+-- (decisions:12). The tool enforces the invariant; the methodology's architecture-package
+-- script leads the planner to propose a cut; the owner decides. See D13.
+CREATE TABLE IF NOT EXISTS tasks (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_ref TEXT    NOT NULL UNIQUE,  -- the plan row this task realises
+    name       TEXT    NOT NULL,
+    package_id INTEGER NOT NULL REFERENCES packages (id),
+    created_at TEXT    NOT NULL,
+    updated_at TEXT    NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_tasks_package ON tasks (package_id);
+
+-- A node in the implementation task graph (entities:9, state_machines:9).
+--
+-- decisions:63 — one SubTask is the implementation unit of exactly one contract.
 --
 -- `state` deliberately omits `ready`. Under DEVIATIONS.md D10 readiness is a *predicate*
 -- over dependency state, recomputed on demand, not an edge event that is fired once and
@@ -434,120 +410,114 @@ CREATE INDEX IF NOT EXISTS idx_findings_state   ON findings (state);
 -- determine, and the two would drift precisely when the graph is revised. `ready` is
 -- therefore derived (see tasks.readiness_of) and never written here.
 --
--- `serve_epoch` counts how many times a brief has been served for this task. It is what
--- scopes a verification verdict to the serving episode that produced it: a verdict
+-- `serve_epoch` counts how many times a brief has been served for this sub-task. It is
+-- what scopes a verification verdict to the serving episode that produced it: a verdict
 -- recorded under an earlier epoch cannot satisfy a later completion. See DEFECTS.md F19(b).
---
--- `contract_ref` is unique (idx_tasks_contract), reversing D12. It was left non-unique so
--- that the products of a split could share a contract; splitting is gone with the sub-task
--- level, one task *is* one contract, and the constraint states that rather than leaving it
--- an invariant somebody has to remember. It constrains non-null values only — SQLite treats
--- two NULLs in a unique index as distinct — so it says "no two tasks share a contract", not
--- "every task has one".
-CREATE TABLE IF NOT EXISTS tasks (
+-- `contract_ref` is deliberately NOT unique. It was in M5a, and D12 removed it: after a
+-- split every resulting sub-task carries the same contract ref, so the constraint made
+-- `split_subtask` literally unbuildable — the second insert would be rejected. It was
+-- never really about the contract anyway; it was expressing "nothing is owed twice", which
+-- live obligation ownership states directly and enforces exactly (idx_obligation_live_owner).
+CREATE TABLE IF NOT EXISTS subtasks (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    contract_ref  TEXT    NOT NULL,          -- the contract this implements
+    contract_ref  TEXT    NOT NULL,          -- the contract this implements; shared by the
+                                             -- sub-tasks of a split (D12)
     title         TEXT    NOT NULL,
+    task_id       INTEGER REFERENCES tasks (id),  -- owning task, resolved at finalization
+                                               -- from the contract's belongs_to link.
+                                               -- Null when the contract declares no owner
+                                               -- (DEFECTS.md F24) — reported, never guessed.
     state         TEXT    NOT NULL,          -- pending | in_progress | blocked | done
                                              -- | rework_flagged  (never 'ready')
     serve_epoch   INTEGER NOT NULL DEFAULT 0,
     detail        TEXT,                      -- last status note; never completion evidence
     block_reason  TEXT,
+    superseded_by INTEGER,                   -- split_subtask lineage (M5b)
     created_at    TEXT    NOT NULL,
     updated_at    TEXT    NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_tasks_state ON tasks (state);
+CREATE INDEX IF NOT EXISTS idx_subtasks_state ON subtasks (state);
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_contract ON tasks (contract_ref);
-
--- The behaviour surface (DEVIATIONS.md D12, fixing DEFECTS.md F23). Called `obligations`
--- until schema 8; same machinery, plainer word (v3 D16).
+-- The obligation surface (DEVIATIONS.md D12, fixing DEFECTS.md F23).
 --
--- A behaviour is one dischargeable commitment of a contract: the main effect of its
+-- An obligation is one dischargeable commitment of a contract: the primary behaviour of its
 -- signature, or one of its enumerated error conditions. It is the denominator F23 found
--- missing.
+-- missing — `contracts:40` rejects a split whose products "do not jointly cover the
+-- original's contracts", but under `decisions:63` each names the same one contract, so the check
+-- runs, passes, and means nothing.
 --
--- Enumerated by the *planning session* and frozen at finalization. The two rejected sources
--- are recorded in D12: the tool deriving it from the contract's prose is the tool exercising
--- judgment (`decisions:12`), and the session declaring it at the moment it is measured hands
--- the denominator to the party being audited — which is exactly how `findings:18` was gamed.
+-- Enumerated by the *planning session* and frozen at finalization, before any split that will
+-- later be measured against it. The two rejected sources are recorded in D12: the tool
+-- deriving it from the contract's prose is the tool exercising judgment (`decisions:12`), and
+-- the splitting session declaring it at split time hands the denominator to the party being
+-- audited — which is exactly how `findings:18` was gamed.
 --
 -- Frozen does not mean unchangeable: a correction is legitimate but is a recorded,
--- owner-visible act (`behaviour_amendments`), the same friction shape as requirements:79's
+-- owner-visible act (`obligation_amendments`), the same friction shape as requirements:79's
 -- waiver log and D8's promotion reason. The accounting can change, but not silently.
---
--- `kind` is `effect | error` and `key` is `effect` for the main one. Both said `behaviour`
--- until schema 8, which would have left a `Behaviour` row whose kind is "behaviour" and
--- whose ref reads `contracts:40#behaviour` — one word for two things, which is the same
--- disease as two words for one. `effect`/`error` is the pair INTERVIEW.md §4 already uses.
-CREATE TABLE IF NOT EXISTS behaviours (
+CREATE TABLE IF NOT EXISTS obligations (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     contract_ref TEXT    NOT NULL,      -- the contract this commitment belongs to
-    key          TEXT    NOT NULL,      -- stable id within the contract, e.g. 'effect'
-                                        -- or the error name ('CycleDetected')
-    kind         TEXT    NOT NULL,      -- effect | error
+    key          TEXT    NOT NULL,      -- stable id within the contract, e.g. 'behaviour'
+                                        -- or the error name ('PartsDontCover')
+    kind         TEXT    NOT NULL,      -- behaviour | error
     statement    TEXT    NOT NULL,      -- what discharging it means
     retired_at   TEXT,                  -- null == live; set only by a recorded amendment
     created_at    TEXT    NOT NULL,
     UNIQUE (contract_ref, key)
 );
 
-CREATE INDEX IF NOT EXISTS idx_behaviours_contract ON behaviours (contract_ref, retired_at);
+CREATE INDEX IF NOT EXISTS idx_obligations_contract ON obligations (contract_ref, retired_at);
 
 -- Who owes what, now. Coverage is enforced here as a database invariant rather than as a
--- procedural comparison of contract refs: the partial unique index makes "every behaviour is
--- owned by exactly one live task" impossible to violate, which is what D12 buys over
+-- procedural comparison of contract refs: the partial unique index makes "every obligation is
+-- owned by exactly one live sub-task" impossible to violate, which is what D12 buys over
 -- re-checking it at each call site.
 --
--- Supersession rather than update, because the ownership history IS the audit trail of the
--- act being audited — the same reasoning as scope_attachments' promotion history. Nothing
--- supersedes an ownership row now that splitting is gone, so `superseded_at` is always null
--- and the partial predicate is always true; both stay, because the column is what makes the
--- *amendment* path — retiring a behaviour and vesting a replacement — expressible without a
--- second mechanism, and the unique index is what states "nothing is owed twice" as a
--- constraint rather than a convention.
-CREATE TABLE IF NOT EXISTS behaviour_ownership (
+-- Supersession rather than update, because the redistribution history IS the audit trail of
+-- the act being audited — the same reasoning as scope_attachments' promotion history.
+CREATE TABLE IF NOT EXISTS obligation_ownership (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    behaviour_id  INTEGER NOT NULL REFERENCES behaviours (id),
-    task_id       INTEGER NOT NULL REFERENCES tasks (id),
+    obligation_id INTEGER NOT NULL REFERENCES obligations (id),
+    subtask_id    INTEGER NOT NULL REFERENCES subtasks (id),
     superseded_at TEXT,                 -- null == the live ownership
     created_at    TEXT    NOT NULL
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_behaviour_live_owner
-    ON behaviour_ownership (behaviour_id) WHERE superseded_at IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_obligation_live_owner
+    ON obligation_ownership (obligation_id) WHERE superseded_at IS NULL;
 
-CREATE INDEX IF NOT EXISTS idx_behaviour_owner_task
-    ON behaviour_ownership (task_id, superseded_at);
+CREATE INDEX IF NOT EXISTS idx_obligation_owner_subtask
+    ON obligation_ownership (subtask_id, superseded_at);
 
 -- Changing a frozen enumeration. D12: legitimate, never silent. Gaming the accounting should
 -- require lying in a log the owner reads.
-CREATE TABLE IF NOT EXISTS behaviour_amendments (
+CREATE TABLE IF NOT EXISTS obligation_amendments (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    behaviour_id  INTEGER REFERENCES behaviours (id),   -- null for an addition, until written
+    obligation_id INTEGER REFERENCES obligations (id),  -- null for an addition, until written
     contract_ref  TEXT    NOT NULL,
     action        TEXT    NOT NULL,     -- added | retired | restated
     reason        TEXT    NOT NULL,
     created_at    TEXT    NOT NULL
 );
 
--- Graph edges: this task cannot start until `depends_on` is done.
+-- Graph edges: this sub-task cannot start until `depends_on` is done.
 -- Derived at finalization from `depends_on`-typed links between contract rows
 -- (DEVIATIONS.md D11), never from untyped traceability links.
-CREATE TABLE IF NOT EXISTS task_deps (
-    task_id    INTEGER NOT NULL,
+CREATE TABLE IF NOT EXISTS subtask_deps (
+    subtask_id INTEGER NOT NULL,
     depends_on INTEGER NOT NULL,
-    PRIMARY KEY (task_id, depends_on)
+    PRIMARY KEY (subtask_id, depends_on)
 );
 
-CREATE INDEX IF NOT EXISTS idx_task_deps_on ON task_deps (depends_on);
+CREATE INDEX IF NOT EXISTS idx_subtask_deps_on ON subtask_deps (depends_on);
 
 -- Delivery verification (contracts:62). A passing verdict is the sole enabler of the
 -- in_progress -> done transition; report_status (contracts:60) refuses `done` without one.
-CREATE TABLE IF NOT EXISTS task_verifications (
+CREATE TABLE IF NOT EXISTS subtask_verifications (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    task_id      INTEGER NOT NULL,
+    subtask_id   INTEGER NOT NULL,
     serve_epoch  INTEGER NOT NULL,      -- the episode this verdict belongs to (F19b)
     verdict      TEXT    NOT NULL,      -- pass | fail
     evidence     TEXT    NOT NULL,      -- JSON: contract ref -> concrete artifact
@@ -555,8 +525,8 @@ CREATE TABLE IF NOT EXISTS task_verifications (
     created_at   TEXT    NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_verifications_task
-    ON task_verifications (task_id, serve_epoch);
+CREATE INDEX IF NOT EXISTS idx_verifications_subtask
+    ON subtask_verifications (subtask_id, serve_epoch);
 
 -- The composed brief (entities:13, contracts:68). Immutable by design, so defect forensics
 -- can always answer "what exactly did the engine see". There is no lifecycle and no update
@@ -568,21 +538,21 @@ CREATE INDEX IF NOT EXISTS idx_verifications_task
 -- verdicts use (DEFECTS.md F19b).
 CREATE TABLE IF NOT EXISTS briefs (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    task_id       INTEGER NOT NULL REFERENCES tasks (id),
+    subtask_id    INTEGER NOT NULL REFERENCES subtasks (id),
     serve_epoch   INTEGER NOT NULL,
-    goal          TEXT    NOT NULL,     -- the task goal (requirements:36)
+    goal          TEXT    NOT NULL,     -- the sub-task goal (requirements:36)
     is_draft      INTEGER NOT NULL DEFAULT 0,  -- requirements:40 watermark
     supersedes    INTEGER REFERENCES briefs (id),
     superseded_by INTEGER REFERENCES briefs (id),
     created_at   TEXT    NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_briefs_task ON briefs (task_id, superseded_by);
+CREATE INDEX IF NOT EXISTS idx_briefs_subtask ON briefs (subtask_id, superseded_by);
 
 -- The frozen candidate closure, one row per candidate with its disposition. This table is
 -- DEFECTS.md F26's fix and the reason it exists at all.
 --
--- `contracts:41` audits "brief contents against the task's link-graph closure". Computed
+-- `contracts:41` audits "brief contents against the sub-task's link-graph closure". Computed
 -- at audit time that closure has moved — `decisions:3` makes the plan a living source of
 -- truth — so a brief that passed 100% accounting at composition reports as incomplete later
 -- purely because the plan grew, and "the composer skipped a row" becomes indistinguishable
@@ -620,20 +590,15 @@ CREATE INDEX IF NOT EXISTS idx_brief_rows_disposition
 --
 -- A target has exactly one *live* placement. Re-attaching supersedes the previous one
 -- rather than adding a second: without that, narrowing is a no-op — the old broader row
--- stays live and the target remains in every task forever, which is precisely the
+-- stays live and the target remains in every sub-task forever, which is precisely the
 -- "too high" failure the friction exists to prevent, made unfixable by the free
 -- direction. Superseded placements are stamped rather than deleted, because the
 -- promotion history IS the owner's review surface.
--- Two levels since schema 8, not four. `package` and the old middle `task` both lost their
--- anchor when the build grouping and the middle level went (v3 D5/D7), so every attachment
--- at either was widened to `plan` — superseded and replaced, with `promoted_from` and the
--- migration's own reason, because a bulk update would leave two live placements on a target
--- that had one at each level and quietly falsify the invariant above.
 CREATE TABLE IF NOT EXISTS scope_attachments (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    scope_level   TEXT    NOT NULL,     -- plan | task
-    scope_key     TEXT    NOT NULL,     -- '' at plan level; else the task *id* — never a
-                                        -- name (a name-keyed scope is empty on a typo)
+    scope_level   TEXT    NOT NULL,     -- plan | package | task | subtask (D13)
+    scope_key     TEXT    NOT NULL,     -- '' at plan level; else the package, task or
+                                        -- subtask *id* — never a name (GLOSSARY.md)
     target_root   TEXT    NOT NULL,     -- lineage root ref of the attached row
     reason        TEXT    NOT NULL,
     promoted_from TEXT,                 -- prior scope_level, when broadened
@@ -655,7 +620,7 @@ CREATE TABLE IF NOT EXISTS workspace_fingerprints (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     occasion     TEXT    NOT NULL,      -- finalization | brief_issue
     plan_version INTEGER NOT NULL,
-    task_id      INTEGER,               -- set for brief_issue
+    subtask_id   INTEGER,               -- set for brief_issue
     fingerprint  TEXT    NOT NULL,      -- JSON
     created_at  TEXT    NOT NULL
 );
@@ -666,28 +631,28 @@ CREATE TABLE IF NOT EXISTS workspace_fingerprints (
 -- mechanically and history's job is to say what happened, not to answer what is true now.
 CREATE TABLE IF NOT EXISTS gate_runs (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    stage         INTEGER NOT NULL,
+    package       INTEGER NOT NULL,
     passed        INTEGER NOT NULL,
     hole_count    INTEGER NOT NULL,
     warning_count INTEGER NOT NULL,
     created_at    TEXT    NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_gate_runs_stage ON gate_runs (stage, id);
+CREATE INDEX IF NOT EXISTS idx_gate_runs_package ON gate_runs (package, id);
 
 -- contracts:48 — an informal learning that is not a formal plan row (requirements:57),
 -- written durably the moment it arises and never batched to session end (requirements:56).
--- `stage` is the interview stage current when the note was recorded: it is what bounds the
--- digest to the working set (requirements:62) rather than to the whole life of the plan.
+-- `package` is the package current when the note was recorded: it is what bounds the digest
+-- to the working set (requirements:62) rather than to the whole life of the plan.
 CREATE TABLE IF NOT EXISTS journal_notes (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    stage      INTEGER NOT NULL,
+    package    INTEGER NOT NULL,
     note       TEXT    NOT NULL,
     task_ref   TEXT,                    -- the task the learning arose from, if any
     created_at TEXT    NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_journal_stage ON journal_notes (stage, id);
+CREATE INDEX IF NOT EXISTS idx_journal_package ON journal_notes (package, id);
 
 -- contracts:49 — the next intended action, which is the resume point a fresh planner is
 -- given (requirements:58). Append-only: the newest row is live, and the older ones are the
@@ -699,117 +664,60 @@ CREATE TABLE IF NOT EXISTS checkpoints (
 );
 """
 
-# The plan's glossary (DEVIATIONS.md D23, fixing DEFECTS.md F27 and F40) — **a table the
-# owner owns**, reduced to five columns by v3 change 4.
+# The plan's glossary (DEVIATIONS.md D23, fixing DEFECTS.md F27 and F40).
 #
-# **Its job is not to be scanned.** The failure it exists to prevent is one word for two
-# things, or two words for one — `part` one day and `component` the next — and those two
-# share no letters. Every mechanism tried against that was lexical: a banned-word list, an
-# allowlist over row names, near-match ranking. None of them can see a synonym that shares
-# no vocabulary, and `terms.py` admitted as much in its own docstring from the day it was
-# written. So the glossary is loaded at the start of a planning session and is *in front of
-# the writer at the moment of naming*, which is deliberately not robust and is the only
-# thing that can work. Measured before it was decided: an allowlist would have refused 78 of
-# the frozen v2 plan's 115 named rows, and 64 of its last 100, so it does not decay.
+# Held apart from DDL above so that `migrate`'s 3 -> 4 step and a fresh `init_plan` create
+# it from the same text. Two copies of a CREATE TABLE is a schema that drifts between the
+# stores that were migrated and the stores that were born — the same duplication this table
+# exists to catch, one layer down.
 #
-# **One mechanical use, and this is the whole of it: a label must be a live term.**
-# `attach_label` looks the word up here and refuses if nothing holds it. Nothing else scans
-# this table, counts it, gates on it or warns from it.
+# **A real table, not a plan-row type**, on the owner's decision and for two reasons that
+# outrank the convenience of the generic layer. First, a term needs two distinct relations
+# that `plan_rows` collapses into one: *redefinition* (same word, sharpened) and
+# *replacement* (this word is out, say that one) are both `superseded_by` there. Second,
+# D12 settled that an accounting denominator may never be inferred from `content`, which is
+# free-form JSON with no per-table schema — and the banned-word list is exactly a
+# denominator, so `ban_scope` has to be a column something can query.
 #
-# **A real table, not a plan-row type**, on the owner's decision. D12 settled that an
-# accounting denominator may never be inferred from `content`, which is free-form JSON with
-# no per-table schema, and `label_attachments` keys on the *word* — so the word has to be
-# something a query can resolve. It is also looked up the way a person looks a word up: by
+# **A retired word stays in live reads.** Everywhere else in v2 retirement drops a row out
+# of live reads; do that here and the banned list empties, so every check downstream runs,
+# finds nothing to ban and reports success — F23's missing denominator, reappearing inside
+# the mechanism built to prevent F27. Retirement is `ban_scope IS NOT NULL`, and liveness is
+# `superseded_at IS NULL` and nothing else.
+#
+# **A definition is proposed by the planner and approved by the owner**, which is the design
+# spine applied to words: the tool records judgment and never exercises it, and what a word
+# means in someone's own plan is theirs to settle. So a definition arrives as a proposal
+# (`approved_at IS NULL`), and the owner either accepts it or writes his own — which
+# supersedes the proposal and keeps it behind. The alternative, a definition that is simply
+# whatever the planning session typed, is the tool having opinions about the owner's
+# vocabulary while looking like a record of his.
+#
+# `use_instead` holds the replacement *word*, not a row id: a retirement outlives the entry
+# it points at, since the replacement will be redefined one day too, and the word is the
+# identity that survives that. It is also how this table is looked up everywhere else — by
 # the word you were about to type, never by an ordinal.
-#
-# Held apart from DDL above because it always has been, and a fresh `init_plan` still
-# creates it from this one text. **The `migrate` 3 -> 4 step no longer shares it**, and that
-# is the point of `storage._TERMS_DDL_AT_4`: this constant is what the table looks like
-# *now*, while a migration is a point-in-time step and must name a point-in-time text. A
-# store climbing from 3 that was handed this five-column table would then be asked, at
-# 10 -> 11, to drop columns it never had.
-#
-# **What left at schema 11, so a reader of an old plan knows what those columns were.**
-# `approved_at` recorded the owner settling a definition the planner proposed; there is no
-# proposal step now, because the owner writes the contents. `ban_scope`/`ban_reason`/
-# `use_instead` were the retired-word list and the word to say instead, deleted with the
-# scan that read them. `names_ref` pointed at the row a word named, read only by the export.
-# `superseded_at` carried the definition lineage: redefinition wrote a new row and stamped
-# the old, and now it is an `UPDATE` in place, on the ground change 3 settled for purpose
-# lines — nothing cites a definition, so there is no argument resting on last week's wording.
 TERMS_DDL = """
 CREATE TABLE IF NOT EXISTS terms (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     term          TEXT    NOT NULL,
-    definition    TEXT    NOT NULL,        -- what the word means here, in a sentence, in
-                                           -- the owner's terms
+    definition    TEXT    NOT NULL,
+    approved_at   TEXT,                    -- null == the planner proposed it, owner has
+                                           -- not answered yet
+    names_ref     TEXT,                    -- the row this word names, if any
+    ban_scope     TEXT,                    -- null == in use; prose | identifier | both
+    ban_reason    TEXT,
+    use_instead   TEXT,                    -- retired: the word to say instead
+    superseded_at TEXT,                    -- null == the live entry for this word
     created_at    TEXT    NOT NULL,
     updated_at    TEXT    NOT NULL
 );
 
--- Total, not partial. It was `idx_terms_live ... WHERE superseded_at IS NULL` while a
--- redefinition superseded rather than edited; with the lineage gone every row is live and
--- the word is simply unique. It takes a new name rather than keeping `_live`, because a
--- predicate word surviving on an index that no longer has a predicate is the retired word
--- hiding in the place nobody looks — the `idx_subtasks_state` lesson, which this schema
--- has already paid for once.
-CREATE UNIQUE INDEX IF NOT EXISTS idx_terms_word ON terms (term);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_terms_live ON terms (term)
+    WHERE superseded_at IS NULL;
 """
 
 DDL += TERMS_DDL
-
-
-# A label is a glossary term attached to rows and tasks (v3 D12, as amended by change 4).
-# There is no `labels` table: the word lives in `terms` and this table is the attachment and
-# nothing else. That is what makes `attach_label`'s refusal the glossary's one mechanical
-# use, and it is why a label cannot be minted without saying what it means.
-LABELS_DDL = """
-CREATE TABLE IF NOT EXISTS label_attachments (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    word        TEXT    NOT NULL,  -- the term, as the word, and deliberately NOT
-                                   -- REFERENCES terms (term): a detached attachment must
-                                   -- go on naming a word the owner has since removed,
-                                   -- because it is the record that the label was once
-                                   -- there. A foreign key would either forbid the removal
-                                   -- or delete that record.
-    target_root TEXT,              -- the lineage root of a plan row, so the label neither
-                                   -- re-surfaces nor silently detaches when the row is
-                                   -- superseded (rows.py, lineage_root)
-    task_id     INTEGER REFERENCES tasks (id),
-    detached_at TEXT,              -- null == the label is on this target now
-    created_at  TEXT    NOT NULL,
-    CHECK ((target_root IS NULL) != (task_id IS NULL)),
-    -- Both COALESCE sentinels below are reachable without these. Probed 2026-07-30:
-    -- a task row with id 0 inserts despite AUTOINCREMENT once its NOT NULL columns are
-    -- supplied, and an attachment on it then collides with one whose target_root is ''
-    -- — two different targets sharing the index key (word, '', 0).
-    CHECK (target_root IS NULL OR target_root <> ''),
-    CHECK (task_id IS NULL OR task_id > 0)
-);
-
--- Indexed on the expressions, not the columns. Every row here has exactly one NULL among
--- the two target columns, and SQL compares NULLs as distinct — so the natural form,
--- (word, target_root, task_id), accepts *every* duplicate rather than an unlucky few.
--- Probed at SQLite 3.49.1: it enforces nothing at all for the whole life of the table.
--- `tests/test_schema_parity.py` cannot tell the two forms apart, because PRAGMA index_list
--- reports them identically, so the behaviour is asserted at the store in raw SQL.
-CREATE UNIQUE INDEX IF NOT EXISTS idx_label_attachments_live
-    ON label_attachments (word, COALESCE(target_root, ''), COALESCE(task_id, 0))
-    WHERE detached_at IS NULL;
-
--- Read when a row is rendered with the labels it carries. The live index above leads on
--- word and cannot answer that direction.
-CREATE INDEX IF NOT EXISTS idx_label_attachments_target
-    ON label_attachments (target_root, detached_at);
-
--- The same read for the other target kind. Half the rows here have a null target_root,
--- so the index above cannot serve them: remove_term's refusal has to count the tasks
--- carrying a word, and labels(word) has to list them, and both would be a table scan.
-CREATE INDEX IF NOT EXISTS idx_label_attachments_task
-    ON label_attachments (task_id, detached_at);
-"""
-
-DDL += LABELS_DDL
 
 
 # D15's deferral log and the index the gate reads (DEVIATIONS.md D15, M6_PLAN.md §2.6).
@@ -818,18 +726,18 @@ DDL += LABELS_DDL
 # its indexes drift between stores that were migrated and stores that were born.
 #
 # `finding_reallocations` records each deferral of an open finding to a later gate. Re-
-# allocating is legitimate — a finding genuinely belongs to a later stage sometimes — but
+# allocating is legitimate — a finding genuinely belongs to a later package sometimes — but
 # it is a judgement the owner is entitled to see, so it is a recorded act and not an in-place
-# edit of `resolve_by` that leaves no trace. Same friction shape as behaviour_amendments and
-# scope_attachments' promotion history: the accounting can move, never silently. `to_stage`
-# is always strictly later than `from_stage`; the service enforces it, and the log is the
+# edit of `resolve_by` that leaves no trace. Same friction shape as obligation_amendments and
+# scope_attachments' promotion history: the accounting can move, never silently. `to_package`
+# is always strictly later than `from_package`; the service enforces it, and the log is the
 # proof it happened.
 REALLOCATIONS_DDL = """
 CREATE TABLE IF NOT EXISTS finding_reallocations (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     finding_id   INTEGER NOT NULL,
-    from_stage   INTEGER NOT NULL,
-    to_stage     INTEGER NOT NULL,
+    from_package INTEGER NOT NULL,
+    to_package   INTEGER NOT NULL,
     reason       TEXT    NOT NULL,
     created_at   TEXT    NOT NULL
 );
@@ -911,16 +819,16 @@ DDL += REVISIONS_DDL
 # this schema's universal vocabulary: `superseded_by`/`superseded_at` -> supersede, `retired_at`
 # -> retire, `state` -> state_change, an insert -> create, anything else -> update. The GUI
 # re-fetches the row `ref` names, so op_type is a reliable *hint* and the row stays the ground
-# truth. An inference that is merely coarse is therefore never a lie: detaching a label, which
-# this schema records in `detached_at` rather than `retired_at`, reads here as `update`, and the
-# GUI re-reading the attachment sees that it is off. Only the four universal columns are inferred
+# truth. An inference that is merely coarse is therefore never a lie: a term's retirement, which
+# this schema records in `ban_scope` rather than `retired_at`, reads here as `update`, and the
+# GUI reading the term sees the ban regardless. Only the four universal columns are inferred
 # from; chasing each table's idiosyncratic column would trade a clean rule for a pile of
 # special cases.
 #
-# `ref` is `table:key` — `requirements:32` for a plan row, `findings:5`, `tasks:5` for the
+# `ref` is `table:key` — `requirements:32` for a plan row, `findings:5`, `subtasks:5` for the
 # rest — self-describing and carrying **no row contents**: the payload is always fetched fresh,
 # so a stale copy can never live here. `replaced_by` carries the new ref on a supersession that
-# has a pointer (plan_rows, briefs); the tables that supersede by stamping
+# has a pointer (plan_rows, briefs, subtasks); the tables that supersede by stamping
 # `superseded_at` alone have no back-pointer to the replacement, so it is null there and the GUI
 # re-queries the live row.
 #
@@ -938,10 +846,7 @@ DDL += REVISIONS_DDL
 CHANGE_LOG_DDL = """
 CREATE TABLE IF NOT EXISTS change_log (
     seq         INTEGER PRIMARY KEY AUTOINCREMENT,
-    op_type     TEXT    NOT NULL,   -- create|supersede|retire|state_change|update|delete
-                                    -- |resync. `delete` is only ever a glossary word being
-                                    -- removed (v3 change 4): plan history is append-only,
-                                    -- and storage refuses the op against any other table.
+    op_type     TEXT    NOT NULL,   -- create|supersede|retire|state_change|update|resync
     ref         TEXT,               -- table:key of the changed row; null for a resync marker
     replaced_by TEXT,               -- the new ref on a pointer-carrying supersede; else null
     created_at  TEXT    NOT NULL
@@ -949,127 +854,6 @@ CREATE TABLE IF NOT EXISTS change_log (
 """
 
 DDL += CHANGE_LOG_DDL
-
-
-# catalogue (v3 D10, `spec/v3/builds/03-catalogue.md`) — every object, method and function
-# the plan intends to exist, each with one owner and a statement of the concept it owns, so
-# that duplication and naming collisions are caught in the plan rather than in the tree.
-#
-# **A real table and not a plan-row type**, for the reason the `terms` comment above gives in
-# its own words: an accounting denominator may never be inferred from `content`. The
-# catalogue is an accounting in three directions — the search's denominator, the
-# cross-container report's grouping, and (from change 5) the count of pseudocode calls with
-# no entry — so `container_id`, `visibility` and `retired_at` all have to be columns
-# something can query.
-#
-# **And the identity does not fit `plan_rows`.** That table enforces one live row per
-# `(table_name, name)`; a catalogue identity is `(name, container)`, and `_hydrate` is a
-# legitimate method name on five service classes in this engine. A qualified name
-# (`RowService._hydrate`) would make the existing index right and the *report* wrong:
-# grouping by container would mean splitting a string, and a string parsed to find a
-# relation is a relation the schema does not have.
-#
-# Held apart from `DDL` above for the reason `TERMS_DDL` is: the 9 -> 10 migration and a
-# fresh init create these from one text. It reads oddly literally here, because this is the
-# table that exists to catch duplication.
-#
-# **An object's owner is a component and a function's owner is a task.** A service class
-# carries the entry points of twenty tasks, so no task owns it; the component is the level
-# directly above, and this is the job that earns `component` its un-retirement (v3 D16).
-#
-# **Modules are not catalogued.** A module is a location, and location is never identity:
-# if a row were identified by location, reorganising files would read as deletion plus
-# addition and destroy the history the catalogue is accumulating. So a module-level entry
-# simply has no container — which is what makes the first index below the most consequential
-# line in this block.
-CATALOGUE_DDL = """
-CREATE TABLE IF NOT EXISTS catalogue (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    name          TEXT    NOT NULL,
-    container_id  INTEGER REFERENCES catalogue (id),  -- the object holding it; null at
-                                                      -- module level. Not a path: location
-                                                      -- is never identity.
-    kind          TEXT    NOT NULL,
-    visibility    TEXT    NOT NULL,
-    purpose       TEXT    NOT NULL,      -- verb, object, qualifier; the whole of the search
-    task_id       INTEGER REFERENCES tasks (id),      -- a function's owner
-    component_ref TEXT,                                -- an object's owner
-    retired_at    TEXT,                  -- null == live, and the only field that says so
-    retire_reason TEXT,
-    created_at    TEXT    NOT NULL,
-    updated_at    TEXT    NOT NULL,
-    CHECK (kind IN ('object', 'function')),
-    CHECK (visibility IN ('public', 'private')),
-    -- Both value sets are constrained because both appear in idx_catalogue_task_entry's
-    -- predicate below, where a typo does not fail: it drops the row out of the invariant.
-    -- Write 'Public' and the task quietly acquires a second entry point with nothing red.
-    -- This schema's habit is to enumerate in a comment and not constrain (subtasks.state
-    -- did), so the narrower rule is the one that applies: a value appearing in an index
-    -- predicate must be constrained.
-    CHECK ((task_id IS NULL) != (component_ref IS NULL)),
-    CHECK (CASE kind WHEN 'function' THEN task_id IS NOT NULL
-                     ELSE component_ref IS NOT NULL END)
-    -- ...and a function owned by a component would pass the line above while escaping
-    -- idx_catalogue_task_entry entirely. Same NULL escape, one index later.
-);
-
--- Identity is (name, container), at most one live entry per pair — and the obvious index
--- for it silently does not work. With container_id nullable for a module-level entry,
--- `ON catalogue (name, container_id)` accepts two live module-level entries with the same
--- name, because SQL compares NULLs as distinct. Probed at SQLite 3.49.1 under Python
--- 3.12.10: the second insert is accepted. That is not a corner case. Measured over v2's
--- own engine, the identity collides eleven times and **every one of them is a
--- module-level object** (PlanUnreadable in four modules, RefNotFound in three, ...), so
--- the naive index catches precisely nothing this table exists to catch. Index the
--- expression, not the column. `PRAGMA index_list` reports the two forms identically, so
--- the parity check cannot tell them apart and tests/test_catalogue_store.py asserts the
--- behaviour instead.
-CREATE UNIQUE INDEX IF NOT EXISTS idx_catalogue_live_name
-    ON catalogue (name, COALESCE(container_id, 0)) WHERE retired_at IS NULL;
-
--- D6 as a database invariant rather than something a service remembers to check — the same
--- move idx_obligation_live_owner makes for behaviour ownership. A task is one
--- externally-callable function, so a second live public entry means either the task is two
--- tasks or the name is wrong. The "at least one" half is a gap and belongs to change 5,
--- where tasks and pseudocode arrive together.
-CREATE UNIQUE INDEX IF NOT EXISTS idx_catalogue_task_entry
-    ON catalogue (task_id)
-    WHERE kind = 'function' AND visibility = 'public' AND retired_at IS NULL;
-
--- Read by the ContainerNotEmpty check and by every container name -> id resolution.
-CREATE INDEX IF NOT EXISTS idx_catalogue_container
-    ON catalogue (container_id, retired_at);
-
--- One judgment about one candidate: what the relationship is, and why. The negatives are
--- recorded too — if only merges were written down, the next planner runs the same search,
--- sees the same candidate, and decides again, possibly the other way.
---
--- `proposed` is a name and not a ref, deliberately: a comparison whose verdict is `same` or
--- `contains` produces no entry, so there is nothing to point at, and the record has to
--- carry the name that was refused or it says nothing to the next planner. `entry_id` is
--- null in exactly those cases and is the field that distinguishes them.
---
--- No `updated_at`: an immutable audit record, like finding_reallocations and
--- behaviour_amendments. `catalogue` has one because an entry is mutable in two ways — its
--- purpose can be restated and it can be retired.
-CREATE TABLE IF NOT EXISTS catalogue_comparisons (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    proposed     TEXT    NOT NULL,      -- the name that was being registered
-    container_id INTEGER REFERENCES catalogue (id),
-    matched_id   INTEGER NOT NULL REFERENCES catalogue (id),
-    entry_id     INTEGER REFERENCES catalogue (id),  -- the entry written, if one was
-    relationship TEXT    NOT NULL,
-    reason       TEXT    NOT NULL,
-    created_at   TEXT    NOT NULL,
-    CHECK (relationship IN ('same', 'contains', 'contained_by',
-                            'partially_overlaps', 'unrelated'))
-    -- Constrained because a misspelling takes the branch that writes the entry: the typo
-    -- does not fail, it inverts the refusal. `same` and `contains` are the two verdicts a
-    -- planner reaches for when the match is real, and they are the two that stop the write.
-);
-"""
-
-DDL += CATALOGUE_DDL
 
 
 def statements(ddl: str) -> list[str]:

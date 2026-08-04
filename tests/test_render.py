@@ -1,7 +1,7 @@
 """The plan as a document a person reads (DEVIATIONS D21).
 
 What these tests are actually guarding is the reason the render exists: the last planning
-stage ends by skimming the plan **with the owner**, and a render that quietly dropped
+package ends by skimming the plan **with the owner**, and a render that quietly dropped
 rows, or that reworded the owner's prose, would make that skim worse than no skim — it
 would certify a plan nobody read.
 """
@@ -143,7 +143,6 @@ class TestSupersededCitationsResolveToTheirSuccessor:
             "old": "decisions:1",
             "replacement": {"table": "decisions", "name": "ship on SQLite",
                             "content": {"text": "One file, no server."}},
-            "reason": "the server was never affordable",
             "idempotency_key": "sup",
         }))
         assert replaced.ok, replaced.problem
@@ -164,7 +163,6 @@ class TestSupersededCitationsResolveToTheirSuccessor:
                 "old": old,
                 "replacement": {"table": "decisions", "name": name,
                                 "content": {"text": f"version {i}."}},
-                "reason": f"version {i - 1} said it differently",
                 "idempotency_key": f"hop-{i}",
             }))
             assert step.ok, step.problem
@@ -191,7 +189,6 @@ class TestSupersededCitationsResolveToTheirSuccessor:
             "old": "decisions:1",
             "replacement": {"table": "decisions", "name": "ship on SQLite",
                             "content": {"text": "One file."}},
-            "reason": "the server was never affordable",
             "idempotency_key": "sup2",
         }))
         assert replaced.ok, replaced.problem
@@ -221,7 +218,6 @@ class TestSupersededCitationsResolveToTheirSuccessor:
             "old": "decisions:1",
             "replacement": {"table": "decisions", "name": "ship on SQLite",
                             "content": {"text": "One file."}},
-            "reason": "the server was never affordable",
             "idempotency_key": "r-sup",
         })).ok
         assert surface.dispatch(ToolCall("retire_row", {
@@ -332,68 +328,3 @@ class TestFindingsAreAddressableWithoutBeingPlanRows:
              "content": {"text": "Raised by findings:7, which was never filed."}},
         ], "dead-finding")
         assert "no live row at this address" in rendered(surface)
-
-
-class TestTheArgumentReachesTheOwner:
-    """The GUI dogfood defect, closed: a session could recover the answer and not the
-    argument. Reading the row back now shows what it says, why it says it, what was
-    rejected, and — if it has since been replaced — why the old one was abandoned."""
-
-    def test_a_row_shows_its_grounds_and_what_was_considered_instead(self, surface):
-        submit(surface, [
-            {"table": "entities", "name": "Order",
-             "content": {"text": "The aggregate every line hangs off."},
-             "grounds": "the order is what a customer thinks they placed",
-             "alternatives": "a line-item aggregate — rejected, it orphans totals"},
-        ], "argued")
-        body = rendered(surface)
-        assert "- **grounds**: the order is what a customer thinks they placed" in body
-        assert "- **considered instead**: a line-item aggregate" in body
-
-    def test_a_row_with_no_argument_says_nothing_about_it(self, surface):
-        """An empty heading is noise; the gap engine is what reports the absence."""
-        submit(surface, [
-            {"table": "entities", "name": "Order", "content": {"text": "An aggregate."}},
-        ], "bare")
-        body = rendered(surface)
-        assert "grounds" not in body
-        assert "considered instead" not in body
-
-    def test_a_replacement_says_why_the_row_it_replaced_went(self, surface):
-        """The reason is stamped on the *old* row and only live rows are rendered, so this
-        is the one place in the document a reader can see it — and it is the sentence that
-        stops a later session re-proposing what was already tried."""
-        submit(surface, [
-            {"table": "entities", "name": "Order", "content": {"text": "An aggregate."}},
-        ], "first")
-        result = surface.dispatch(ToolCall("supersede_row", {
-            "old": "entities:1",
-            "replacement": {"table": "entities", "name": "Order",
-                            "content": {"text": "An aggregate, with its lines."}},
-            "reason": "stage 5 found the lines have no independent lifecycle",
-            "idempotency_key": "sup",
-        }))
-        assert result.ok, result.problem
-        body = rendered(surface)
-        assert (
-            "- **replaces it because**: stage 5 found the lines have no independent "
-            "lifecycle"
-        ) in body
-
-    def test_an_address_inside_an_argument_is_annotated_not_rewritten(self, surface):
-        """The door's standing rule, and these fields walk into it: their natural content
-        is full of refs. Annotation must never change a value's shape, so the prose is
-        served as written and the resolution goes in the cites line beneath it."""
-        submit(surface, [
-            {"table": "entities", "name": "Order", "content": {"text": "An aggregate."}},
-        ], "target")
-        result = surface.dispatch(ToolCall("record_grounds", {
-            "ref": "entities:1",
-            "grounds": "it follows from entities:1",
-            "alternatives": "none",
-            "idempotency_key": "g1",
-        }))
-        assert result.ok, result.problem
-        body = rendered(surface)
-        assert "- **grounds**: it follows from entities:1" in body
-        assert "*cites: entities:1 — Order (active)*" in body

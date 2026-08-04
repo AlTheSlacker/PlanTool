@@ -140,7 +140,7 @@ def test_the_digest_carries_no_document_text(services):
     rendered = status.present()
     assert mandate not in rendered
     assert "get_mandate()" in rendered
-    assert f"get_stage_script({status.stage})" in rendered
+    assert f"get_package_script({status.package})" in rendered
 
 
 def test_every_count_names_the_call_that_fetches_it(services):
@@ -179,21 +179,21 @@ def test_the_digest_marks_quoted_prose_verbatim_and_composed_lines_plain(service
 
 def test_the_gap_count_matches_what_its_named_call_returns(services):
     """DEFECTS.md F47 — the count must equal what the call it names actually serves, not
-    just name a call. plan_status counted every stage's gaps and labelled it next_gaps(),
-    which reports only the current stage: on this part-built plan the digest headlined a
+    just name a call. plan_status counted every package's gaps and labelled it next_gaps(),
+    which reports only the current package: on this part-built plan the digest headlined a
     number the reader could not reach by following the pointer.
 
     F47's own root is F22's: the pre-existing pairing test asserted a call was *named*, never
     that the number matched it. This asserts the observable consequence."""
     storage, _, resume = services
-    # A row in stage 4 (entities) so the current stage is 1 but later stages carry
-    # their own not-started gaps: all-stage and current-stage counts genuinely differ.
+    # A row in package 4 (entities) so the current package is 1 but later packages carry
+    # their own not-started gaps: all-package and current-package counts genuinely differ.
     rows = RowService(storage)
     rows.submit_rows(
         [RowSubmission("entities", {"title": "Widget"}, name="Widget")], "k"
     )
     status = resume.plan_status()
-    assert status.stage == 1
+    assert status.package == 1
     assert status.gaps.count == resume.gaps.next_gaps().total_open
     # And it is genuinely the scoped number, not an accident of an empty later plan.
     assert status.gaps.count < len(resume.gaps.open_gaps())
@@ -204,19 +204,19 @@ def test_the_digest_ends_by_naming_the_next_action(services):
     assert resume.plan_status().present().splitlines()[-1].startswith("Next action")
 
 
-def test_the_journal_in_the_digest_is_bounded_to_the_current_stage(services):
+def test_the_journal_in_the_digest_is_bounded_to_the_current_package(services):
     """requirements:62 — resume cost scales with the working set, not the whole plan.
 
     The older notes do not vanish; they become a count and the call that reads them.
     """
     storage, _, resume = services
-    resume.journal_note("belongs to an earlier stage")
-    storage.conn.execute("UPDATE journal_notes SET stage = 0")
+    resume.journal_note("belongs to an earlier package")
+    storage.conn.execute("UPDATE journal_notes SET package = 0")
     storage.conn.commit()
-    resume.journal_note("belongs to the current stage")
+    resume.journal_note("belongs to the current package")
 
     status = resume.plan_status()
-    assert [n.note for n in status.journal] == ["belongs to the current stage"]
+    assert [n.note for n in status.journal] == ["belongs to the current package"]
     assert status.earlier_journal.count == 1
     assert "journal()" in status.earlier_journal.present()
     assert len(resume.journal()) == 2
@@ -232,13 +232,13 @@ def test_a_gate_run_survives_the_call_that_produced_it(services):
     result = gates.run_gate(1)
     history = resume.gate_runs()
     assert len(history) == 1
-    assert history[0].stage == 1
+    assert history[0].package == 1
     assert history[0].passed is result.passed
     assert history[0].hole_count == len(result.holes)
 
 
 def test_re_running_a_gate_records_a_second_verdict(services):
-    """History that collapsed re-runs would show a stage passing without ever showing
+    """History that collapsed re-runs would show a package passing without ever showing
     that it failed first."""
     _, gates, resume = services
     gates.run_gate(1)
@@ -246,13 +246,13 @@ def test_re_running_a_gate_records_a_second_verdict(services):
     assert len(resume.gate_runs()) == 2
 
 
-def test_the_digest_shows_the_latest_verdict_per_stage_and_counts_the_rest(services):
+def test_the_digest_shows_the_latest_verdict_per_package_and_counts_the_rest(services):
     _, gates, resume = services
     gates.run_gate(1)
     gates.run_gate(1)
     gates.run_gate(2)
     status = resume.plan_status()
-    assert [g.stage for g in status.gate_history] == [1, 2]
+    assert [g.package for g in status.gate_history] == [1, 2]
     assert status.earlier_gate_runs.count == 1
 
 
@@ -332,7 +332,7 @@ def _store_baseline(storage, fingerprint: dict) -> None:
         [Op("insert", "workspace_fingerprints", {
             "occasion": "finalization",
             "plan_version": 1,
-            "task_id": None,
+            "subtask_id": None,
             "fingerprint": json.dumps(fingerprint, sort_keys=True),
             "created_at": now(),
         })],
@@ -342,31 +342,21 @@ def _store_baseline(storage, fingerprint: dict) -> None:
     )
 
 
-# --- the glossary is not in the digest, and that is a decision (v3 change 4) ---
+# --- the glossary in the digest (D23) ---
 
 
-def test_the_digest_says_nothing_about_the_glossary(services):
-    """Two tests stood here — one asserting that a cold planner is told the glossary exists
-    even at zero terms, one counting the agreed terms. Both go on the owner's instruction:
-    *"plan_status reporting of glossary is pointless, the user can look at it in the gui
-    later"*, and *"forget you prompting the user, it's another friction point"*.
+def test_a_cold_planner_is_told_the_glossary_exists(services):
+    """The chicken and egg the packaging defect taught: a line that appears only once
+    there are terms can never be the line that produces the first one."""
+    _, _, resume = services
+    assert "define_term()" in resume.plan_status().present()
 
-    The zero-term line is the one that looks like onboarding and was the nag: it fired on
-    exactly the plans where he had not yet decided he wanted a glossary. What replaces it is
-    the session load — the words in front of the writer at the moment of naming, which is
-    the only moment at which they change anything.
 
-    Asserted **with a term defined**, so the check is that the digest stays silent when it
-    has something it could have said, rather than passing because the plan is empty.
-    """
+def test_the_digest_counts_the_agreed_terms(services):
     from engine.terms import TermService
 
     storage, _, resume = services
-    TermService(storage).define_term("stage", "an ordered step of the interview")
+    TermService(storage).define_term("package", "a declared grouping of tasks")
     digest = resume.plan_status()
-    assert not hasattr(digest, "glossary")
-    assert not hasattr(digest, "terms_awaiting_approval")
-    text = digest.present()
-    assert "define_term" not in text
-    assert "glossar" not in text.lower()
-    assert "agreed term" not in text
+    assert digest.glossary.count == 1
+    assert "1 agreed term — glossary()" in digest.present()

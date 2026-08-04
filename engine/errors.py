@@ -6,11 +6,10 @@ carry structured detail because the plan repeatedly requires that an error *name
 offending thing rather than merely failing.
 
 **One amendment to that convention, owner's decision 2026-07-21 (DEFECTS.md F27).** Where a
-contract's error name uses retired vocabulary, the retirement wins and the class is renamed.
+contract's error name uses retired vocabulary, `GLOSSARY.md` wins and the class is renamed.
 The frozen plan's spelling is recorded in the class docstring so a reader grepping the plan
-still lands here. There is no live instance today: the one there was — `contracts:40`'s
-`PartsDontCover`, renamed once already — went with the split in v3 change 1, and
-`engine/surface.py`'s `EXCLUDED` records where that contract went.
+still lands here. Known instance: `contracts:40`'s `PartsDontCover` is
+`engine.briefs.ObligationsNotCovered`.
 
 The reasoning is worth keeping, because the first instinct was to treat this as a standoff
 between two rules and preserve the plan's spelling as a quotation. It is not a standoff. This
@@ -70,102 +69,40 @@ class RowNotFound(PlanToolError):
 
 
 class NotAssumed(PlanToolError):
-    """contracts:70 — row is not an open assumption; no write occurs."""
+    """contracts:11 — row is not an open assumption; no write occurs."""
 
 
 class UpgradeFailed(PlanToolError):
-    """contracts:70 — upgrade could not be applied; never a silent duplicate row."""
+    """contracts:11 — upgrade could not be applied; never a silent duplicate row."""
 
 
 class AlreadySuperseded(PlanToolError):
-    """contracts:71 — lineage is write-once; supersede the live replacement instead."""
+    """contracts:12 — lineage is write-once; supersede the live replacement instead."""
 
 
 class SpikeRequired(PlanToolError):
-    """contracts:69 / contracts:71 (D16) — a world-assumption is filed with the spike that
+    """contracts:9 / contracts:12 (D16) — a world-assumption is filed with the spike that
     will attack it, atomically. Raised when a replacement mints a world-assumption with no
     spike, or attaches a spike to a row that is not one; nothing is written."""
 
 
 class AlreadyRetired(PlanToolError):
-    """contracts:72 — refused so the audit trail records exactly one retirement."""
-
-
-class SupersedeNeedsReason(PlanToolError):
-    """contracts:71 — superseding is an act, and an act records why it was performed.
-
-    Added by v3 change 2. Retiring a row already cost a reason and superseding one cost
-    nothing, which meant the two exits from "this row is no longer live" were treated
-    differently for no recorded reason. The replacement's own `grounds` say why the new
-    content is right; they do not say what was wrong with the old, and that is the sentence
-    a cold session needs in order not to re-propose the original.
-    """
-
-
-class RetireNeedsReason(PlanToolError):
-    """contracts:72 / contracts:70 — a retirement records why, and blank is not why.
-
-    Added by v3 change 2, which settled what a justification is and found the two sites
-    that were not checking: `retire_row` accepted a blank reason outright, and
-    `resolve_assumption` wrote whitespace into `retire_reason` on a rejection. Six of the
-    eight sibling sites already refused a blank; these are now the same.
-    """
-
-
-class RowNotLive(PlanToolError):
-    """The row is superseded or retired, and the act attempted needs a live one.
-
-    Names the state as well as the ref: "not live" is two different situations with two
-    different repairs, and the caller cannot pick one from a refusal that hides which.
-    """
-
-
-class GroundsAlreadyRecorded(PlanToolError):
-    """contracts:69 (v3 D11) — decision context is write-once per field.
-
-    Filling a field that was never recorded is not editing the row's claim; *re-writing*
-    one is revising history quietly, which is the one thing this store permits nowhere
-    else. Changing an argument therefore goes through supersession, with the audit trail
-    that already exists. Same shape as `AlreadySuperseded` — lineage is write-once — and
-    it names the field and the alternative, because a refusal that says only "no" is how a
-    planner invents a workaround.
-    """
-
-
-class GroundsNeedBoth(PlanToolError):
-    """v3 D11 — a row's grounds and its alternatives both end up recorded.
-
-    There is no exemption flag: a row with no alternative writes so, in the field. Allowing
-    `alternatives` to stay blank would restore the exemption in the one spelling nobody can
-    read — an empty string.
-    """
-
-
-class UnresolvedReference(PlanToolError):
-    """A stored text carried a `table:ordinal` that names no row; nothing written.
-
-    Refused at the write because of a mechanism, not a preference: `door.scan` raises
-    `BareAddress` on any address in an outgoing payload that is not accompanied by a name,
-    and an address naming no row cannot be accompanied by one. Combined with write-once,
-    an unresolvable ref inside `grounds` would make that row permanently unreadable through
-    the surface, repairable only by superseding a row whose content is fine. The write is
-    the one moment when it is still cheap.
-    """
+    """contracts:13 — refused so the audit trail records exactly one retirement."""
 
 
 class ConflictRequired(PlanToolError):
-    """contracts:69 / requirements:27 — a submitted row contradicts a stored row.
+    """contracts:9 / requirements:27 — a submitted row contradicts a stored row.
 
     Nothing is filed until a conflict is raised and presented.
     """
 
 
 class UnreadableRows(PlanToolError):
-    """contracts:74 — integrity failure; names unreadable vs surviving rows."""
+    """contracts:10 — integrity failure; names unreadable vs surviving rows."""
 
 
 class InvalidSelector(PlanToolError):
-    """contracts:74 — pedagogical error naming the invalid field; nothing read."""
+    """contracts:10 — pedagogical error naming the invalid field; nothing read."""
 
 
 # --- link-graph (components:3) ---
@@ -204,7 +141,7 @@ class SourceTextUnavailable(PlanToolError):
 
 class NotFinalized(PlanToolError):
     """contracts:42 — draft plans are edited through the interview; revisions are for
-    finalized plans. Distinct from `PlanNotFinalized` (contracts:55, next_task): same
+    finalized plans. Distinct from `PlanNotFinalized` (contracts:55, next_subtask): same
     condition, different contract and different caller advice."""
 
 

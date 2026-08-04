@@ -29,7 +29,7 @@ def _row(rows, text="the gate criteria are too weak", key=None):
 def test_file_finding_links_the_attacked_rows(rows, findings):
     ref = _row(rows)
     finding = findings.file_finding(
-        [ref], "stage 4 gate passes with zero tests", "high",
+        [ref], "package 4 gate passes with zero tests", "high",
         name="gate 4 passes with no tests", resolve_by=8,
     )
 
@@ -166,7 +166,7 @@ def test_integrity_finding_files_without_readable_rows(store, findings):
     assert finding.severity == "blocking"
 
 
-# --- contracts:73 resolve_finding ---
+# --- contracts:34 resolve_finding ---
 
 
 def test_addressed_is_terminal(rows, findings):
@@ -202,7 +202,7 @@ def test_open_findings_fail_the_verification_gate(rows, findings):
     assert [f.id for f in findings.open_findings()] == [kept.id]
 
 
-def test_resolve_requires_a_reason(rows, findings):
+def test_resolve_requires_a_rationale(rows, findings):
     finding = findings.file_finding([_row(rows)], "a problem", "high", name="a problem", resolve_by=8)
     with pytest.raises(InvalidTransition):
         findings.resolve_finding(finding.id, "accepted_risk", "   ")
@@ -279,7 +279,7 @@ def test_findings_for_a_row(rows, findings):
 
 
 def test_a_finding_carries_the_gate_it_must_be_resolved_by(rows, findings):
-    """The deadline is a gate, not a date: `resolve_by` is the stage whose gate must not
+    """The deadline is a gate, not a date: `resolve_by` is the package whose gate must not
     pass while this finding is open."""
     finding = findings.file_finding(
         [_row(rows)], "a problem", "high", name="a problem", resolve_by=5
@@ -290,16 +290,9 @@ def test_a_finding_carries_the_gate_it_must_be_resolved_by(rows, findings):
 
 
 def test_resolve_by_must_be_a_real_gate(rows, findings):
-    """An allocation to a stage that does not exist is one no gate can ever discharge.
-
-    The out-of-range value is read from the methodology rather than written as a literal: it
-    was 9 until methodology revision 6 made 9 the terminal stage, at which point a test
-    asserting that 9 is refused was asserting the opposite of what it meant.
-    """
-    from engine.methodology import load
-
+    """An allocation to a package that does not exist is one no gate can ever discharge."""
     ref = _row(rows)
-    for bad in (0, load().stage_range[1] + 1, True, "8"):
+    for bad in (0, 9, True, "8"):
         with pytest.raises(InvalidAllocation):
             findings.file_finding(
                 [ref], "a problem", "high", name=f"a problem {bad}", resolve_by=bad,
@@ -337,7 +330,7 @@ def test_reallocation_defers_to_a_later_gate_on_the_record(rows, findings):
     assert [f.id for f in findings.open_allocated_to(7)] == [finding.id]
     history = findings.reallocations_of(finding.id)
     assert len(history) == 1
-    assert history[0]["from_stage"] == 5 and history[0]["to_stage"] == 7
+    assert history[0]["from_package"] == 5 and history[0]["to_package"] == 7
     assert "red-team" in history[0]["reason"]
 
 

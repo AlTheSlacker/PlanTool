@@ -2,19 +2,9 @@
 
 import pytest
 
-from engine.gates import RESOLVE_BY_LOCK, BlockedByConflict, UnknownStage
-from engine.methodology import load
+from engine.gates import RESOLVE_BY_LOCK, BlockedByConflict, UnknownPackage
 from engine.models import LinkSpec, Provenance, RowRef, RowSubmission
 from engine.validation import SpikeSpec
-
-#: The two stages these tests name by *meaning*, resolved from the methodology rather than
-#: written as literals. They were 7 and 8 until v3 change 4 inserted the labelling round at
-#: 7, and the reason this file now asks rather than states is the reason the engine itself
-#: does: a stage's number is methodology content, and every place that hard-codes one is a
-#: place the next revision breaks silently. `gates._is_terminal` already read
-#: `stage_range[1]`; these tests were the half that did not.
-ADVERSARIAL = next(s.number for s in load().stages if s.name.startswith("Adversarial"))
-TERMINAL = load().stage_range[1]
 
 
 def submit(rows, *submissions, key="k"):
@@ -24,7 +14,7 @@ def submit(rows, *submissions, key="k"):
 # --- contracts:22: the shape of a gate result --------------------------------------
 
 
-def test_an_empty_plan_fails_stage_one_with_row_level_holes(gate):
+def test_an_empty_plan_fails_package_one_with_row_level_holes(gate):
     result = gate.run_gate(1)
     assert result.passed is False
     ids = {h.criterion_id for h in result.holes}
@@ -37,12 +27,12 @@ def test_every_hole_names_table_problem_and_fix(gate):
         assert hole.table and hole.problem and hole.fix
 
 
-def test_a_stage_outside_the_range_is_refused_with_the_range(gate):
-    with pytest.raises(UnknownStage) as exc:
+def test_a_package_outside_the_range_is_refused_with_the_range(gate):
+    with pytest.raises(UnknownPackage) as exc:
         gate.run_gate(0)
-    assert f"1-{TERMINAL}" in str(exc.value)
-    with pytest.raises(UnknownStage):
-        gate.run_gate(TERMINAL + 1)
+    assert "1-8" in str(exc.value)
+    with pytest.raises(UnknownPackage):
+        gate.run_gate(9)
 
 
 def test_results_are_deterministic(gate, rows):
@@ -54,7 +44,7 @@ def test_results_are_deterministic(gate, rows):
     ]
 
 
-def test_a_complete_stage_passes_and_points_at_the_next(gate, rows):
+def test_a_complete_package_passes_and_points_at_the_next(gate, rows):
     submit(
         rows,
         RowSubmission("goals", {"title": "ship it", "success_criteria": "M7 lands"}, name="ship it"),
@@ -64,10 +54,10 @@ def test_a_complete_stage_passes_and_points_at_the_next(gate, rows):
     )
     result = gate.run_gate(1)
     assert result.passed is True
-    assert result.next_stage == 2
+    assert result.next_package == 2
 
 
-# --- requirements:17: elicit-stage coverage cross-checks ---------------------------
+# --- requirements:17: elicit-package coverage cross-checks ---------------------------
 
 
 def test_an_actor_in_no_use_case_is_a_cross_check_hole(gate, rows):
@@ -172,7 +162,7 @@ def test_matrix_complete_flags_undefined_state_event_cells(gate, rows):
 
 
 def test_an_escape_row_satisfies_a_non_empty_criterion(gate, rows):
-    """Stage 5's vendored escape: 'there are none, and here is why' is an answer."""
+    """Package 5's vendored escape: 'there are none, and here is why' is an answer."""
     before = {h.criterion_id for h in gate.run_gate(5).holes}
     assert "dependencies_registered" in before
     submit(rows, RowSubmission("no_dependencies_decision",
@@ -213,7 +203,7 @@ def _backed_holes(gate):
     ]
 
 
-def test_a_registered_spike_not_yet_run_is_a_stage_six_hole(gate, rows):
+def test_a_registered_spike_not_yet_run_is_a_package_six_hole(gate, rows):
     """D16 — filing forces a spike, so the gate stops policing existence and starts
     policing whether the spike was run. A spike still sitting in `registered` is a hole."""
     ref = _world_assumption(rows)
@@ -256,39 +246,29 @@ def test_a_confirmed_spike_closes_the_assumption_so_the_gate_is_moot(
     assert not _backed_holes(gate)
 
 
-def test_the_terminal_gate_folds_in_every_earlier_gate(gate):
-    """An empty plan fails every stage that *can* fail, so freeze must report all of them.
-
-    Stage 7 (labelling, new in methodology revision 6) has no mechanical criteria by design,
-    so it passes vacuously and is absent here. That absence is the check that the empty
-    criteria list in `gate_criteria.yaml` means what it says, rather than being a stage
-    somebody forgot to wire up.
-    """
+def test_package_eight_folds_in_every_earlier_gate(gate):
+    """An empty plan fails every package, so freeze must report all seven."""
     holes = [
-        h for h in gate.run_gate(TERMINAL).holes
-        if h.criterion_id == "all_prior_gates_green"
+        h for h in gate.run_gate(8).holes if h.criterion_id == "all_prior_gates_green"
     ]
     reported = {h.problem.split()[1] for h in holes}
-    assert reported == {f"stage-{n}" for n in range(1, TERMINAL) if n != 7}
+    assert reported == {f"package-{n}" for n in range(1, 8)}
 
 
 def test_an_open_conflict_out_of_scope_still_stops_the_freeze(gate, rows, conflicts):
-    """Stage 8's own criterion is plan-wide: a frozen plan cannot contradict itself
+    """Package 8's own criterion is plan-wide: a frozen plan cannot contradict itself
     anywhere, including in tables no gate's scope covers."""
-    submit(rows, RowSubmission("scratch", {"title": "an off-stage row"}, name="an off-stage row"))
+    submit(rows, RowSubmission("scratch", {"title": "an off-package row"}, name="an off-package row"))
     conflicts.raise_conflict([RowRef("scratch", 1)], "contested", "pick one")
-    holes = [
-        h for h in gate.run_gate(TERMINAL).holes
-        if h.criterion_id == "no_open_conflicts"
-    ]
+    holes = [h for h in gate.run_gate(8).holes if h.criterion_id == "no_open_conflicts"]
     assert holes and "contested" in holes[0].problem
 
 
 # --- requirements:21 / decisions:31: warn, do not block ------------------------------
 
 
-def test_a_gate_lists_every_open_gap_in_its_stage_as_an_explicit_warning(gate, rows):
-    """An actor with no use case is a stage-2 gap as well as a stage-1 gate hole."""
+def test_a_gate_lists_every_open_gap_in_its_package_as_an_explicit_warning(gate, rows):
+    """An actor with no use case is a package-2 gap as well as a package-1 gate hole."""
     submit(rows, RowSubmission("actors", {"name": "Auditor"}, name="Auditor"))
     result = gate.run_gate(2)
     assert any(
@@ -321,9 +301,9 @@ def test_warnings_do_not_accumulate_across_repeated_gates(gate, rows, warns):
     assert len(warns.all_warnings()) == first
 
 
-def test_a_gate_does_not_warn_about_other_stages_gaps(gate, rows):
-    """DEFECTS.md F10 — the first build warned "no components yet" at the stage-1 gate
-    of a plan three stages from needing components. Ten of twelve warnings were noise."""
+def test_a_gate_does_not_warn_about_other_packages_gaps(gate, rows):
+    """DEFECTS.md F10 — the first build warned "no components yet" at the package-1 gate
+    of a plan three packages from needing components. Ten of twelve warnings were noise."""
     result = gate.run_gate(1)
     assert not [w for w in result.warnings if "no_components" in w.message]
     assert not [w for w in result.warnings if "no_entities" in w.message]
@@ -332,7 +312,7 @@ def test_a_gate_does_not_warn_about_other_stages_gaps(gate, rows):
 def test_a_warning_clears_when_its_condition_clears(gate, rows, warns):
     """A warning that outlives its cause trains the reader to ignore warnings."""
     gate.run_gate(1)
-    stale = next(w for w in warns.active_warnings() if "stage1_not_started" in w.message)
+    stale = next(w for w in warns.active_warnings() if "package1_not_started" in w.message)
     submit(rows, RowSubmission("goals", {"title": "ship it", "success_criteria": "M7"}, name="ship it"))
     gate.run_gate(1)
     assert warns.get(stale.id).state == "resolved"
@@ -360,7 +340,7 @@ def test_a_suppressed_warning_stays_suppressed_through_a_gate(gate, rows, warns)
     submit(rows, RowSubmission("actors", {"name": "Auditor"}, name="Auditor"))
     gate.run_gate(2)
     target = warns.active_warnings()[0]
-    warns.suppress_warning(target.id, "accepted until stage 3")
+    warns.suppress_warning(target.id, "accepted until package 3")
     result = gate.run_gate(2)
     assert target.warning_key not in {w.warning_key for w in result.warnings}
 
@@ -385,7 +365,7 @@ def test_a_conflict_outside_the_gates_scope_does_not_block_it(gate, rows, confli
     conflicts.raise_conflict(
         [RowRef("contracts", 1)], "two contracts overlap", "keep the first"
     )
-    gate.run_gate(1)  # stage 1 does not depend on contracts
+    gate.run_gate(1)  # package 1 does not depend on contracts
 
 
 def test_resolving_the_conflict_unblocks_the_gate(gate, rows, conflicts):
@@ -397,7 +377,7 @@ def test_resolving_the_conflict_unblocks_the_gate(gate, rows, conflicts):
     assert gate.run_gate(1).passed is False  # blocked no more; merely incomplete
 
 
-# --- D22 / F38: the stage-7 gate reads the finding service, not plan_rows -------------
+# --- D22 / F38: the package-7 gate reads the finding service, not plan_rows -------------
 
 
 def _attacked(rows):
@@ -413,35 +393,35 @@ def test_the_gate_sees_a_finding_filed_the_way_the_script_says_to_file_it(
     which writes the finding service; the criteria used to read `plan_rows`, where findings
     have never been written, so the gate reported "no adversarial findings recorded" no
     matter how many were filed and could not be passed by the prescribed route."""
-    result = gate.run_gate(ADVERSARIAL)
+    result = gate.run_gate(7)
     assert any("no adversarial findings" in hole.problem for hole in result.holes)
 
     findings.file_finding([_attacked(rows)], "the gate is too weak", "high",
-                          name="gate 4 passes with no tests", resolve_by=TERMINAL)
-    result = gate.run_gate(ADVERSARIAL)
+                          name="gate 4 passes with no tests", resolve_by=8)
+    result = gate.run_gate(7)
     assert not any("no adversarial findings" in hole.problem for hole in result.holes)
 
 
 def test_an_unresolved_finding_is_a_hole_that_names_it(gate, rows, findings):
     findings.file_finding([_attacked(rows)], "the gate is too weak", "high",
                           name="gate 4 passes with no tests", resolve_by=8)
-    holes = [h for h in gate.run_gate(ADVERSARIAL).holes if h.criterion_id == "findings_dispositioned"]
+    holes = [h for h in gate.run_gate(7).holes if h.criterion_id == "findings_dispositioned"]
     assert len(holes) == 1
     # D19: the hole names the finding before it addresses it.
     assert "gate 4 passes with no tests (findings:1)" in holes[0].problem
-    assert "an outcome and a reason" in holes[0].problem
+    assert "an outcome and a rationale" in holes[0].problem
 
 
 def test_a_resolved_finding_leaves_no_hole(gate, rows, findings):
     finding = findings.file_finding([_attacked(rows)], "the gate is too weak", "high",
                                     name="gate 4 passes with no tests", resolve_by=8)
-    findings.resolve_finding(finding.id, "addressed", "criteria tightened in stage 4")
+    findings.resolve_finding(finding.id, "addressed", "criteria tightened in package 4")
     assert not [
-        h for h in gate.run_gate(ADVERSARIAL).holes if h.criterion_id == "findings_dispositioned"
+        h for h in gate.run_gate(7).holes if h.criterion_id == "findings_dispositioned"
     ]
 
 
-def test_an_accepted_risk_still_needs_its_reason(gate, rows, findings):
+def test_an_accepted_risk_still_needs_its_rationale(gate, rows, findings):
     """requirements:33 — the case the second half of the criterion exists for. A finding
     closed with no recorded acceptance is indistinguishable at handoff from one somebody
     forgot about."""
@@ -449,7 +429,7 @@ def test_an_accepted_risk_still_needs_its_reason(gate, rows, findings):
                                     name="gate 4 passes with no tests", resolve_by=8)
     findings.resolve_finding(finding.id, "accepted_risk", "the owner will live with it")
     assert not [
-        h for h in gate.run_gate(ADVERSARIAL).holes if h.criterion_id == "findings_dispositioned"
+        h for h in gate.run_gate(7).holes if h.criterion_id == "findings_dispositioned"
     ]
 
 
@@ -461,7 +441,7 @@ def _lock_holes(result):
 
 
 def test_a_gate_locks_while_an_open_finding_is_allocated_to_it(gate, rows, findings):
-    """The whole of D15. A finding allocated to stage 4 is an item with that gate's name
+    """The whole of D15. A finding allocated to package 4 is an item with that gate's name
     on it, so gate 4 does not pass while it is open — and it is a hole, not a raise, because
     the plan is perfectly readable."""
     finding = findings.file_finding(
@@ -494,33 +474,33 @@ def test_reallocating_moves_the_lock_to_the_later_gate(gate, rows, findings):
         [_attacked(rows)], "the gate is too weak", "high",
         name="a hole in the gate", resolve_by=4,
     )
-    findings.reallocate_finding(finding.id, 6, "the fix needs the architecture stage first")
+    findings.reallocate_finding(finding.id, 6, "the fix needs the architecture package first")
     assert _lock_holes(gate.run_gate(4)) == []
     assert len(_lock_holes(gate.run_gate(6))) == 1
 
 
 def test_the_lock_stands_aside_where_a_findings_catchall_already_runs(gate, rows, findings):
-    """The adversarial stage carries `findings_dispositioned`, which already refuses every
-    open finding regardless of allocation. The D15 lock stands aside there rather than
+    """The adversarial package (7) carries `findings_dispositioned`, which already refuses
+    every open finding regardless of allocation. The D15 lock stands aside there rather than
     naming the same finding twice — but `findings_dispositioned` still fires, so the finding
     is not let through."""
     findings.file_finding(
         [_attacked(rows)], "the gate is too weak", "high",
-        name="a hole in the gate", resolve_by=ADVERSARIAL,
+        name="a hole in the gate", resolve_by=7,
     )
-    result = gate.run_gate(ADVERSARIAL)
+    result = gate.run_gate(7)
     assert _lock_holes(result) == []
     assert [h for h in result.holes if h.criterion_id == "findings_dispositioned"]
 
 
 def test_a_finding_bound_to_freeze_cannot_reach_a_frozen_plan(gate, rows, findings):
-    """A finding allocated to the terminal gate is named there by the lock, and that gate
+    """A finding allocated to the terminal gate is named there by the lock, and package 8
     also re-runs the adversarial catch-all through prior_gates_green — so an open finding
     cannot pass finalization however it was allocated."""
     findings.file_finding(
         [_attacked(rows)], "the gate is too weak", "high",
-        name="a hole in the gate", resolve_by=TERMINAL,
+        name="a hole in the gate", resolve_by=8,
     )
-    result = gate.run_gate(TERMINAL)
+    result = gate.run_gate(8)
     assert result.passed is False
     assert len(_lock_holes(result)) == 1

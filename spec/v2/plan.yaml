@@ -1,6 +1,6 @@
 plantool_export: 1
 plan_name: LLM Manager — planning tool for LLM CLI code engines
-exported_at: '2026-07-31T14:16:15+00:00'
+exported_at: '2026-07-17T18:24:21+00:00'
 tables:
   plans:
   - id: 1
@@ -9457,10 +9457,8 @@ tables:
     links: '["requirements:5", "requirements:14", "requirements:27", "requirements:48",
       "decisions:43", "use_cases:3"]'
     supersedes: null
-    superseded_by: 69
-    superseded_reason: v3 change 2 added optional grounds and alternatives to a row
-      submission (v3 D11), so the frozen payload shape no longer describes what submit_rows
-      accepts.
+    superseded_by: null
+    superseded_reason: null
     retired: 0
     provenance_note: null
     created_at: '2026-07-16 14:59:44'
@@ -9517,11 +9515,8 @@ tables:
     spike_id: null
     links: '["requirements:18", "requirements:19", "decisions:28", "use_cases:4"]'
     supersedes: null
-    superseded_by: 70
-    superseded_reason: v3 change 2 made a blank justification a refusal at the two
-      sites that were not checking it. Rejecting an assumption retires the row, so
-      resolve_assumption now raises RetireNeedsReason and the frozen error list does
-      not say so.
+    superseded_by: null
+    superseded_reason: null
     retired: 0
     provenance_note: null
     created_at: '2026-07-16 14:59:44'
@@ -9547,11 +9542,8 @@ tables:
     spike_id: null
     links: '["requirements:61", "decisions:42"]'
     supersedes: null
-    superseded_by: 71
-    superseded_reason: v3 change 2 made supersede_row's reason a required parameter
-      — retiring already cost a reason and superseding cost nothing, so the two exits
-      from 'this row is no longer live' were treated differently for no recorded reason.
-      The frozen signature and error list are both short of what the call now requires.
+    superseded_by: null
+    superseded_reason: null
     retired: 0
     provenance_note: null
     created_at: '2026-07-16 14:59:44'
@@ -9577,10 +9569,8 @@ tables:
     spike_id: null
     links: '["entities:2", "state_machines:2", "requirements:61"]'
     supersedes: null
-    superseded_by: 72
-    superseded_reason: v3 change 2 made a blank reason a refusal. The frozen contract
-      took a reason and never said a blank one was rejected — and until then it was
-      not.
+    superseded_by: null
+    superseded_reason: null
     retired: 0
     provenance_note: null
     created_at: '2026-07-16 14:59:44'
@@ -10156,9 +10146,8 @@ tables:
     spike_id: null
     links: '["requirements:32", "requirements:33", "use_cases:8"]'
     supersedes: null
-    superseded_by: 73
-    superseded_reason: v3 change 2 retired `rationale` as a second spelling of `reason`,
-      the word this store already had; the frozen parameter name is the retired one.
+    superseded_by: null
+    superseded_reason: null
     retired: 0
     provenance_note: null
     created_at: '2026-07-16 14:59:45'
@@ -11161,159 +11150,6 @@ tables:
     retired: 0
     provenance_note: null
     created_at: '2026-07-17 16:08:59'
-  - id: 69
-    plan_id: 1
-    plan_version_added: 2
-    component_id: 2
-    name: submit_rows
-    kind: function
-    params: '[{"name": "batch", "type_expr": "list[RowSubmission] (each submission
-      may also carry optional grounds and alternatives: why this content is right,
-      and what was considered and rejected)", "required": true}, {"name": "idempotency_key",
-      "type_expr": "str", "required": true}]'
-    returns: list[RowVerdict] — per-row accept/reject naming the specific problem;
-      accepted rows stand (requirements:14)
-    errors: '[{"name": "ConflictRequired", "semantics": "a submitted row contradicts
-      a stored row; nothing is filed until a conflict is raised and presented (requirements:27)"},
-      {"name": "StorageUnavailable", "semantics": "fail fast; the whole batch is atomic
-      \u2014 no partial rows (requirements:6)"}]'
-    cannot_fail: 0
-    cannot_fail_reason: null
-    is_external: 0
-    stale: 0
-    provenance: decided
-    assumption_kind: null
-    spike_id: null
-    links: '["requirements:5", "requirements:14", "requirements:27", "requirements:48",
-      "decisions:43", "use_cases:3"]'
-    supersedes: 9
-    superseded_by: null
-    superseded_reason: null
-    retired: 0
-    provenance_note: null
-    created_at: '2026-07-31 14:16:07'
-  - id: 70
-    plan_id: 1
-    plan_version_added: 2
-    component_id: 2
-    name: resolve_assumption
-    kind: function
-    params: '[{"name": "row", "type_expr": "RowRef", "required": true}, {"name": "answer",
-      "type_expr": "OwnerAnswer (verbatim quote + resolution: confirm|revise|reject)",
-      "required": true}]'
-    returns: PlanRow — the SAME row upgraded in place to decided with the owner's
-      answer quoted; the gap clears immediately (requirements:18; fixes friction decisions:28a)
-    errors: '[{"name": "RowNotFound", "semantics": "names the missing ref; nothing
-      written"}, {"name": "NotAssumed", "semantics": "row is not an open assumption;
-      no write occurs"}, {"name": "UpgradeFailed", "semantics": "upgrade could not
-      be applied; visible error, never a silent duplicate row (requirements:19)"},
-      {"name": "RetireNeedsReason", "semantics": "a rejection retires the row, so
-      it records why; a blank retire_reason is refused rather than replaced by the
-      owner-rejected default"}]'
-    cannot_fail: 0
-    cannot_fail_reason: null
-    is_external: 0
-    stale: 0
-    provenance: decided
-    assumption_kind: null
-    spike_id: null
-    links: '["requirements:18", "requirements:19", "decisions:28", "use_cases:4"]'
-    supersedes: 11
-    superseded_by: null
-    superseded_reason: null
-    retired: 0
-    provenance_note: null
-    created_at: '2026-07-31 14:16:07'
-  - id: 71
-    plan_id: 1
-    plan_version_added: 2
-    component_id: 2
-    name: supersede_row
-    kind: function
-    params: '[{"name": "old", "type_expr": "RowRef", "required": true}, {"name": "replacement",
-      "type_expr": "RowSubmission", "required": true}, {"name": "reason", "type_expr":
-      "str (why the OLD row was abandoned \u2014 what was learned that makes its content
-      wrong, which is a different sentence from the replacement''s grounds)", "required":
-      true}]'
-    returns: SupersessionRecord — replacement created with supersedes pointer; old
-      row stamped once with superseded_by + timestamp; content never edited (requirements:61)
-    errors: '[{"name": "RowNotFound", "semantics": "names the missing ref"}, {"name":
-      "AlreadySuperseded", "semantics": "old row already has a superseded_by pointer;
-      lineage is write-once \u2014 supersede the live replacement instead"}, {"name":
-      "SupersedeNeedsReason", "semantics": "the reason is blank; superseding is an
-      act, and an act records why it was performed"}]'
-    cannot_fail: 0
-    cannot_fail_reason: null
-    is_external: 0
-    stale: 0
-    provenance: decided
-    assumption_kind: null
-    spike_id: null
-    links: '["requirements:61", "decisions:42"]'
-    supersedes: 12
-    superseded_by: null
-    superseded_reason: null
-    retired: 0
-    provenance_note: null
-    created_at: '2026-07-31 14:16:07'
-  - id: 72
-    plan_id: 1
-    plan_version_added: 2
-    component_id: 2
-    name: retire_row
-    kind: function
-    params: '[{"name": "row", "type_expr": "RowRef", "required": true}, {"name": "reason",
-      "type_expr": "str", "required": true}]'
-    returns: PlanRow in retired state; liveness check for any reader stays the single
-      check of requirements:61
-    errors: '[{"name": "RowNotFound", "semantics": "names the missing ref"}, {"name":
-      "AlreadyRetired", "semantics": "no-op refused so the audit trail records exactly
-      one retirement"}, {"name": "RetireNeedsReason", "semantics": "the reason is
-      blank; retiring takes a row out of every live read, so a later reader finding
-      it gone needs the sentence, not the timestamp"}]'
-    cannot_fail: 0
-    cannot_fail_reason: null
-    is_external: 0
-    stale: 0
-    provenance: decided
-    assumption_kind: null
-    spike_id: null
-    links: '["entities:2", "state_machines:2", "requirements:61"]'
-    supersedes: 13
-    superseded_by: null
-    superseded_reason: null
-    retired: 0
-    provenance_note: null
-    created_at: '2026-07-31 14:16:07'
-  - id: 73
-    plan_id: 1
-    plan_version_added: 2
-    component_id: 10
-    name: resolve_finding
-    kind: function
-    params: '[{"name": "finding_id", "type_expr": "int", "required": true}, {"name":
-      "outcome", "type_expr": "Literal[''addressed'',''accepted_risk'',''withdrawn'']",
-      "required": true}, {"name": "reason", "type_expr": "str (for accepted_risk:
-      the owner''s explicit acceptance)", "required": true}]'
-    returns: Finding in terminal state; accepted_risk remains visible at implementation
-      handoff (requirements:33); unresolved findings fail the verification gate (requirements:32)
-    errors: '[{"name": "FindingNotFound", "semantics": "names the missing id"}, {"name":
-      "InvalidTransition", "semantics": "outcome not reachable from the finding''s
-      state (state_machines:7); state unchanged"}]'
-    cannot_fail: 0
-    cannot_fail_reason: null
-    is_external: 0
-    stale: 0
-    provenance: decided
-    assumption_kind: null
-    spike_id: null
-    links: '["requirements:32", "requirements:33", "use_cases:8"]'
-    supersedes: 34
-    superseded_by: null
-    superseded_reason: null
-    retired: 0
-    provenance_note: null
-    created_at: '2026-07-31 14:16:07'
   contract_deps:
   - id: 1
     plan_id: 1
@@ -11480,7 +11316,7 @@ tables:
     plan_version_added: 1
     consumer_contract_id: null
     consumer_component_id: 15
-    provider_contract_id: 69
+    provider_contract_id: 9
     provenance: decided
     assumption_kind: null
     spike_id: null
@@ -11560,7 +11396,7 @@ tables:
     plan_version_added: 1
     consumer_contract_id: null
     consumer_component_id: 15
-    provider_contract_id: 70
+    provider_contract_id: 11
     provenance: decided
     assumption_kind: null
     spike_id: null
@@ -11576,7 +11412,7 @@ tables:
     plan_version_added: 1
     consumer_contract_id: null
     consumer_component_id: 9
-    provider_contract_id: 70
+    provider_contract_id: 11
     provenance: decided
     assumption_kind: null
     spike_id: null
@@ -11592,7 +11428,7 @@ tables:
     plan_version_added: 1
     consumer_contract_id: null
     consumer_component_id: 13
-    provider_contract_id: 71
+    provider_contract_id: 12
     provenance: decided
     assumption_kind: null
     spike_id: null
@@ -11608,7 +11444,7 @@ tables:
     plan_version_added: 1
     consumer_contract_id: null
     consumer_component_id: 15
-    provider_contract_id: 71
+    provider_contract_id: 12
     provenance: decided
     assumption_kind: null
     spike_id: null
@@ -11624,7 +11460,7 @@ tables:
     plan_version_added: 1
     consumer_contract_id: null
     consumer_component_id: 15
-    provider_contract_id: 72
+    provider_contract_id: 13
     provenance: decided
     assumption_kind: null
     spike_id: null
@@ -12040,7 +11876,7 @@ tables:
     plan_version_added: 1
     consumer_contract_id: null
     consumer_component_id: 15
-    provider_contract_id: 73
+    provider_contract_id: 34
     provenance: decided
     assumption_kind: null
     spike_id: null

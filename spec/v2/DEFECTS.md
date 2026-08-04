@@ -9,15 +9,6 @@ valuable. Do not paper over defects to keep the count down.
 
 Format: what was insufficient · what was needed · how it was resolved.
 
-**Six contract addresses cited below have moved.** v3 change 2 altered five calls on
-2026-07-31, so those rows were superseded in the frozen plan: `contracts:9` → `:69`
-(`submit_rows`), `:11` → `:70` (`resolve_assumption`), `:12` → `:71` (`supersede_row`),
-`:13` → `:72` (`retire_row`), `:34` → `:73` (`resolve_finding`). **v3 change 4 added a
-sixth on 2026-08-03: `contracts:10` → `:74` (`read_rows`)**, whose selector gained a
-`labels` dimension and whose page now carries each row's live labels. The citations below
-keep the **original** addresses deliberately — a defect log records what the plan said at
-the moment the build hit it. The procedure is in `DEVIATIONS.md`'s header.
-
 ---
 
 ## F1 — Architecture frozen with no extension seam

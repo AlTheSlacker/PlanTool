@@ -47,37 +47,10 @@ SCHEMA_OF: dict[str, dict[str, Any]] = {
     "selector": {"type": "object"},
     "spike": {"type": "object"},
     "selection": {"type": "object"},
+    "split": {"type": "array", "items": {"type": "object"}},
     "evidence": {"type": "object", "additionalProperties": {"type": "string"}},
     "change_request": {"type": "object"},
     "owner_decision": {"type": "object"},
-    # v3 change 3. Advertised with its item shape rather than as a bare array of objects,
-    # because `matched` and `container` together identify the candidate and a client that
-    # sends only the first has named nothing in a table whose identity is a pair.
-    "comparisons": {
-        "type": "array",
-        "items": {
-            "type": "object",
-            "properties": {
-                "matched": {"type": "string"},
-                "container": {"type": "string"},
-                "relationship": {"type": "string"},
-                "reason": {"type": "string"},
-            },
-            "required": ["matched", "relationship", "reason"],
-        },
-    },
-    # v3 change 4. A label goes on plan rows and on tasks, which are addressed two
-    # different ways, so the items are advertised as either — the registry had `refs` and
-    # `ints` and nothing that takes both.
-    #
-    # **Every kind used by a `Param` needs an entry here.** `input_schema` indexes this map
-    # directly, so a missing kind is a `KeyError` inside `tools/list`, which does not fail
-    # one tool: it kills the advertisement for the whole registry. Change 3's build found
-    # that by driving, after a green suite.
-    "targets": {
-        "type": "array",
-        "items": {"anyOf": [{"type": "string"}, {"type": "integer"}]},
-    },
 }
 
 
