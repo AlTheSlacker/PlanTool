@@ -432,3 +432,29 @@ def test_a_page_of_labelled_rows_issues_one_label_query(labels, terms, rows, sto
     assert len(rows.read_rows(RowSelector(table="requirements")).labels) == 6, (
         "the positive control: the one query really did return every row's labels"
     )
+
+
+def test_the_report_does_not_query_once_per_glossary_word(labels, terms, rows, store):
+    """The same rule one call over, and it was broken when this test was written.
+
+    `unattached_terms` read the attached-word set inside its own comprehension, so
+    `labels()` issued one query per term in the glossary — the exact one-query-per-item
+    shape the page read spends a recursive CTE avoiding, reintroduced ten lines away in the
+    same module. A rule with a mechanism in one place and none in the next is a rule that
+    holds until somebody writes the next line.
+    """
+    _rows(rows, 2)
+    for word in ("engine", "schema", "door", "store", "gate", "label"):
+        terms.define_term(word, f"what {word} means")
+    labels.attach_label("engine", ["requirements:1"])
+
+    seen = []
+    store.conn.set_trace_callback(seen.append)
+    try:
+        report = labels.labels()
+    finally:
+        store.conn.set_trace_callback(None)
+
+    attached = [s for s in seen if "DISTINCT word" in s]
+    assert len(attached) == 1, f"{len(attached)} queries for 6 terms: {attached}"
+    assert report.unattached_terms == 5, "the positive control: the count is still right"

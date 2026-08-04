@@ -162,6 +162,11 @@ class LabelService:
         """
         definitions = {t.term: t.definition for t in self.terms.glossary()}
         counts = self._counts(None if word is None else self._word(word))
+        # Read once, not once per term. Inlined into the `unattached_terms` comprehension
+        # below it issued one query per glossary word — the exact one-query-per-item shape
+        # this change spent a recursive CTE removing from the page read, reintroduced ten
+        # lines later in the same module.
+        attached = self._attached_words()
         if word is not None:
             # A word with no live attachment reports zero rather than going missing.
             # Reporting it as absent would tell the planner the word is free, which is the
@@ -182,9 +187,7 @@ class LabelService:
             usages=usages,
             live_rows=self._live_lineages(),
             live_tasks=self._live_tasks(),
-            unattached_terms=sum(
-                1 for term in definitions if term not in self._attached_words()
-            ),
+            unattached_terms=sum(1 for term in definitions if term not in attached),
             targets=() if word is None else self._targets(self._word(word)),
         )
 
