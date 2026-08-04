@@ -4,8 +4,8 @@ Owns the PlanRow lifecycle: provenance-checked batched submission with per-row v
 full and targeted readback, in-place assumption upgrade, supersession lineage, and
 retirement.
 
-Contracts: contracts:69 submit_rows, contracts:74 read_rows, contracts:70
-resolve_assumption, contracts:71 supersede_row, contracts:72 retire_row.
+Contracts: contracts:9 submit_rows, contracts:10 read_rows, contracts:11
+resolve_assumption, contracts:12 supersede_row, contracts:13 retire_row.
 """
 
 from __future__ import annotations
@@ -14,21 +14,14 @@ import json
 from collections.abc import Callable
 from typing import Any
 
-from engine.door import ADDRESS
 from engine.errors import (
     AlreadyRetired,
     AlreadySuperseded,
     ConflictRequired,
-    GroundsAlreadyRecorded,
-    GroundsNeedBoth,
     InvalidSelector,
     NotAssumed,
-    RetireNeedsReason,
     RowNotFound,
-    RowNotLive,
     SpikeRequired,
-    SupersedeNeedsReason,
-    UnresolvedReference,
     UpgradeFailed,
 )
 from engine.models import (
@@ -55,62 +48,10 @@ from engine.validation import (
     spike_spec_problem,
 )
 
-#: The live rows carrying **every** word in a label filter (v3 change 4).
-#:
-#: **The join it performs has no other primitive.** Attachments key on lineage roots and
-#: this is a `WHERE` clause over rows, and the only root primitive in the engine —
-#: `lineage_root` — is a Python loop issuing one query per supersession hop. Resolving in
-#: Python would break `total` and paging, which both ride in SQL; matching roots against
-#: refs directly is correct only for rows that have never been superseded, and so silently
-#: drops exactly the lineages root-keying exists to preserve.
-#:
-#: So it walks the chain the other way: rather than resolving every candidate row *back* to
-#: its root, it resolves the small attached set *forward* to its live heads. Probed at
-#: SQLite 3.49.1 against a lineage superseded twice and labelled at its root — the live row
-#: is still found, and the result is a plain set of refs that composes with every other
-#: selector dimension.
-#:
-#: **`COUNT(DISTINCT word)` and not `COUNT(*)`, and that was probed rather than reasoned.**
-#: The live unique index is supposed to guarantee one live attachment per word per target,
-#: which would make the two spellings equivalent — but this change measured that the
-#: *natural* spelling of that index enforces nothing whatsoever, every row having exactly
-#: one NULL among the target columns. So the duplicate the two forms disagree about is
-#: reachable in exactly the case where the constraint was got wrong, and `DISTINCT` makes
-#: the filter correct independently of it.
-#:
-#: The AND is the owner's decision of 2026-07-30, taken against the recommendation that one
-#: label is enough: he asked for it "for completeness". The `HAVING` is the whole of it.
-LABELLED_HEADS = """
-    WITH RECURSIVE attached(root) AS (
-        SELECT target_root FROM label_attachments
-         WHERE word IN ({marks}) AND detached_at IS NULL AND target_root IS NOT NULL
-         GROUP BY target_root
-        HAVING COUNT(DISTINCT word) = ?
-    ),
-    chain(root, ref) AS (
-        SELECT root, root FROM attached
-        UNION ALL
-        SELECT c.root, p.superseded_by
-          FROM chain c
-          JOIN plan_rows p ON p.table_name || ':' || p.ordinal = c.ref
-         WHERE p.superseded_by IS NOT NULL
-    )
-    SELECT DISTINCT ref FROM chain
-     WHERE ref IN (SELECT table_name || ':' || ordinal FROM plan_rows
-                    WHERE superseded_by IS NULL)
-"""
-
-#: The most rows one page may ask for. `read_rows` validated only that `limit` is positive,
-#: and both of this change's queries bind one parameter per element — a caller asking for
-#: fifty thousand rows would build a fifty-thousand-parameter statement and get a driver
-#: error rather than a refusal naming the field. Well above any sensible page and well below
-#: SQLite's own default parameter limit.
-MAX_PAGE = 1000
-
 #: A contradiction detector: given a candidate submission and the store, return a
 #: human-readable description of what stored row it contradicts, or None.
 #:
-#: contracts:69 mandates a ConflictRequired error but the frozen plan never specifies how
+#: contracts:9 mandates a ConflictRequired error but the frozen plan never specifies how
 #: contradiction is *determined* (DEFECTS.md F4). conflict-service supplies a real
 #: detector in M3; until then no contradiction is detected and the error is unreachable.
 ContradictionDetector = Callable[[RowSubmission, "RowService"], str | None]
@@ -121,7 +62,7 @@ ContradictionDetector = Callable[[RowSubmission, "RowService"], str | None]
 #: none of them, which is what keeps `findings:4` from coming true. But open means a name
 #: already owned by another store can be claimed by accident, and one already had been:
 #: `findings` addresses both the finding service and, in v1's export, a set of plan rows, so
-#: a red team filing through `file_finding` wrote where the stage-7 gate did not look
+#: a red team filing through `file_finding` wrote where the package-7 gate did not look
 #: (DEFECTS.md F38). Deciding which store owns the word is only half a fix; without this the
 #: collision returns as data the first time somebody submits the obvious-looking row.
 #:
@@ -133,16 +74,11 @@ RESERVED_TABLES = {
         "is write-once, so findings have a store of their own. File it with file_finding, "
         "which addresses it as findings:N and links it to the rows it attacks"
     ),
-    # The reservation survives v3 change 4; its old reason did not. It argued that the
-    # glossary is a real table "because a word being redefined and a word being replaced are
-    # two different relations that supersession collapses into one" — and after that change
-    # a redefinition is an in-place UPDATE, a replacement is a parameter of the delete, and
-    # supersession is gone from this table entirely. The plain reason is the one that holds:
-    # a real table owns that name, so plan rows must not be written into it.
     "terms": (
-        "'terms' is not a plan-row table: the glossary is a real table of its own, so this "
-        "name is taken. Record it with define_term, which takes the word and what it means "
-        "here"
+        "'terms' is not a plan-row table: the glossary is a real table, because a word "
+        "being *redefined* and a word being *replaced* are two different relations that "
+        "supersession collapses into one. Record it with define_term, which takes the word "
+        "and what it means here"
     ),
 }
 
@@ -151,49 +87,25 @@ def _no_contradictions(submission: RowSubmission, service: RowService) -> str | 
     return None
 
 
-def stored_text(value: str | None) -> str | None:
-    """Strip on store: a text value is trimmed before it is written, and a value that
-    strips to empty is stored NULL, never `''`.
-
-    One function rather than a `.strip()` at each write, because the two answers drift:
-    `''` and NULL both read as absent to a person and differently to a gap rule, and the
-    rule reads the column raw. `supersede_row` already did this by hand for `name`; the
-    decision-context columns are the third and fourth text fields to need it, which is
-    when it stops being a habit and becomes a function.
-    """
-    if value is None:
-        return None
-    return value.strip() or None
-
-
-def unresolved_refs(text: str | None, exists: Callable[[RowRef], bool]) -> list[str]:
-    """Address tokens in `text` that name no row at all, in the order they appear.
-
-    Uses the door's own `ADDRESS` pattern rather than a second one: the door scans every
-    outgoing payload with it, so a token this misses is a token that fails the *render*
-    of the row later, when the only repair left is superseding a row whose content is fine.
-
-    Superseded and retired rows resolve — the door renders them with their successor, and
-    citing what a decision replaced is exactly what an argument does.
-    """
-    if not text:
-        return []
-    return [
-        token
-        for token in dict.fromkeys(ADDRESS.findall(text))
-        if not exists(RowRef.parse(token))
-    ]
-
-
 class RowService:
     def __init__(
         self,
         storage: Storage,
         detector: ContradictionDetector = _no_contradictions,
         containment: dict[str, str] | None = None,
+        terms=None,
     ):
         self.storage = storage
         self.detect_contradiction = detector
+        #: The plan's glossary, consulted at submission so a retired word is mentioned at
+        #: the moment of typing rather than at a gate a week later. Constructed here rather
+        #: than injected by the surface alone, because a scan that is on only when somebody
+        #: remembered to pass it is a check that reports success by being absent.
+        if terms is None:
+            from engine.terms import TermService
+
+            terms = TermService(storage)
+        self.terms = terms
         #: Child row type -> mandatory parent row type, from the methodology revision in
         #: force. The engine holds no opinion about which row types these are; it
         #: enforces the map it is handed. Pass `{}` to disable (used by tests that
@@ -204,7 +116,7 @@ class RowService:
             containment = load().containment
         self.containment = containment
 
-    # --- contracts:69 ---
+    # --- contracts:9 ---
 
     def submit_rows(
         self, batch: list[RowSubmission], idempotency_key: str
@@ -297,24 +209,13 @@ class RowService:
                         "provenance": str(submission.provenance),
                         "assumption_kind": submission.assumption_kind,
                         "state": str(submission.initial_state()),
-                        "stage": submission.stage,
+                        "package": submission.package,
                         "created_at": now(),
-                        # v3 D11. Both optional: a submission with neither is accepted, and
-                        # the absence is a gap rather than a rejection. Refusing here would
-                        # make every synthesize stage a negotiation with the tool and would
-                        # buy padding, which is worse than absence because absence counts.
-                        "grounds": stored_text(submission.grounds),
-                        "alternatives": stored_text(submission.alternatives),
                     },
                 )
             )
             op_index.append(index)
-            # `note` carries no producer in this module since v3 change 4 deleted the
-            # retired-word scan. The field stays: `CatalogueResult.note` documents the same
-            # shape for the catalogue's retired namesake, and a verdict is the natural place
-            # for advice that rides along with a row that stands. Said here rather than left
-            # to be discovered, because a field nothing fills reads as an oversight.
-            verdicts.append(RowVerdict(index, True))
+            verdicts.append(RowVerdict(index, True, note=self._vocabulary_note(submission)))
 
         # Links ride in the SAME batch as the rows they belong to.
         #
@@ -462,7 +363,7 @@ class RowService:
         """D16 — a world-assumption is filed WITH the spike that will attack it.
 
         The F28 move applied to assumptions: rather than let an unbacked world-assumption
-        be written and caught five stages later at the stage-6 gate, the row and its
+        be written and caught five packages later at the package-6 gate, the row and its
         first spike are one atomic act, so unbacked is unrepresentable. An assumption made
         in the first hour that turns out false is the milestone-time re-plan this tool
         exists to prevent, reproduced inside the tool — registering a spike is cheap even
@@ -495,18 +396,23 @@ class RowService:
             )
         return None
 
-    # `_vocabulary_note` stood here until v3 change 4. It ran every submitted row's content
-    # past the glossary's retired-word scan and returned what it found as a verdict note —
-    # the delivery point aimed at F27's actual cause, since naming happens at the point of
-    # least attention and the moment of typing is the only moment at which saying so changes
-    # anything.
-    #
-    # It goes because the scan goes, and the argument is that no scan could ever have worked
-    # for the failure it was built for: `part` and `component` share no letters. Something
-    # lexical catches a *retired* word being reused and never catches a second word being
-    # invented for a thing that already has one, which is what F27 actually was. The
-    # glossary's job is now to be in front of the writer at the moment of naming — loaded
-    # into the session — and its one mechanical use is that a label must be a live term.
+    def _vocabulary_note(self, submission: RowSubmission) -> str | None:
+        """Retired words this row used, said back to the submitter as it is filed.
+
+        This is the delivery point that attacks F27's actual cause. The vocabulary was not
+        broken by anyone disagreeing with it; it was broken because naming happens at the
+        point of least attention, and the moment of typing is the only moment at which
+        saying so changes anything. A word noticed at a gate three days later has already
+        been copied into six more rows.
+
+        It warns and never rejects. A retired word inside a quotation of the owner is
+        legitimate, and a check that refuses those would have the tool editing his words —
+        which is the line the whole output design is drawn along.
+        """
+        found = self.terms.violations(submission.content)
+        if not found:
+            return None
+        return "; ".join(str(usage) for usage in found)
 
     def _duplicate_name_problem(
         self, submission: RowSubmission, index: int, batch: list[RowSubmission]
@@ -573,7 +479,7 @@ class RowService:
         """A child row type must carry exactly one `belongs_to` edge to its parent.
 
         v1 spelled this as a NOT NULL foreign key and the database refused an orphan.
-        The stage-6 flattening kept the rows and dropped the constraint, so an orphan
+        The package-6 flattening kept the rows and dropped the constraint, so an orphan
         `uc_steps` row became writable, invisible and gate-clean. This is the general
         repair for that class; F20 and F24 were the two instances found by accident.
 
@@ -614,8 +520,7 @@ class RowService:
             )
         return None
 
-    # --- contracts:74 (contracts:10 until v3 change 4 gave the selector its seventh
-    # dimension and put each row's labels on the page) ---
+    # --- contracts:10 ---
 
     def read_rows(self, selector: RowSelector) -> RowPage:
         """Targeted reads, so resume cost scales with the working set rather than total
@@ -623,14 +528,6 @@ class RowService:
         if selector.limit <= 0:
             raise InvalidSelector("limit must be positive", field="limit",
                                   value=selector.limit)
-        if selector.limit > MAX_PAGE:
-            raise InvalidSelector(
-                f"limit may not exceed {MAX_PAGE}: a label filter and the label read both "
-                "bind one query parameter per element, so an unbounded page fails as a "
-                "driver error rather than as a refusal naming the field. Page through with "
-                "offset",
-                field="limit", value=selector.limit,
-            )
         if selector.offset < 0:
             raise InvalidSelector("offset cannot be negative", field="offset",
                                   value=selector.offset)
@@ -647,9 +544,9 @@ class RowService:
         if selector.table is not None:
             where.append("table_name = ?")
             params.append(selector.table)
-        if selector.stage is not None:
-            where.append("stage = ?")
-            params.append(selector.stage)
+        if selector.package is not None:
+            where.append("package = ?")
+            params.append(selector.package)
         if selector.provenance is not None:
             where.append("provenance = ?")
             params.append(str(selector.provenance))
@@ -664,15 +561,6 @@ class RowService:
                 " UNION SELECT source_ref FROM links WHERE target_ref = ?)"
             )
             params.extend([ref, ref])
-        if selector.labels:
-            words = self._label_words(selector.labels)
-            marks = ", ".join("?" for _ in words)
-            where.append(
-                "(table_name || ':' || ordinal) IN ("
-                + LABELLED_HEADS.format(marks=marks)
-                + ")"
-            )
-            params.extend([*words, len(words)])
 
         clause = f"WHERE {' AND '.join(where)}" if where else ""
         total = self.storage.query(
@@ -682,58 +570,10 @@ class RowService:
             f"SELECT * FROM plan_rows {clause} ORDER BY id LIMIT ? OFFSET ?",  # noqa: S608
             (*params, selector.limit, selector.offset),
         )
-        page = tuple(self._hydrate(r) for r in rows)
         return RowPage(
-            page, total, selector.offset, selector.limit,
-            labels=self._labels_for(page),
+            tuple(self._hydrate(r) for r in rows), total, selector.offset,
+            selector.limit,
         )
-
-    @staticmethod
-    def _label_words(labels: Any) -> list[str]:
-        """The words a label filter asks for: normalised, deduplicated, order kept.
-
-        **A bare `str` is refused**, and it is the same class of trap as `isinstance(True,
-        int)`: a `str` *is* a sequence of `str`, so `labels="engine"` iterates to `'e'`,
-        `'n'`, `'g'`, `'i'` — four distinct characters after dedupe — none of which is a
-        term, so the page comes back empty and correct-looking. The payload parser is the one
-        place allowed to be generous about this; the model stays strict.
-
-        **Deduplicating is not tidying either.** `("engine", "engine")` would set the
-        `HAVING` count to two while the query can only ever reach one, so the filter would
-        silently match nothing because the caller repeated a word. Normalising first also
-        collapses `("Engine", "engine")` rather than guaranteeing an empty page.
-        """
-        if isinstance(labels, str):
-            raise InvalidSelector(
-                "labels is a tuple of words, not one word: a bare string is itself a "
-                "sequence of characters, so it would filter on its letters and return an "
-                "empty page that looks correct. Pass ('engine',)",
-                field="labels", value=labels,
-            )
-        words = list(dict.fromkeys(w.strip().lower() for w in labels))
-        if any(not w for w in words):
-            raise InvalidSelector(
-                "a label is a word; one of these is empty", field="labels", value=labels
-            )
-        return words
-
-    def _labels_for(self, rows: tuple[PlanRow, ...]) -> dict[RowRef, tuple[str, ...]]:
-        """Each row's live labels, in one query, populated whether or not a filter was used.
-
-        Imported inside the call because `engine/labels.py` takes this service as a
-        collaborator; the two would otherwise import each other at module level. The service
-        is constructed here rather than injected for the reason the reverse would fail:
-        `read_rows` is called on a `RowService` built in a dozen tests and in five other
-        modules, and a label mapping that is only populated where somebody remembered to
-        pass a collaborator is the F50 shape — a value that is true only where refreshed.
-        """
-        if not rows:
-            return {}
-        from engine.labels import LabelService
-        from engine.terms import TermService
-
-        service = LabelService(self.storage, self, TermService(self.storage))
-        return service.labels_for_page([r.ref for r in rows])
 
     def get(self, ref: RowRef | str) -> PlanRow:
         ref = RowRef.coerce(ref)
@@ -832,7 +672,7 @@ class RowService:
             state=RowState(row["state"]),
             created_at=row["created_at"],
             assumption_kind=row["assumption_kind"],
-            stage=row["stage"],
+            package=row["package"],
             supersedes=RowRef.parse(row["supersedes"]) if row["supersedes"] else None,
             superseded_by=(
                 RowRef.parse(row["superseded_by"]) if row["superseded_by"] else None
@@ -841,12 +681,9 @@ class RowService:
             retired_at=row["retired_at"],
             retire_reason=row["retire_reason"],
             links=links,
-            grounds=row["grounds"],
-            alternatives=row["alternatives"],
-            supersede_reason=row["supersede_reason"],
         )
 
-    # --- contracts:70 ---
+    # --- contracts:11 ---
 
     def resolve_assumption(
         self,
@@ -901,17 +738,6 @@ class RowService:
                 "the owner's answer must be quoted verbatim (requirements:18)",
                 ref=str(ref),
             )
-        # A rejection retires the row, so it is a retirement and costs a reason like any
-        # other. Supplying a blank one is refused rather than quietly replaced by the
-        # default below: the default says the *owner* rejected it, and validation-service
-        # closing a world-assumption from spike evidence would be recording a falsehood
-        # (F14). Not supplying one at all is the documented way to take the default.
-        if resolution == "reject" and retire_reason is not None and not retire_reason.strip():
-            raise RetireNeedsReason(
-                f"rejecting {row['name']} ({ref}) retires it, which records why. Pass the "
-                f"reason, or omit it entirely to record that the owner rejected it",
-                ref=str(ref),
-            )
 
         if resolution == "revise" and (not name or not name.strip()):
             raise UpgradeFailed(
@@ -947,9 +773,7 @@ class RowService:
         }
         if resolution == "reject":
             values["retired_at"] = now()
-            values["retire_reason"] = (
-                stored_text(retire_reason) or "assumption rejected by the owner"
-            )
+            values["retire_reason"] = retire_reason or "assumption rejected by the owner"
 
         op = Op("update", "plan_rows", values,
                 where={"table_name": ref.table, "ordinal": ref.ordinal})
@@ -959,27 +783,17 @@ class RowService:
             raise UpgradeFailed("upgrade could not be applied", ref=str(ref))
         return self.get(ref)
 
-    # --- contracts:71 ---
+    # --- contracts:12 ---
 
     def supersede_row(
         self,
         old: RowRef | str,
         replacement: RowSubmission,
-        reason: str,
         idempotency_key: str,
     ) -> dict[str, Any]:
         """requirements:61 — the replacement is created with a supersedes pointer, the
         old row is stamped once with superseded_by and a timestamp, and content is
-        never edited.
-
-        `reason` is why the *old* row was abandoned, and it is required (v3 change 2). It
-        is a positional parameter with no default on purpose: a default of `""` would leave
-        every existing caller compiling and every existing caller wrong, silently.
-
-        It is stamped on the old row, exactly as `retire_reason` is, and it answers a
-        different question from the replacement's `grounds`. The grounds say why the new
-        content is right; the reason says what was learned that made the old content wrong.
-        """
+        never edited."""
         old = RowRef.coerce(old)
         row = self._row(old)
         if row is None:
@@ -989,15 +803,6 @@ class RowService:
                 "lineage is write-once; supersede the live replacement instead",
                 ref=str(old),
                 superseded_by=row["superseded_by"],
-            )
-        # After the two lineage guards and before the name check: a blank reason on a ref
-        # that does not exist should report the missing row, which is the thing most wrong.
-        if not reason or not reason.strip():
-            raise SupersedeNeedsReason(
-                f"superseding {row['name']} ({old}) records why it was abandoned — what "
-                f"was learned that makes the old content wrong. The replacement's own "
-                f"grounds say why the new content is right, which is a different sentence",
-                ref=str(old),
             )
 
         if not replacement.name or not replacement.name.strip():
@@ -1028,14 +833,9 @@ class RowService:
                 "provenance": str(replacement.provenance),
                 "assumption_kind": replacement.assumption_kind,
                 "state": str(replacement.initial_state()),
-                "stage": replacement.stage,
+                "package": replacement.package,
                 "supersedes": str(old),
                 "created_at": stamp,
-                # The replacement writes its own decision context and inherits none: an
-                # argument for the old content attached to new content is worse than an
-                # empty field, because it reads as though somebody had checked.
-                "grounds": stored_text(replacement.grounds),
-                "alternatives": stored_text(replacement.alternatives),
             },
         )
         # All three writes ride one transaction, in this order, and the order is load-
@@ -1047,15 +847,10 @@ class RowService:
         #
         # It was two separate write_atomic calls until 2026-07-22, which meant a crash
         # between them left the old row live and unstamped beside its own replacement.
-        #
-        # `supersede_reason` rides the first op rather than an op of its own: that op
-        # already targets the old row, and a stamp in a second write is a stamp a crash can
-        # lose — which is the failure this batch was built to close.
         where_old = {"table_name": old.table, "ordinal": old.ordinal}
         batch = [
             Op("update", "plan_rows",
-               {"state": str(RowState.SUPERSEDED), "superseded_at": stamp,
-                "supersede_reason": stored_text(reason)},
+               {"state": str(RowState.SUPERSEDED), "superseded_at": stamp},
                where=where_old),
             insert,
             Op("update", "plan_rows",
@@ -1074,7 +869,7 @@ class RowService:
         new_ref = RowRef.parse(receipt["results"][1]["ref"])
         return {"old": old, "new": new_ref, "superseded_at": stamp}
 
-    # --- contracts:72 ---
+    # --- contracts:13 ---
 
     def retire_row(
         self, ref: RowRef | str, reason: str, idempotency_key: str
@@ -1089,125 +884,12 @@ class RowService:
                 ref=str(ref),
                 retired_at=row["retired_at"],
             )
-        if not reason or not reason.strip():
-            raise RetireNeedsReason(
-                f"retiring {row['name']} ({ref}) takes it out of every live read, so it "
-                f"records why — a later reader finding it gone needs the sentence, not "
-                f"the timestamp",
-                ref=str(ref),
-            )
         op = Op(
             "update",
             "plan_rows",
             {"state": str(RowState.RETIRED), "retired_at": now(),
-             "retire_reason": stored_text(reason)},
+             "retire_reason": reason},
             where={"table_name": ref.table, "ordinal": ref.ordinal},
         )
         self.storage.write_atomic([op], idempotency_key)
-        return self.get(ref)
-
-    # --- no contract: v3 D11, and `surface.py`'s ADDED records why ---
-
-    def record_grounds(
-        self,
-        ref: RowRef | str,
-        grounds: str,
-        alternatives: str,
-        idempotency_key: str,
-    ) -> PlanRow:
-        """Give an existing row the decision context it was filed without.
-
-        **Why this exists at all.** Every row filed before schema 9 has no recorded
-        argument, and content is never edited: `submit_rows` files new rows,
-        `supersede_row` replaces one, `retire_row` retires. Without this call the only
-        route to closing the first reading would be superseding every row in the plan —
-        each needing a full replacement submission and a supersede reason for an
-        abandonment that never happened.
-
-        **Write-once per field.** Writing an argument that was never recorded is not
-        editing the row's claim; the content is untouched and the field was empty. But if
-        an argument can be rewritten, it becomes a place to revise history quietly, which
-        this store permits nowhere else — so changing an argument means superseding the
-        row, with the audit trail that already exists.
-
-        Per *field* rather than per row, because `submit_rows` makes both optional: a row
-        that arrived with grounds and no alternatives must still be able to acquire its
-        alternatives, and under a per-row rule the only remedy would be superseding a row
-        that nothing is wrong with.
-        """
-        ref = RowRef.coerce(ref)
-        replay = self.storage.replay(idempotency_key)
-        if replay is not None:
-            # decisions:43 — the key returns the original answer. Checked before the
-            # guards, because a replay of a call that succeeded would otherwise refuse
-            # with GroundsAlreadyRecorded against the write it made itself.
-            return self.get(ref)
-
-        row = self._row(ref)
-        if row is None:
-            raise RowNotFound("no such row; nothing written", ref=str(ref))
-        if row["superseded_by"] or row["state"] in (
-            RowState.SUPERSEDED, RowState.RETIRED
-        ):
-            raise RowNotLive(
-                f"{row['name']} ({ref}) is {row['state']}, and a frozen row's argument is "
-                f"history — improving it would improve the case for a decision that has "
-                f"already been replaced. Record the grounds on the live row instead",
-                ref=str(ref),
-                state=row["state"],
-            )
-
-        values: dict[str, Any] = {}
-        for field_name, value in (("grounds", grounds),
-                                  ("alternatives", alternatives)):
-            clean = stored_text(value)
-            if clean and row[field_name]:
-                raise GroundsAlreadyRecorded(
-                    f"{row['name']} ({ref}) already records its {field_name}, and an "
-                    f"argument is write-once. Changing what a row says — or why — is "
-                    f"what supersede_row() is for",
-                    ref=str(ref),
-                    field=field_name,
-                )
-            if not clean and not row[field_name]:
-                raise GroundsNeedBoth(
-                    f"{row['name']} ({ref}) needs its {field_name} as well. There is no "
-                    f"exemption: a row with no alternative writes so — \"none, this "
-                    f"follows directly from the requirement\" is a complete answer when "
-                    f"it is true",
-                    ref=str(ref),
-                    field=field_name,
-                )
-            if clean:
-                unresolved = unresolved_refs(clean, lambda r: self._row(r) is not None)
-                if unresolved:
-                    raise UnresolvedReference(
-                        f"{field_name} cites {', '.join(unresolved)}, which names no row. "
-                        f"An argument is written once and every reader of this row renders "
-                        f"it, so an address with nothing behind it would fail every read of "
-                        f"{row['name']} ({ref}) from here on. Note that a URL with a port "
-                        f"reads as an address — write it without one",
-                        ref=str(ref),
-                        field=field_name,
-                        unresolved=unresolved,
-                    )
-                values[field_name] = clean
-
-        if not values:
-            # Both fields are already recorded and the call supplied nothing new. There is
-            # no write to make, and reporting success for a call that changed nothing is
-            # how a planner comes to believe an argument landed when it did not.
-            raise GroundsAlreadyRecorded(
-                f"{row['name']} ({ref}) already records its grounds and its alternatives, "
-                f"and an argument is write-once. Changing what a row says — or why — is "
-                f"what supersede_row() is for",
-                ref=str(ref),
-                field="grounds and alternatives",
-            )
-
-        self.storage.write_atomic(
-            [Op("update", "plan_rows", values,
-                where={"table_name": ref.table, "ordinal": ref.ordinal})],
-            idempotency_key,
-        )
         return self.get(ref)

@@ -1,93 +1,111 @@
-"""The plan's glossary — what the words mean, in the owner's terms.
+"""The plan's glossary — what the words mean, and which ones are out.
 
-Not in the frozen plan (DEVIATIONS.md D23). The eight planning stages interview for use
+Not in the frozen plan (DEVIATIONS.md D23). The eight planning packages interview for use
 cases, entities, contracts, decisions and failure modes, and never once ask *what do you
 call things, and what do those words mean?* — DEFECTS.md F40.
 
-**F27 is why this exists.** A binding vocabulary was written down and broken the next build
-stage. Not through carelessness: naming happens at the point of *least* attention — the
-thinking goes into the algorithm and the name is incidental typing — and the one document
+**F27 is why this exists, and its cause shapes the design.** A binding vocabulary was
+written down and broken the next build package. Not through carelessness: the one document
 where retired words legitimately survive is also the document read immediately before
-writing each function.
+writing each function, so ranked by proximity to the moment of typing the exception beats
+the rule. And naming happens at the point of *least* attention — the thinking goes into the
+algorithm and the name is incidental typing. A word in a document cannot fix that. Something
+that runs can.
 
-**No scan can catch the failure this is for, and that finding shapes everything else.** The
-failure is one word for two things, or two words for one — calling something a `part` one
-day and a `component` the next, or the owner saying `part` and the tool assuming instead of
-asking. `part` and `component` share no letters. Every mechanism tried against that was
-lexical — a banned-word list, an allowlist over row names, near-match ranking — and none of
-them can see a synonym that shares no vocabulary. This module admitted as much in its own
-words from the day it was written:
+**A real table, not a plan-row type** (owner's decision, and he was right on two counts we
+had both missed):
 
-    it matches words, so a *new* name invented for an existing concept, sharing no letters
-    with it, goes unseen. Nothing without judgment can catch that.
+1. **A term needs two relations that the generic layer collapses into one.** *Redefinition*
+   — same word, sharpened meaning — and *replacement* — this word is out, use that one — are
+   both `superseded_by` in `plan_rows`. One mechanism serving two relations is the disease
+   this module exists to prevent, inverted.
+2. **D12's own reasoning forbids the row type.** An accounting denominator may never be
+   inferred from `plan_rows.content`, which is free-form JSON with no per-table schema. The
+   banned-word list *is* a denominator, so `ban_scope` has to be a queryable column.
 
-**So the glossary's job is not to be scanned. It is to be in front of the writer at the
-moment of naming.** That is what loading it into a planning session at its start is for, and
-it is why the owner accepted a mechanism he himself called not robust: the alternative is
-not a better mechanism, it is a mechanism that cannot work. It is read at session start and
-**never written out at session end** — N stale copies with nothing keeping them true, and
-consulted in preference to the live table, is the exact defect the glossary exists to
-prevent, committed by the thing meant to prevent it.
+**A definition is proposed here and settled by the owner.** A glossary without definitions
+is a spelling test, so `definition` is required — but a definition the tool took from a
+planning session and filed as settled would be the tool deciding what the owner's own words
+mean while looking like a record of him deciding. So `define_term` *proposes*: the planning
+session writes the first draft, because it has just read every row the word appears in and
+that is the cheap half; `approve_term` is the owner accepting it or replacing it with his
+own. A rewrite supersedes the proposal instead of overwriting it, and the difference between
+the two is the most interesting line in a glossary's history — it is exactly where the
+tool's reading of the plan and the owner's diverged.
 
-**One mechanical use, and this is the whole of it: a label must be a live term.**
-`attach_label` looks the word up here and refuses if nothing holds it (`engine/labels.py`).
-Nothing else scans this table, counts it, gates on it or warns from it.
+**The trap, stated because a naive reading walks straight into it.** A retired word must
+stay in **live reads**. Everywhere else in v2, retiring drops a row out of live reads; apply
+that here and the banned list goes empty, so the check runs, finds nothing to ban, and
+reports success — F23's missing denominator, reappearing inside the mechanism built to
+prevent F27. So a retired word is `ban_scope IS NOT NULL`, never a row that disappears.
 
-**A real table, not a plan-row type** (owner's decision). D12 settled that an accounting
-denominator may never be inferred from `plan_rows.content`, which is free-form JSON with no
-per-table schema — and `label_attachments` keys on the *word*, so the word has to be
-something a query can resolve. It is looked up the way a person looks a word up: by the word
-you were about to type, never by an ordinal.
+**Scope is plan-level, deliberately.** A word meaning two things in two packages is the
+failure being prevented, so there is no package-level override.
 
-**What was here until v3 change 4**, so a reader of an older plan knows what those columns
-meant. A definition was *proposed* by the planner and *approved* by the owner, and a rewrite
-superseded the proposal rather than overwriting it. Words could be *retired* — banned in
-prose, in identifiers, or both, with a reason and a word to say instead — and a retired word
-stayed in live reads carrying its ban, because dropping it out would have emptied the
-denominator every downstream check counted against. A `violations()` scan read submitted
-rows against that list, and the glossary was published as a JSON manifest for external CI.
-All of it goes: the approval step, because the owner writes the contents and there is
-nothing to settle; the banned list, because §2.2 above says no scan can work; the manifest,
-because nothing ever read it.
+**Un-banning is a redefinition, and needs no call of its own.** A word that comes back comes
+back with a meaning, which is exactly what `redefine_term` records; the banned row keeps its
+ban and its reason forever in the lineage behind it. A `restore` that cleared the columns in
+place would throw away the record of a decision, and would be a second mechanism for
+something one already covers.
 """
 
 from __future__ import annotations
 
+import json
+import re
 from dataclasses import dataclass
+from pathlib import Path
 
 from engine.clock import now
 from engine.errors import PlanToolError
 from engine.idempotency import key
+from engine.models import RowRef
 from engine.storage import Op, Storage
 
-#: `WORD` and the tokeniser that read it are `engine.catalogue`'s, moved there by v3 change
-#: 3 and left there by change 4: the catalogue ranks names and purpose lines against each
-#: other and is now the only caller. Nothing here needs a regex — `_word` is strip and
-#: lowercase.
+#: The manifest the codebase's own CI consumes (M6_PLAN.md §3.3, delivery point 1). Beside
+#: `plan.md`, and named rather than parameterised for the same reason: a name the caller
+#: chooses is a name no script and no CI config can state up front.
+EXPORT_FILENAME = "glossary.json"
+
+PROSE = "prose"
+IDENTIFIER = "identifier"
+BOTH = "both"
+
+#: Where a retired word may no longer appear. The distinction our own vocabulary needed and
+#: would otherwise have hidden inside JSON: one word was banned from new prose while
+#: remaining pervasive as an address, and another was banned as an identifier only.
+BAN_SCOPES = (PROSE, IDENTIFIER, BOTH)
+
+#: An address in prose — `requirements:61`. Stripped before tokenising, because an address
+#: is not a use of the word: a plan whose row tables are named for a retired word would
+#: otherwise warn on every citation of one, and a meter that cries wolf stops being read.
+ADDRESS = re.compile(r"\b[a-z][a-z0-9_]*:[1-9][0-9]*\b")
+
+#: A word, in prose or inside an identifier. `_` and case boundaries split identifiers, so
+#: `subTaskId` and `sub_task_id` tokenise the same way.
+WORD = re.compile(r"[A-Z]?[a-z]+|[A-Z]+(?![a-z])|[0-9]+")
 
 
 class TermNotFound(PlanToolError):
-    """No term for this word."""
+    """No live term for this word."""
 
 
 class TermExists(PlanToolError):
-    """A term already defines this word; changing it is a redefinition."""
+    """A live term already defines this word; sharpening it is a redefinition."""
+
+
+class AlreadyApproved(PlanToolError):
+    """The owner has already settled this definition; changing it now is a redefinition."""
 
 
 class DefinitionRequired(PlanToolError):
     """A word with no meaning recorded beside it is not a glossary entry."""
 
 
-class TermInUse(PlanToolError):
-    """The word is carried as a label, and removing it would strip that label from every
-    row and task using it. The owner ruled that out in as many words: *"do not arbitrarily
-    remove the label from all the references"*."""
-
-
-class AmbiguousRemoval(PlanToolError):
-    """A replacement word and "take it off everything" are two answers to one question, and
-    supplying both is the caller not having decided. This engine refuses rather than
-    picking."""
+class BanNeedsReason(PlanToolError):
+    """Retiring a word is the act this whole mechanism exists to make visible, so it
+    records why and what to say instead. The same friction shape as requirements:79's
+    waiver log."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,8 +120,90 @@ class Term:
     id: int
     term: str
     definition: str
+    #: When the owner settled this definition. `None` means the planner proposed it and the
+    #: owner has not answered — a real state, and one a reader must be able to see: a
+    #: definition nobody agreed to is not yet what the word means, however confidently it
+    #: is written.
+    approved_at: str | None = None
+    names_ref: RowRef | None = None
+    ban_scope: str | None = None
+    ban_reason: str | None = None
+    #: The word to say instead, stored as the word and not as a row id. A retirement
+    #: outlives the entry it points at — the replacement will itself be redefined one day —
+    #: and the word is the identity that survives that, which is the same reason this table
+    #: is looked up by word everywhere else.
+    use_instead: str | None = None
+    superseded_at: str | None = None
     created_at: str = ""
     updated_at: str = ""
+
+    @property
+    def is_banned(self) -> bool:
+        """A banned word is still live, and that is the whole point — see the module
+        docstring's trap."""
+        return self.ban_scope is not None
+
+    @property
+    def is_approved(self) -> bool:
+        return self.approved_at is not None
+
+    @property
+    def is_live(self) -> bool:
+        return self.superseded_at is None
+
+    def bans(self, scope: str) -> bool:
+        return self.is_banned and self.ban_scope in (scope, BOTH)
+
+
+@dataclass(frozen=True, slots=True)
+class Usage:
+    """One retired word found in submitted content, and what to say instead."""
+
+    term: str
+    scope: str
+    where: str
+    reason: str
+    use_instead: str | None = None
+
+    def __str__(self) -> str:
+        """Said to whoever is submitting the row, who has it in front of them."""
+        return f"'{self.term}' is retired in {self.where} — {self.reason}{self._instead}"
+
+    def about(self, subject: str) -> str:
+        """The same fact said about a row somebody wrote days ago, which needs naming the
+        row first. One owner for both wordings, because two would drift into two rules."""
+        return (
+            f"{subject} uses '{self.term}', retired in {self.where} — "
+            f"{self.reason}{self._instead}"
+        )
+
+    @property
+    def _instead(self) -> str:
+        return f"; say '{self.use_instead}'" if self.use_instead else ""
+
+
+@dataclass(frozen=True, slots=True)
+class GlossaryExport:
+    """What was written, and out of what. Not the glossary itself: a caller that wants the
+    terms calls `glossary`, and CI reads the file."""
+
+    path: str
+    terms: int
+    banned: int
+    awaiting_approval: int = 0
+    written_at: str = ""
+
+    def present(self) -> str:
+        waiting = (
+            "" if not self.awaiting_approval
+            else f" {self.awaiting_approval} definition(s) are still proposals waiting on "
+                 f"the owner, and are marked as such."
+        )
+        return (
+            f"{EXPORT_FILENAME} written with {self.terms} term(s), {self.banned} of them "
+            f"retired.{waiting} Point the codebase's own vocabulary check at it: the tool "
+            f"publishes the words, the codebase polices itself."
+        )
 
 
 class TermService:
@@ -111,35 +211,47 @@ class TermService:
     #: owns a word is half a fix, and `plan_rows.table` is open by design.
     TABLE = "terms"
 
-    def __init__(self, storage: Storage, labels=None):
+    def __init__(self, storage: Storage, rows=None):
         self.storage = storage
-        #: `remove_term` counts, moves and detaches attachments, and every one of those is
-        #: label-service work. Optional here and required at the one call that needs it, so
-        #: that `TermService(storage)` — which five modules and most of the tests construct
-        #: — does not have to build a label service to define a word.
-        self.labels = labels
+        #: Only to resolve `names_ref` to the name of the row it names, in the export. A
+        #: manifest that carried bare addresses would hand its reader the lookup this
+        #: whole design exists to remove.
+        self.rows = rows
 
     # --- writing ---
 
-    def define_term(self, term: str, definition: str) -> Term:
-        """Record what a word means in this plan.
+    def define_term(
+        self, term: str, definition: str, names_ref: RowRef | str | None = None
+    ) -> Term:
+        """Propose what a word means in this plan. The owner settles it.
 
-        There is no approval step and no proposal state. The owner defines the contents, so
-        whatever is written was authorised at the moment it was written — a queue of
-        unsettled definitions would be the tool asking him to confirm what he had just said.
+        The definition is **required** — a glossary is definitions; a bare list of approved
+        words is a spelling test — and it is **proposed**, not decided. The planning session
+        writes the first draft because that is the cheap half and it has just read the rows
+        the word appears in; the owner then accepts it or writes his own (`approve_term`).
+        A definition the tool accepted from a planning session and filed as settled would be
+        the tool exercising judgment about the owner's own vocabulary while looking like a
+        record of it, which is the one thing this engine never does (`decisions:12`).
         """
         word = self._word(term)
-        definition = self._definition(word, definition)
+        if not definition.strip():
+            raise DefinitionRequired(
+                f"'{word}' needs a definition: what it means here, in a sentence. A word "
+                "listed with no meaning beside it is a word two readers will read two ways",
+                term=word,
+            )
         if self.find(word) is not None:
             raise TermExists(
-                f"'{word}' is already defined; changing what it means is redefine_term",
+                f"'{word}' is already defined; sharpening what it means is a redefinition, "
+                "which keeps the old wording as history — redefine_term does that",
                 term=word,
             )
         stamp = now()
         receipt = self.storage.write_atomic(
             [Op("insert", "terms", {
                 "term": word,
-                "definition": definition,
+                "definition": definition.strip(),
+                "names_ref": str(names_ref) if names_ref else None,
                 "created_at": stamp,
                 "updated_at": stamp,
             })],
@@ -147,108 +259,161 @@ class TermService:
         )
         return self.get(receipt["results"][0]["id"])
 
-    def redefine_term(self, term: str, definition: str) -> Term:
-        """Change what a word means, **in place**.
+    def redefine_term(
+        self, term: str, definition: str, names_ref: RowRef | str | None = None
+    ) -> Term:
+        """Same word, sharpened meaning. The old wording stays as history.
 
-        It was a supersession until v3 change 4: stamp the old row, write a new one, one
-        transaction, ordered so the partial live index never saw two live rows for one word.
-        All of that existed to keep a definition's history, and the history goes on change
-        3's settled ground — *a purpose line is not an argument; it is an index entry, and
-        nothing cites it*. Nothing cites a definition either, so there is no argument
-        resting on the wording it had last week. In place is now literally an `UPDATE`, and
-        the ordering hazard disappears with the partial index.
+        This is also how a retired word comes back: the successor carries no ban, and the
+        banned row keeps its scope and its reason behind it. A word returning to use is a
+        word being given a meaning again, which is this act and not a separate one.
 
-        Kept as a separate call from `define_term` rather than merged into an upsert, on the
-        owner's ruling of 2026-07-30: *"there should be a tool to create terms and a tool to
-        edit (redefine) them"*. Creating a word and editing one are different acts, so
-        `define_term`'s refusal on an existing word is kept **by decision** — which matters,
-        because the argument for merging them is otherwise good and would be made again.
+        One transaction, not two — F33 was a supersession that ran as two, so an
+        interruption left the plan holding both halves of a change nobody made. The old
+        entry is stamped *before* the new one is written, because the live-word index would
+        otherwise see two live entries for one word for the length of one statement and
+        reject the redefinition outright.
         """
         word = self._word(term)
-        definition = self._definition(word, definition)
-        current = self._require(word)
-        self.storage.write_atomic(
-            [Op("update", "terms",
-                {"definition": definition, "updated_at": now()},
-                where={"id": current.id})],
-            key("redefine_term", word, definition),
-        )
-        return self.get(current.id)
-
-    def remove_term(
-        self, term: str, replacement: str | None = None, detach_all: bool = False
-    ) -> None:
-        """Take a word out of the glossary.
-
-        **With anything carrying it as a label, this refuses first**, and the refusal *is*
-        the prompt — this engine has no other way to ask a question. The owner's
-        instruction: *"if the user tries to delete a glossary item that is a label then
-        prompt for a replacement label, do not arbitrarily remove the label from all the
-        references."* So the message carries what he needs in order to answer: not that the
-        word is in use, but how widely, **split by population and never summed**. A word on
-        three rows and a word on four hundred are different decisions.
-
-        Two answers resolve it, and he chooses; nothing is automatic. A `replacement` moves
-        every live attachment to another live term. `detach_all` takes the label off
-        everything — his ruling of 2026-07-30, *"yes to take it off everything"* — because
-        the alternative, blocking deletion until he has detached by hand, means a filter he
-        has decided is wrong must be peeled off forty rows before he is allowed to say so.
-
-        **One call with a parameter rather than three calls**, because the three outcomes
-        share the whole of their work — normalise, look up, count, transact, delete — and
-        differ only in what happens to the attachments. Three tools would be three copies of
-        the refusal and three registry rows for one act.
-        """
-        word = self._word(term)
-        current = self._require(word)
-        if replacement is not None and detach_all:
-            raise AmbiguousRemoval(
-                f"removing '{word}' takes a replacement word or detach_all, not both: "
-                "moving the label to another word and taking it off everything are two "
-                "different answers, and this is not the tool's to choose between",
+        if not definition.strip():
+            raise DefinitionRequired(
+                f"redefining '{word}' records the new meaning, not just that it changed",
                 term=word,
             )
-        service = self._label_service()
-        rows, tasks = service.usage_of(word)
-        replacement_word = None
-        if replacement is not None:
-            replacement_word = self._word(replacement)
-            if replacement_word == word:
-                raise AmbiguousRemoval(
-                    f"'{word}' cannot replace itself; name the word its labels move to, "
-                    "or pass detach_all to take the label off everything",
+        current = self._require(word)
+        # Proposed again, and not carried over as approved: a new meaning is a new thing to
+        # agree with. Approval that survived the definition it approved would be the plan
+        # recording the owner's assent to words he never saw.
+        return self._succeed(current, definition, names_ref, approved=False)
+
+    def approve_term(self, term: str, definition: str | None = None) -> Term:
+        """The owner settles a proposed definition — as it stands, or in his own words.
+
+        Two acts in one call because they are one decision with two outcomes, and because
+        the friction has to be small: a glossary is a handful of words, and a review step
+        that costs a paragraph per word does not get done.
+
+        Rewriting supersedes the proposal rather than overwriting it, so the record shows
+        what was suggested and what was actually agreed. That difference is the most
+        interesting line in a glossary's history — it is where the tool's reading of the
+        plan and the owner's diverged.
+        """
+        word = self._word(term)
+        current = self._require(word)
+        if definition is not None and not definition.strip():
+            raise DefinitionRequired(
+                f"approving '{word}' with an empty definition would delete the meaning "
+                "rather than settle it; approve it as it stands, or write your own",
+                term=word,
+            )
+        if definition is None or definition.strip() == current.definition:
+            if current.is_approved:
+                raise AlreadyApproved(
+                    f"'{word}' is already settled; changing what it means now is a "
+                    "redefinition, which keeps this wording as history — redefine_term "
+                    "does that",
                     term=word,
                 )
-            # Validated even when nothing is attached, and then ignored. A replacement that
-            # names no term is a mistake whether or not this particular word happens to be
-            # carried, and accepting it silently would teach the caller it was fine.
-            if self.find(replacement_word) is None:
-                raise TermNotFound(
-                    f"'{replacement_word}' is not defined, so the labels would move to "
-                    "nothing. define_term records what it means first",
-                    term=replacement_word,
-                )
-        if (rows or tasks) and replacement_word is None and not detach_all:
-            raise TermInUse(
-                f"'{word}' is carried as a label by {rows} plan row(s) and {tasks} "
-                f"task(s), so removing it would take the label off all of them. Pass a "
-                f"replacement word — it must itself be defined — to move them, or "
-                f"detach_all to take it off everything",
-                term=word, rows=rows, tasks=tasks,
+            self.storage.write_atomic(
+                [Op("update", "terms",
+                    {"approved_at": now(), "updated_at": now()},
+                    where={"id": current.id})],
+                key("approve_term", word, current.id),
             )
+            return self.get(current.id)
+        return self._succeed(current, definition, None, approved=True)
+
+    def _succeed(
+        self,
+        current: Term,
+        definition: str,
+        names_ref: RowRef | str | None,
+        approved: bool,
+    ) -> Term:
+        """Replace a live entry with a new one for the same word, in one transaction.
+
+        F33 was a supersession that ran as two, so an interruption left the plan holding
+        both halves of a change nobody made. The old entry is stamped *before* the new one
+        is written, because the live-word index would otherwise see two live entries for one
+        word for the length of one statement and reject the write outright.
+        """
         stamp = now()
-        ops: list[Op] = []
-        if replacement_word is not None:
-            ops.extend(service.move_ops(word, replacement_word, stamp))
-        elif detach_all:
-            ops.extend(service.detach_ops(word, stamp))
-        # The move and the removal are one act, in one transaction: F33 was a supersession
-        # that ran as two, so an interruption left the plan holding both halves of a change
-        # nobody made.
-        ops.append(Op("delete", "terms", {}, where={"id": current.id}))
-        self.storage.write_atomic(
-            ops, key("remove_term", word, current.id, replacement_word, detach_all)
+        receipt = self.storage.write_atomic(
+            [
+                Op("update", "terms",
+                   {"superseded_at": stamp, "updated_at": stamp},
+                   where={"id": current.id}),
+                Op("insert", "terms", {
+                    "term": current.term,
+                    "definition": definition.strip(),
+                    "approved_at": stamp if approved else None,
+                    "names_ref": (
+                        str(names_ref) if names_ref
+                        else (str(current.names_ref) if current.names_ref else None)
+                    ),
+                    # A rewrite at approval carries the retirement forward — the owner is
+                    # settling what the word meant, not putting it back into use. A
+                    # redefinition clears it, because giving a word a new meaning is
+                    # exactly how a retired word comes back.
+                    "ban_scope": current.ban_scope if approved else None,
+                    "ban_reason": current.ban_reason if approved else None,
+                    "use_instead": current.use_instead if approved else None,
+                    "created_at": stamp,
+                    "updated_at": stamp,
+                }),
+            ],
+            key("succeed_term", current.term, current.id, approved),
         )
+        return self.get(receipt["results"][1]["id"])
+
+    def retire_term(
+        self,
+        term: str,
+        ban_scope: str,
+        ban_reason: str,
+        use_instead: str | None = None,
+    ) -> Term:
+        """Take a word out of use, on the record, saying what to say instead.
+
+        The word stays in live reads carrying its ban — see the module docstring. Dropping
+        it out, as retirement does everywhere else in v2, would empty the very list every
+        check downstream counts against.
+        """
+        word = self._word(term)
+        if ban_scope not in BAN_SCOPES:
+            raise BanNeedsReason(
+                f"ban_scope must be one of {', '.join(BAN_SCOPES)}: a word can be out of "
+                "new prose while surviving in identifiers, or the other way round, and a "
+                "ban that does not say which warns on the wrong things",
+                term=word,
+                ban_scope=ban_scope,
+            )
+        if not ban_reason.strip():
+            raise BanNeedsReason(
+                f"retiring '{word}' records why. A retired word with no reason is a rule "
+                "the next writer has no way to agree with, and the one after that reverses",
+                term=word,
+            )
+        current = self._require(word)
+        replacement = None
+        if use_instead:
+            replacement = self._word(use_instead)
+            if self.find(replacement) is None:
+                raise TermNotFound(
+                    f"'{replacement}' is not defined, so the retirement would point at "
+                    "nothing. Define the word that replaces this one first",
+                    term=replacement,
+                )
+        self.storage.write_atomic(
+            [Op("update", "terms", {
+                "ban_scope": ban_scope,
+                "ban_reason": ban_reason.strip(),
+                "use_instead": replacement,
+                "updated_at": now(),
+            }, where={"id": current.id})],
+            key("retire_term", word, current.id),
+        )
+        return self.get(current.id)
 
     # --- reading ---
 
@@ -259,35 +424,190 @@ class TermService:
         return self._hydrate(found[0])
 
     def find(self, term: str) -> Term | None:
-        """The entry for a word, or None."""
+        """The live entry for a word, banned or not."""
         found = self.storage.query(
-            "SELECT * FROM terms WHERE term = ?", (self._word(term),)
+            "SELECT * FROM terms WHERE term = ? AND superseded_at IS NULL",
+            (self._word(term),),
         )
         return self._hydrate(found[0]) if found else None
 
     def glossary(self) -> tuple[Term, ...]:
-        """Every term, alphabetically."""
+        """Every live term, alphabetically. **Banned words are included** — a glossary that
+        listed only the words still in use could not tell a writer which one to stop
+        using, which is the half of it that actually changes behaviour."""
         return tuple(
             self._hydrate(r)
-            for r in self.storage.query("SELECT * FROM terms ORDER BY term")
+            for r in self.storage.query(
+                "SELECT * FROM terms WHERE superseded_at IS NULL ORDER BY term"
+            )
         )
 
-    # --- internals ---
+    def banned(self) -> tuple[Term, ...]:
+        """The retired words — the denominator every check downstream counts against.
 
-    def _label_service(self):
-        """The label service, built here if it was not passed.
-
-        Built rather than skipped, deliberately overriding convention 11: an unpassed
-        collaborator normally means the guard is skipped and the call proceeds, and here
-        that would make `remove_term` delete a word while leaving its attachments pointing
-        at nothing — the refusal this call exists for, silently absent.
+        Defined independently of the thing being measured (`ban_scope` is a column, not an
+        inference from row content), which is what F23 asks of any coverage check, and it
+        can only be empty when nothing has been retired.
         """
-        if self.labels is None:
-            from engine.labels import LabelService
-            from engine.rows import RowService
+        return tuple(t for t in self.glossary() if t.is_banned)
 
-            self.labels = LabelService(self.storage, RowService(self.storage), self)
-        return self.labels
+    def awaiting_approval(self) -> tuple[Term, ...]:
+        """Definitions the planner proposed and the owner has not answered.
+
+        A count the digest carries, because it is the one outstanding thing in a glossary
+        that only the owner can clear — and a proposal nobody is shown is a proposal that
+        quietly becomes the definition by default.
+        """
+        return tuple(t for t in self.glossary() if not t.is_approved)
+
+    def history(self, term: str) -> tuple[Term, ...]:
+        """Every entry this word has ever had, oldest first — including the retirement it
+        may have come back from."""
+        return tuple(
+            self._hydrate(r)
+            for r in self.storage.query(
+                "SELECT * FROM terms WHERE term = ? ORDER BY id", (self._word(term),)
+            )
+        )
+
+    # --- the lexical scan (M6_PLAN.md §3.3, delivery point 3) ---
+
+    def violations(self, content: dict) -> tuple[Usage, ...]:
+        """Retired words in one row's content: keys read as identifiers, values as prose.
+
+        **Warn, never block.** A retired word inside a quotation is legitimate — the owner's
+        own words are quoted verbatim all over a plan — and blocking on one would resurrect
+        the cry-wolf failure D7 fixed. The submitter is told; the row stands.
+
+        What it cannot do, stated so it is not oversold: it matches words, so a *new* name
+        invented for an existing concept, sharing no letters with it, goes unseen. Nothing
+        without judgment can catch that.
+        """
+        retired = self.banned()
+        if not retired:
+            return ()
+        found: dict[tuple[str, str], Usage] = {}
+        for scope, text in self._segments(content):
+            words = self._tokens(text, scope)
+            for entry in retired:
+                if not entry.bans(scope) or entry.term not in words:
+                    continue
+                found.setdefault((entry.term, scope), Usage(
+                    term=entry.term,
+                    scope=scope,
+                    where="prose" if scope == PROSE else "identifiers",
+                    reason=entry.ban_reason or "",
+                    use_instead=entry.use_instead,
+                ))
+        return tuple(found[k] for k in sorted(found))
+
+    def _segments(self, content, prefix: str = "") -> list[tuple[str, str]]:
+        """Every string in a row's content, labelled by which scope reads it.
+
+        The two scopes map onto something real rather than onto a preference: a content
+        *key* is an identifier — it becomes a field name every reader types — and a content
+        *value* is prose.
+        """
+        out: list[tuple[str, str]] = []
+        if isinstance(content, dict):
+            for k, v in content.items():
+                out.append((IDENTIFIER, str(k)))
+                out.extend(self._segments(v))
+        elif isinstance(content, (list, tuple)):
+            for v in content:
+                out.extend(self._segments(v))
+        elif isinstance(content, str):
+            out.append((PROSE, content))
+        return out
+
+    @staticmethod
+    def _tokens(text: str, scope: str) -> set[str]:
+        """The words in one string, lowercased, with plurals folded onto the singular.
+
+        Addresses come out first: `components:15` cites a row, it does not use the word.
+        Plural folding is deliberately the crudest possible rule — a trailing `s` — because
+        anything cleverer starts guessing, and a guess here spends the owner's attention on
+        a word nobody wrote.
+        """
+        if scope == PROSE:
+            text = ADDRESS.sub(" ", text)
+        words = set()
+        for token in WORD.findall(text):
+            token = token.lower()
+            words.add(token)
+            if token.endswith("s"):
+                words.add(token[:-1])
+        return words
+
+    # --- the export (M6_PLAN.md §3.3, delivery point 1) ---
+
+    def export_glossary(self) -> GlossaryExport:
+        """Publish the vocabulary as a manifest the codebase's own CI consumes.
+
+        This is the delivery point that achieves the most, and it is worth being clear why:
+        it respects `decisions:12` completely — the tool publishes the words and exercises
+        no judgment about anyone's code — it works in any language, and it is the mechanism
+        already proven on ourselves, where a ten-line check found twenty violations that a
+        careful reading had declared clean.
+        """
+        entries = self.glossary()
+        payload = {
+            "written_at": now(),
+            "terms": [self._entry(t) for t in entries],
+            "banned": [
+                {
+                    "term": t.term,
+                    "scope": t.ban_scope,
+                    "reason": t.ban_reason,
+                    "use_instead": t.use_instead,
+                }
+                for t in entries
+                if t.is_banned
+            ],
+        }
+        path = Path(self.storage.workspace) / EXPORT_FILENAME
+        try:
+            path.write_text(
+                json.dumps(payload, indent=2, sort_keys=False) + "\n", encoding="utf-8"
+            )
+        except OSError as exc:
+            raise DefinitionRequired(
+                "the glossary manifest could not be written",
+                path=str(path), cause=str(exc),
+            ) from exc
+        return GlossaryExport(
+            path=str(path),
+            terms=len(entries),
+            banned=sum(1 for t in entries if t.is_banned),
+            awaiting_approval=sum(1 for t in entries if not t.is_approved),
+            written_at=payload["written_at"],
+        )
+
+    def _entry(self, term: Term) -> dict:
+        # `approved` travels with every entry rather than being filtered out here. A
+        # consumer deciding what to enforce is exercising judgment, and that judgment is
+        # not the tool's to make on its behalf — but it cannot make it without being told.
+        entry: dict = {
+            "term": term.term,
+            "definition": term.definition,
+            "approved": term.is_approved,
+        }
+        if term.names_ref is not None:
+            entry["names"] = {
+                "ref": str(term.names_ref),
+                "name": self._name_of(term.names_ref),
+            }
+        return entry
+
+    def _name_of(self, ref: RowRef) -> str | None:
+        if self.rows is None:
+            return None
+        try:
+            return self.rows.get(ref).name
+        except Exception:  # noqa: BLE001 — a manifest never fails over a missing name
+            return None
+
+    # --- internals ---
 
     @staticmethod
     def _word(term: str) -> str:
@@ -295,21 +615,6 @@ class TermService:
         if not word:
             raise TermNotFound("a term is a word; this one is empty")
         return word
-
-    @staticmethod
-    def _definition(word: str, definition: str) -> str:
-        """The last mechanical opinion the glossary holds, and it earns its place.
-
-        A word listed with no meaning beside it is a word two readers read two ways, which
-        is the failure this table exists to prevent arriving through the table itself.
-        """
-        if not (definition or "").strip():
-            raise DefinitionRequired(
-                f"'{word}' needs a definition: what it means here, in a sentence. A word "
-                "listed with no meaning beside it is a word two readers will read two ways",
-                term=word,
-            )
-        return definition.strip()
 
     def _require(self, word: str) -> Term:
         current = self.find(word)
@@ -327,6 +632,12 @@ class TermService:
             id=r["id"],
             term=r["term"],
             definition=r["definition"],
+            approved_at=r["approved_at"],
+            names_ref=RowRef.parse(r["names_ref"]) if r["names_ref"] else None,
+            ban_scope=r["ban_scope"],
+            ban_reason=r["ban_reason"],
+            use_instead=r["use_instead"],
+            superseded_at=r["superseded_at"],
             created_at=r["created_at"],
             updated_at=r["updated_at"],
         )

@@ -1,14 +1,9 @@
 """Versioned methodology content assets.
 
-requirements:71 — the stage list, per-stage interview scripts, the engineer's mandate,
-per-stage mechanical gate criteria and the gap-derivation rules ship as versioned
+requirements:71 — the package list, per-package interview scripts, the engineer's mandate,
+per-package mechanical gate criteria and the gap-derivation rules ship as versioned
 content assets carrying a content-revision stamp, with an update path from one revision
 to the next.
-
-**`stage` is the interview's ordered step**, and it is the word the assets are keyed by
-again from revision 4 (v3 change 1). It was `package` in revisions 3 and 3's manifest,
-which collided with the *declared build grouping* of the same name — one word for two
-things, and the grouping is the one that died.
 
 decisions:61 — the successor *vendors* the PlanTool rev-2 methodology rather than
 inventing one at build time. findings:4 is the red-team finding that forced this: the
@@ -27,34 +22,25 @@ from typing import Any
 import yaml
 
 ASSETS = Path(__file__).parent
-#: Revision 6 (v3 change 4) adds the labelling round as stage 7 and moves adversarial and
-#: finalization to 8 and 9. Bumped here as well as in the manifest: `DEFAULT_REVISION` is
-#: the difference between an asset directory and a *used* asset directory, and a rev6 nobody
-#: loads is a revision that exists only on disk.
-DEFAULT_REVISION = 6
+DEFAULT_REVISION = 3
 
 #: The oldest revision this loader will load. Earlier revisions are retained on disk as
 #: frozen provenance and are deliberately not loadable.
 #:
 #: rev 2 is the PlanTool v1 methodology vendored verbatim (decisions:61, the answer to the
 #: findings:4 red-team finding) — both the red-team artifact and the source text rev 3 was
-#: derived from. Its scripts name v1's retired tool surface, so a plan cannot be authored
-#: under it. It is kept byte-faithful on purpose and must never be edited.
-#:
-#: **rev 3 joined it on 2026-07-31**, for the same class of reason and by the same rule.
-#: It is keyed by `packages:`, and this loader reads `stages:` again from revision 4; its
-#: stage-6 script also names three tools that no longer exist, so serving it would raise
-#: `UnreachableCall` at the door. Teaching the loader both spellings would be two
-#: vocabularies live at once, which is the defect v3 change 1 exists to remove. The refusal
-#: is honest and typed instead: `RevisionNotLoadable` says the content is intact and
-#: deliberately not loaded.
+#: derived from. It is written in v1's vocabulary (`stages:`, not the `packages:` this
+#: loader reads) and its scripts name v1's retired tool surface, so a plan cannot be
+#: authored under it through the v2 surface. It is kept byte-faithful on purpose and must
+#: never be edited.
 #:
 #: So requirements:71's revision-migration path ("migrate a plan from one revision to the
-#: next") is forward-only: rev 4 is the earliest loadable baseline and there is nothing
+#: next") is forward-only: rev 3 is the earliest loadable baseline and there is nothing
 #: loadable behind it. This is the owner's decision of 2026-07-23 — option (b) of the
-#: rev-2-unloadable fork: declare the provenance frozen and make the refusal honest.
+#: rev-2-unloadable fork: declare the provenance frozen and make the refusal honest,
+#: rather than teach the loader to read `stages:` into a revision nothing can author under.
 #: See DEFECTS.md F43.
-EARLIEST_LOADABLE_REVISION = 4
+EARLIEST_LOADABLE_REVISION = 3
 
 
 class MethodologyUnavailable(Exception):
@@ -78,7 +64,7 @@ class RevisionNotLoadable(MethodologyUnavailable):
 
 
 @dataclass(frozen=True, slots=True)
-class Stage:
+class Package:
     number: int
     name: str
     mode: str  # elicit | synthesize | verify
@@ -87,7 +73,7 @@ class Stage:
 
     @property
     def is_elicit(self) -> bool:
-        """Elicit stages carry mandatory divergence rounds (requirements:16)."""
+        """Elicit packages carry mandatory divergence rounds (requirements:16)."""
         return self.mode == "elicit"
 
 
@@ -95,7 +81,7 @@ class Stage:
 class Rule:
     id: str
     priority: int
-    stage: int | None
+    package: int | None
     type: str
     ask: str
     spec: dict[str, Any]
@@ -110,7 +96,7 @@ class Criterion:
     """
 
     id: str
-    stage: int
+    package: int
     type: str
     problem: str
     fix: str
@@ -125,7 +111,7 @@ class Methodology:
     vendored_from: str
     root: Path
     mandate_file: str
-    stages: tuple[Stage, ...]
+    packages: tuple[Package, ...]
     rules: tuple[Rule, ...]
     criteria: tuple[Criterion, ...]
     auxiliary: dict[str, str]
@@ -133,20 +119,20 @@ class Methodology:
     #: comment: these names belong to the methodology, never to the engine.
     containment: dict[str, str]
 
-    def criteria_for(self, stage: int) -> tuple[Criterion, ...]:
-        """This stage's criteria in file order — requirements:46's determinism starts
+    def criteria_for(self, package: int) -> tuple[Criterion, ...]:
+        """This package's criteria in file order — requirements:46's determinism starts
         here."""
-        return tuple(c for c in self.criteria if c.stage == stage)
+        return tuple(c for c in self.criteria if c.package == package)
 
-    def stage(self, number: int) -> Stage:
-        for stage in self.stages:
-            if stage.number == number:
-                return stage
+    def package(self, number: int) -> Package:
+        for package in self.packages:
+            if package.number == number:
+                return package
         raise KeyError(number)
 
     @property
-    def stage_range(self) -> tuple[int, int]:
-        numbers = [s.number for s in self.stages]
+    def package_range(self) -> tuple[int, int]:
+        numbers = [s.number for s in self.packages]
         return min(numbers), max(numbers)
 
     def read(self, filename: str) -> str:
@@ -188,21 +174,21 @@ def load(revision: int = DEFAULT_REVISION) -> Methodology:
             f"methodology revision {revision} is malformed"
         ) from exc
 
-    stages = tuple(
-        Stage(
+    packages = tuple(
+        Package(
             number=entry["number"],
             name=entry["name"],
             mode=entry["mode"],
             script_file=entry["script"],
             tables=tuple(entry.get("tables") or ()),
         )
-        for entry in manifest["stages"]
+        for entry in manifest["packages"]
     )
     rules = tuple(
         Rule(
             id=entry["id"],
             priority=entry["priority"],
-            stage=entry.get("stage"),
+            package=entry.get("package"),
             type=entry["type"],
             ask=" ".join(entry["ask"].split()),
             spec=entry,
@@ -212,14 +198,14 @@ def load(revision: int = DEFAULT_REVISION) -> Methodology:
     criteria = tuple(
         Criterion(
             id=entry["id"],
-            stage=block["stage"],
+            package=block["package"],
             type=entry["type"],
             problem=" ".join(entry["problem"].split()),
             fix=" ".join(entry["fix"].split()),
             cross_check=bool(entry.get("cross_check")),
             spec=entry,
         )
-        for block in criteria_doc["stages"]
+        for block in criteria_doc["packages"]
         for entry in block["criteria"]
     )
     return Methodology(
@@ -228,7 +214,7 @@ def load(revision: int = DEFAULT_REVISION) -> Methodology:
         vendored_from=manifest["vendored_from"],
         root=root,
         mandate_file=manifest["mandate"],
-        stages=stages,
+        packages=packages,
         rules=rules,
         criteria=criteria,
         auxiliary=manifest.get("auxiliary") or {},

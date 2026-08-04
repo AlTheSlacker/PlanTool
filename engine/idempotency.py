@@ -32,7 +32,7 @@ it exists.
 **How to choose the elements.** Name *what* is being done, never *when*. Almost always the
 answer is already in the data:
 
-- composing a brief -> the task and its serve count
+- composing a brief -> the sub-task and its serve count
 - finalizing -> the plan and its version
 - a state-machine event -> the entity and the target state
 

@@ -38,8 +38,8 @@ def _contracts(rows, n, deps=None):
             table="contracts",
             content={
                 "title": f"c{i}",
-                "behaviours": [
-                    {"key": "effect", "kind": "effect", "statement": f"c{i} works"},
+                "obligations": [
+                    {"key": "behaviour", "kind": "behaviour", "statement": f"c{i} works"},
                     {"key": "NotFound", "kind": "error", "statement": f"c{i} missing id"},
                 ],
             },
@@ -54,8 +54,8 @@ def _contracts(rows, n, deps=None):
 def _replacement(name="contract 0", title="c0 tightened"):
     return RowSubmission(
         table="contracts",
-        content={"title": title, "behaviours": [
-            {"key": "effect", "kind": "effect", "statement": "narrower"}]},
+        content={"title": title, "obligations": [
+            {"key": "behaviour", "kind": "behaviour", "statement": "narrower"}]},
         name=name,
     )
 
@@ -93,7 +93,7 @@ def test_open_revision_refuses_a_second_concurrent_revision(rev, rows, tasks):
 def test_open_revision_refuses_a_superseded_target(rev, rows, tasks):
     refs = _contracts(rows, 2)
     tasks.finalize_plan()
-    rows.supersede_row(refs[0], _replacement(name="contract 0"), "moved on", "sup")
+    rows.supersede_row(refs[0], _replacement(name="contract 0"), "sup")
     with pytest.raises(Exception):
         rev.open_revision(ChangeRequest(targets=(refs[0],), intent="stale"))
 
@@ -284,27 +284,27 @@ def test_abandon_refuses_an_applied_revision(rev, rows, tasks):
 # --- F21 / decisions:62 the affected-only freeze on task-graph ---
 
 
-def test_unaffected_tasks_flow_during_a_revision(rev, rows, tasks):
+def test_unaffected_subtasks_flow_during_a_revision(rev, rows, tasks):
     refs = _contracts(rows, 2)  # independent
     tasks.finalize_plan()
     rev.open_revision(ChangeRequest(targets=(refs[0],), intent="touch c0"))
-    served = tasks.next_task()
-    assert served.task.contract_ref == refs[1] and served.is_draft is False
+    served = tasks.next_subtask()
+    assert served.subtask.contract_ref == refs[1] and served.is_draft is False
 
 
 def test_a_fully_frozen_revision_serves_nothing_without_consent(rev, rows, tasks):
     refs = _contracts(rows, 2)
     tasks.finalize_plan()
     rev.open_revision(ChangeRequest(targets=(refs[0], refs[1]), intent="both"))
-    assert tasks.next_task() == tasks.next_task()  # AllBlockedReport, falsy
-    assert not tasks.next_task()
+    assert tasks.next_subtask() == tasks.next_subtask()  # AllBlockedReport, falsy
+    assert not tasks.next_subtask()
 
 
-def test_allow_draft_serves_a_frozen_task_watermarked(rev, rows, tasks):
+def test_allow_draft_serves_a_frozen_subtask_watermarked(rev, rows, tasks):
     refs = _contracts(rows, 2)
     tasks.finalize_plan()
     rev.open_revision(ChangeRequest(targets=(refs[0], refs[1]), intent="both"))
-    served = tasks.next_task(allow_draft=True, consent="owner ok")
+    served = tasks.next_subtask(allow_draft=True, consent="owner ok")
     assert served.is_draft is True
 
 

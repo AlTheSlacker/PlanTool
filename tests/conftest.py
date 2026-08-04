@@ -1,15 +1,12 @@
 import pytest
 
 from engine.briefs import BriefComposer
-from engine.catalogue import CatalogueService
 from engine.conflicts import ConflictService
-from engine.behaviours import BehaviourService
+from engine.obligations import ObligationService
 from engine.findings import FindingService
 from engine.gaps import GapEngine
 from engine.gates import GateEngine
 from engine.graph import LinkGraph
-from engine.labels import LabelService
-from engine.terms import TermService
 from engine.references import ReferenceService
 from engine.attachments import AttachmentService
 from engine.rows import RowService
@@ -80,26 +77,13 @@ def attachments(store, rows):
 
 
 @pytest.fixture
-def behaviours(store):
-    return BehaviourService(store)
+def obligations(store):
+    return ObligationService(store)
 
 
 @pytest.fixture
 def briefs(store, tasks, graph, attachments):
     return BriefComposer(store, tasks, graph=graph, attachments=attachments)
-
-
-@pytest.fixture
-def catalogue(store, rows):
-    return CatalogueService(store, rows)
-
-
-@pytest.fixture
-def labels(store, rows):
-    """All three collaborators, none optional — see `LabelService`'s own docstring: an
-    unpassed one would leave it constructing cleanly and quietly not resolving lineage
-    roots."""
-    return LabelService(store, rows, TermService(store))
 
 
 PAPER = """A Study of Widget Settling

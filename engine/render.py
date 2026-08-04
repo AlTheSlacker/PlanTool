@@ -1,9 +1,9 @@
 """The plan as a document a person reads.
 
-The last planning stage ends by rendering the plan and skimming it **with the owner**.
+The last planning package ends by rendering the plan and skimming it **with the owner**.
 That skim is the last cheap moment for a "that is not what I meant" catch: everything after
 it costs a revision. Reading the plan back one paginated call at a time is not the same act
-— nobody catches a contradiction between stage 2 and stage 6 by paging.
+— nobody catches a contradiction between package 2 and package 6 by paging.
 
 **Why this exists when rendering was scoped out.** The charter cut plan extraction, and it
 was right about the thing it cut: a round-trippable bundle you could edit outside the tool
@@ -51,7 +51,7 @@ from engine.errors import PlanToolError
 from engine.models import PlanRow, RowRef, RowSelector
 
 #: The rendered document's name in the workspace, beside `plan.db`. Fixed rather than a
-#: parameter: the owner is told in the stage script to open `plan.md`, and a name the
+#: parameter: the owner is told in the package script to open `plan.md`, and a name the
 #: caller chooses is a name the script cannot state.
 RENDER_FILENAME = "plan.md"
 
@@ -249,8 +249,8 @@ class PlanRender:
         facts = [str(row.provenance)]
         if row.assumption_kind:
             facts.append(f"assumption: {row.assumption_kind}")
-        if row.stage is not None:
-            facts.append(f"stage {row.stage}")
+        if row.package is not None:
+            facts.append(f"package {row.package}")
         if row.supersedes is not None:
             facts.append(f"supersedes {self._display(row.supersedes, resolve)}")
         lines.append("*" + " · ".join(facts) + "*")
@@ -259,27 +259,6 @@ class PlanRender:
         mine: list[Resolution] = []
         for key, value in row.content.items():
             lines.append(f"- **{key}**: {self._value(value, resolve, follow, mine)}")
-        # The argument behind the row, shown where the row says what it says (v3 D11). A
-        # row that has neither says nothing about them: an empty heading is noise, and the
-        # gap engine is what reports the absence.
-        # Why the row this one replaced was abandoned. It is stamped on the *old* row, and
-        # only live rows are rendered, so this is the one place in the document a reader
-        # can see it — and it is the sentence that stops a later session re-proposing what
-        # was already tried. The replacement's own grounds say why the new content is
-        # right; they do not say what was wrong with the old.
-        if row.supersedes is not None:
-            gone = self._predecessor_reason(row.supersedes)
-            if gone:
-                lines.append(
-                    f"- **replaces it because**: {self._value(gone, resolve, follow, mine)}"
-                )
-        if row.grounds:
-            lines.append(f"- **grounds**: {self._value(row.grounds, resolve, follow, mine)}")
-        if row.alternatives:
-            lines.append(
-                f"- **considered instead**: "
-                f"{self._value(row.alternatives, resolve, follow, mine)}"
-            )
         if row.links:
             targets = [
                 f"{spec.edge_type} → {self._display(spec.target, resolve)}"
@@ -297,19 +276,6 @@ class PlanRender:
             cites.extend(mine)
         lines.append("")
         return lines
-
-    def _predecessor_reason(self, ref: RowRef) -> str | None:
-        """The `supersede_reason` stamped on the row this one replaced, if it is readable.
-
-        A missing predecessor is a store inconsistency and not this renderer's to report:
-        the document is a photograph, and failing the whole render over one dangling
-        pointer would take the owner's one end-to-end read away to tell him something
-        `read_rows` reports properly.
-        """
-        try:
-            return self.rows.get(ref).supersede_reason
-        except PlanToolError:
-            return None
 
     @staticmethod
     def _display(target: Any, resolve) -> str:

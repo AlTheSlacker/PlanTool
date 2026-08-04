@@ -695,30 +695,27 @@ Responsibility: Sole owner of persistence behind a backend-neutral storage inter
 
 ### row-service (`components:2` · decided)
 Responsibility: Owns the PlanRow lifecycle: provenance-checked batched submission with per-row verdicts, full and targeted readback, in-place assumption upgrade, supersession lineage, and retirement.
-- **submit_rows** (function): (batch: list[RowSubmission] (each submission may also carry optional grounds and alternatives: why this content is right, and what was considered and rejected), idempotency_key: str) -> list[RowVerdict] — per-row accept/reject naming the specific problem; accepted rows stand (requirements:14) (`contracts:69` · decided · links: requirements:5, requirements:14, requirements:27, requirements:48, decisions:43, use_cases:3)
+- **submit_rows** (function): (batch: list[RowSubmission], idempotency_key: str) -> list[RowVerdict] — per-row accept/reject naming the specific problem; accepted rows stand (requirements:14) (`contracts:9` · decided · links: requirements:5, requirements:14, requirements:27, requirements:48, decisions:43, use_cases:3)
   - error ConflictRequired: a submitted row contradicts a stored row; nothing is filed until a conflict is raised and presented (requirements:27)
   - error StorageUnavailable: fail fast; the whole batch is atomic — no partial rows (requirements:6)
   - consumed by: components:15
-- **resolve_assumption** (function): (row: RowRef, answer: OwnerAnswer (verbatim quote + resolution: confirm|revise|reject)) -> PlanRow — the SAME row upgraded in place to decided with the owner's answer quoted; the gap clears immediately (requirements:18; fixes friction decisions:28a) (`contracts:70` · decided · links: requirements:18, requirements:19, decisions:28, use_cases:4)
-  - error RowNotFound: names the missing ref; nothing written
-  - error NotAssumed: row is not an open assumption; no write occurs
-  - error UpgradeFailed: upgrade could not be applied; visible error, never a silent duplicate row (requirements:19)
-  - error RetireNeedsReason: a rejection retires the row, so it records why; a blank retire_reason is refused rather than replaced by the owner-rejected default
-  - consumed by: components:15, components:9
-- **supersede_row** (function): (old: RowRef, replacement: RowSubmission, reason: str (why the OLD row was abandoned — what was learned that makes its content wrong, which is a different sentence from the replacement's grounds)) -> SupersessionRecord — replacement created with supersedes pointer; old row stamped once with superseded_by + timestamp; content never edited (requirements:61) (`contracts:71` · decided · links: requirements:61, decisions:42)
-  - error RowNotFound: names the missing ref
-  - error AlreadySuperseded: old row already has a superseded_by pointer; lineage is write-once — supersede the live replacement instead
-  - error SupersedeNeedsReason: the reason is blank; superseding is an act, and an act records why it was performed
-  - consumed by: components:13, components:15
-- **retire_row** (function): (row: RowRef, reason: str) -> PlanRow in retired state; liveness check for any reader stays the single check of requirements:61 (`contracts:72` · decided · links: entities:2, state_machines:2, requirements:61)
-  - error RowNotFound: names the missing ref
-  - error AlreadyRetired: no-op refused so the audit trail records exactly one retirement
-  - error RetireNeedsReason: the reason is blank; retiring takes a row out of every live read, so a later reader finding it gone needs the sentence, not the timestamp
-  - consumed by: components:15
-- **read_rows** (function): (selector: RowSelector (by ids | table | stage | provenance | liveness | labels | link-neighborhood; paginated)) -> RowPage — full contents of the selected rows, each row's live labels alongside them, and the page's continuation state; targeted reads so resume cost scales with the working set, never a full-plan dump (requirements:62, decisions:49) (`contracts:74` · decided · links: requirements:7, requirements:30, requirements:45, requirements:62, decisions:49)
+- **read_rows** (function): (selector: RowSelector (by ids | table | stage | provenance | liveness | link-neighborhood; paginated)) -> RowPage — full contents of the selected rows; targeted reads so resume cost scales with the working set, never a full-plan dump (requirements:62, decisions:49) (`contracts:10` · decided · links: requirements:7, requirements:30, requirements:45, requirements:62, decisions:49)
   - error UnreadableRows: integrity failure on requested rows; report names unreadable vs surviving rows and routes to recovery (requirements:11)
   - error InvalidSelector: selector malformed; pedagogical error names the invalid field; nothing read
   - consumed by: components:15, components:12, components:5, components:6
+- **resolve_assumption** (function): (row: RowRef, answer: OwnerAnswer (verbatim quote + resolution: confirm|revise|reject)) -> PlanRow — the SAME row upgraded in place to decided with the owner's answer quoted; the gap clears immediately (requirements:18; fixes friction decisions:28a) (`contracts:11` · decided · links: requirements:18, requirements:19, decisions:28, use_cases:4)
+  - error RowNotFound: names the missing ref; nothing written
+  - error NotAssumed: row is not an open assumption; no write occurs
+  - error UpgradeFailed: upgrade could not be applied; visible error, never a silent duplicate row (requirements:19)
+  - consumed by: components:15, components:9
+- **supersede_row** (function): (old: RowRef, replacement: RowSubmission) -> SupersessionRecord — replacement created with supersedes pointer; old row stamped once with superseded_by + timestamp; content never edited (requirements:61) (`contracts:12` · decided · links: requirements:61, decisions:42)
+  - error RowNotFound: names the missing ref
+  - error AlreadySuperseded: old row already has a superseded_by pointer; lineage is write-once — supersede the live replacement instead
+  - consumed by: components:13, components:15
+- **retire_row** (function): (row: RowRef, reason: str) -> PlanRow in retired state; liveness check for any reader stays the single check of requirements:61 (`contracts:13` · decided · links: entities:2, state_machines:2, requirements:61)
+  - error RowNotFound: names the missing ref
+  - error AlreadyRetired: no-op refused so the audit trail records exactly one retirement
+  - consumed by: components:15
 
 ### link-graph (`components:3` · decided)
 Responsibility: Owns the typed-edge substrate: edge creation with row submission, closure traversal, impact enumeration, and cycle detection.
@@ -814,7 +811,7 @@ Responsibility: Owns the red-team finding lifecycle from filing against specific
 - **file_finding** (function): (refs: list[RowRef] (the rows the finding attacks), description: str, severity: str) -> Finding in filed state, linked to the attacked rows (requirements:31); unreadable plan state is itself filed as a finding and certification refused (requirements:30) (`contracts:33` · decided · links: requirements:30, requirements:31, use_cases:8)
   - error RefNotFound: names the missing ref; findings must attack specific rows
   - consumed by: components:15
-- **resolve_finding** (function): (finding_id: int, outcome: Literal['addressed','accepted_risk','withdrawn'], reason: str (for accepted_risk: the owner's explicit acceptance)) -> Finding in terminal state; accepted_risk remains visible at implementation handoff (requirements:33); unresolved findings fail the verification gate (requirements:32) (`contracts:73` · decided · links: requirements:32, requirements:33, use_cases:8)
+- **resolve_finding** (function): (finding_id: int, outcome: Literal['addressed','accepted_risk','withdrawn'], rationale: str (for accepted_risk: the owner's explicit acceptance)) -> Finding in terminal state; accepted_risk remains visible at implementation handoff (requirements:33); unresolved findings fail the verification gate (requirements:32) (`contracts:34` · decided · links: requirements:32, requirements:33, use_cases:8)
   - error FindingNotFound: names the missing id
   - error InvalidTransition: outcome not reachable from the finding's state (state_machines:7); state unchanged
   - consumed by: components:15

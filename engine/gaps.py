@@ -13,7 +13,7 @@ survive re-derivation and survive the target row being superseded.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, fields, replace
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from engine.errors import PlanToolError
@@ -21,6 +21,7 @@ from engine.methodology import Methodology, Rule, load
 from engine.models import PlanRow, RowRef, RowSelector
 from engine.references import EXTRACTS_TABLE, SOURCES_TABLE, ReferenceService
 from engine.rows import RowService
+from engine.terms import TermService
 from engine.clock import now
 from engine.idempotency import key
 from engine.storage import Op, Storage
@@ -77,7 +78,7 @@ class Gap:
     key: str
     rule_key: str
     priority: int
-    stage: int | None
+    package: int | None
     ask: str
     target: RowRef | None
     root: RowRef | None
@@ -92,7 +93,7 @@ class GapCluster:
 
     gaps: tuple[Gap, ...]
     total_open: int
-    stage: int
+    package: int
     grouped_by: str | None = None
     recommend_gate: bool = False
     guidance: str = ""
@@ -105,42 +106,16 @@ class GapEngine:
         rows: RowService,
         references: ReferenceService | None = None,
         methodology: Methodology | None = None,
+        terms: TermService | None = None,
     ):
         self.storage = storage
         self.rows = rows
         self.references = references
         self.methodology = methodology or load()
-        self._check_unreasoned_rules()
-
-    def _check_unreasoned_rules(self) -> None:
-        """Every `unreasoned` rule names columns `PlanRow` actually carries.
-
-        Checked here, once per engine, rather than inside the handler: `getattr(row, f)`
-        with a default turns a misspelt column into "missing on every live row" — a rule
-        that silently measures something other than its name, which is a failure this
-        project has already recorded once. Checked here rather than in the loader because
-        this is the module that knows what a `PlanRow` is; the loader would have to import
-        it back the way it is imported.
-        """
-        carried = {f.name for f in fields(PlanRow)}
-        for rule in self.methodology.rules:
-            if rule.type != "unreasoned":
-                continue
-            named = rule.spec.get("fields")
-            if not named:
-                raise PlanUnreadable(
-                    "an unreasoned rule names no fields, so it would report nothing and "
-                    "read as a rule that is satisfied",
-                    rule=rule.id,
-                )
-            unknown = [f for f in named if f not in carried]
-            if unknown:
-                raise PlanUnreadable(
-                    f"unreasoned rule names {unknown[0]!r}, which is not a column a plan "
-                    f"row carries; a rule reading a column that does not exist reports "
-                    f"every live row as a gap",
-                    rule=rule.id,
-                )
+        #: The glossary, because "which words does this plan agree the meaning of" is an
+        #: interview question like any other — and an unsettled definition is an open
+        #: question only the owner can close, which is exactly what a gap is (D23).
+        self.terms = terms or TermService(storage)
 
     # --- identity (requirements:78) ---
 
@@ -204,14 +179,8 @@ class GapEngine:
             "untraced": self._rule_untraced,
             "open_assumption": self._rule_open_assumption,
             "uncited_section": self._rule_uncited_section,
-            # `no_glossary` and `unsettled_term` stood here until v3 change 4. The first
-            # asked once whether the plan had agreed the meaning of a single word; the
-            # second reported every definition awaiting the owner's approval. Both go on the
-            # owner's instruction — "forget you prompting the user, it's another friction
-            # point" — and the second had nothing left to report anyway, since there is no
-            # approval step. Their declarations leave `gap_rules.yaml` in every loadable
-            # revision, not only the newest.
-            "unreasoned": self._rule_unreasoned,
+            "no_glossary": self._rule_no_glossary,
+            "unsettled_term": self._rule_unsettled_term,
         }.get(rule.type)
         if handler is None:
             raise PlanUnreadable(f"unknown gap rule type {rule.type!r}", rule=rule.id)
@@ -229,7 +198,7 @@ class GapEngine:
             key=self._key(rule.id, root, extra_key),
             rule_key=rule.id,
             priority=rule.priority,
-            stage=rule.stage,
+            package=rule.package,
             ask=rule.ask.format(name=self._name(row) if row else "", **fmt),
             target=row.ref if row else None,
             root=root,
@@ -250,43 +219,6 @@ class GapEngine:
             missing = [f for f in rule.spec["fields"] if not row.content.get(f)]
             if missing:
                 gaps.append(self._make(rule, row, extra_key=",".join(sorted(missing))))
-        return gaps
-
-    def _rule_unreasoned(self, rule: Rule) -> list[Gap]:
-        """A live row of `table` missing any of the named justification **columns**.
-
-        A separate rule type rather than a `source: column` option on `missing_field`, and
-        the difference is the whole point of the design: `missing_field` reads
-        `row.content.get(f)` — free-form JSON with no per-table schema — and D12 settled
-        that nothing an accounting depends on may be inferred from content. A gap rule is
-        an accounting. Making one rule type's behaviour depend on a flag most of its rules
-        do not set is also how a check ends up measuring something narrower than its name.
-
-        No `when_field` and no `unless_field`: the first reads content, which this type
-        deliberately does not, and the second is an exemption `dismiss_gap` already
-        provides, keyed and recorded and readable by the owner.
-
-        `getattr(row, f)` takes no default — `_check_unreasoned_rules` is what makes the
-        two-argument form safe, and the two-argument form is what makes a skipped
-        validation loud instead of silent.
-        """
-        gaps = []
-        for row in self._live(rule.spec["table"]):
-            missing = [f for f in rule.spec["fields"] if not getattr(row, f)]
-            if missing:
-                gaps.append(
-                    self._make(
-                        rule,
-                        row,
-                        # The key is sorted so it is stable whatever order the rule
-                        # declares its fields in — a dismissal is recorded against it. The
-                        # *sentence* is not: sorting it says "records no alternatives and
-                        # grounds", which is the pair backwards. It reads in the order the
-                        # rule names them, which is the order they are written in.
-                        extra_key=",".join(sorted(missing)),
-                        missing=" and ".join(missing),
-                    )
-                )
         return gaps
 
     def _rule_untraced(self, rule: Rule) -> list[Gap]:
@@ -341,6 +273,35 @@ class GapEngine:
                 )
         return gaps
 
+    def _rule_no_glossary(self, rule: Rule) -> list[Gap]:
+        """The plan has content and has never agreed what a single word means.
+
+        Conditioned on there being rows, so it does not fire into an empty workspace where
+        the package-1 rule is already saying the same thing in more useful words. It asks
+        once and is dismissible: a plan whose vocabulary is genuinely uncontentious is a
+        legitimate answer, and one recorded on the owner's say-so rather than by silence.
+        """
+        if self.terms.glossary():
+            return []
+        if not self.rows.read_rows(RowSelector(live_only=True, limit=1)).total:
+            return []
+        return [self._make(rule)]
+
+    def _rule_unsettled_term(self, rule: Rule) -> list[Gap]:
+        """A definition the planner proposed and the owner has not answered.
+
+        The same shape as an assumed-intent row, and for the same reason: it carries the
+        planner's best answer, it is visible as unsettled, and only the owner can close it.
+        Keyed on the word, which is this table's identity everywhere else, so a dismissal
+        survives the entry being superseded by a redefinition.
+        """
+        return [
+            self._make(
+                rule, extra_key=term.term, word=term.term, definition=term.definition
+            )
+            for term in self.terms.awaiting_approval()
+        ]
+
     # --- the live conditions the warning ledger mirrors (DEFECTS.md F50) ---
 
     def _all_live_rows(self) -> list[PlanRow]:
@@ -367,11 +328,8 @@ class GapEngine:
             root = self.lineage_root(row.ref)
             if row.state == "assumed":
                 keys.add(f"assumption:{root}")
-        # A third branch added `term:{root}:{word}` for every live row using a retired word,
-        # until v3 change 4. It goes with the scan that produced it: this method reconciles
-        # live warnings against what still holds, and a warning kind with no producer has
-        # nothing to reconcile. Rows already carrying that kind are settled by the 10 -> 11
-        # migration rather than left active forever.
+            for usage in self.terms.violations(row.content):
+                keys.add(f"term:{root}:{usage.term}")
         return keys
 
     # --- overlay ---
@@ -382,21 +340,21 @@ class GapEngine:
             for r in self.storage.query("SELECT * FROM gap_overlay")
         }
 
-    def open_gaps(self, stage: int | None = None) -> list[Gap]:
+    def open_gaps(self, package: int | None = None) -> list[Gap]:
         """Every open gap, prioritized — the whole list, not a cluster.
 
         next_gaps returns a cluster sized for one exchange; gate-engine needs the
         unabridged set to raise a warning per gap (requirements:21), because a gate
         reporting only the first five would be passing the rest over silently.
 
-        `stage=None` means every stage rather than the current one. Passing a stage
-        keeps that stage's rules plus the stage-agnostic ones (open assumptions,
+        `package=None` means every package rather than the current one. Passing a package
+        keeps that package's rules plus the package-agnostic ones (open assumptions,
         reference coverage), which are never scoped out.
         """
         overlay = self._overlay()
         gaps: list[Gap] = []
         for rule in self.methodology.rules:
-            if stage is not None and rule.stage is not None and rule.stage != stage:
+            if package is not None and rule.package is not None and rule.package != package:
                 continue
             for gap in self._derive(rule):
                 entry = overlay.get(gap.key)
@@ -408,11 +366,11 @@ class GapEngine:
 
     # --- contracts:19 ---
 
-    def next_gaps(self, limit: int = CLUSTER_MAX, stage: int | None = None) -> GapCluster:
+    def next_gaps(self, limit: int = CLUSTER_MAX, package: int | None = None) -> GapCluster:
         """A prioritized cluster of related gaps, each with surrounding row context.
 
         requirements:13 — related, with context, so a cold session needs no other
-        warm-up. requirements:12 — when the stage has no open gaps, recommend running
+        warm-up. requirements:12 — when the package has no open gaps, recommend running
         the gate.
         """
         integrity = self.storage.integrity_check()
@@ -422,14 +380,14 @@ class GapEngine:
                 unreadable=list(integrity.unreadable),
             )
 
-        current = stage if stage is not None else self.current_stage()
-        derived = self.open_gaps(stage=current)
+        current = package if package is not None else self.current_package()
+        derived = self.open_gaps(package=current)
         clustered = self._cluster(derived, limit)
 
         return GapCluster(
             gaps=tuple(clustered),
             total_open=len(derived),
-            stage=current,
+            package=current,
             grouped_by=self._grouping(clustered),
             recommend_gate=not derived,
             guidance=self._guidance(current, bool(derived)),
@@ -438,7 +396,7 @@ class GapEngine:
     def _cluster(self, gaps: list[Gap], limit: int) -> list[Gap]:
         """Group by same target table, then same rule, so the batch is coherent.
 
-        v1's grouping key was entity -> table -> stage. v2 keeps the spirit: a cluster
+        v1's grouping key was entity -> table -> package. v2 keeps the spirit: a cluster
         the owner can answer as one conversation, not a scattering.
         """
         if not gaps:
@@ -469,28 +427,28 @@ class GapEngine:
         rules = {g.rule_key for g in gaps}
         return rules.pop() if len(rules) == 1 else None
 
-    def _guidance(self, stage: int, has_gaps: bool) -> str:
+    def _guidance(self, package: int, has_gaps: bool) -> str:
         """The per-cluster nudge.
 
         v1's guidance was proposal-first only. decisions:36 recorded that this
         under-pushed the owner — the agent authored every use case and the owner "did
-        not feel pushed that hard to add any". So on elicit stages the divergence round
+        not feel pushed that hard to add any". So on elicit packages the divergence round
         comes first, and proposal-first applies only after it.
         """
         if not has_gaps:
             return (
-                "No open gaps in this stage. Run the stage gate — and before you do, "
-                "work the stage script's self-review checklist: gates verify "
+                "No open gaps in this package. Run the package gate — and before you do, "
+                "work the package script's self-review checklist: gates verify "
                 "completeness, self-review is where quality lives."
             )
         try:
-            entry = self.methodology.stage(stage)
+            entry = self.methodology.package(package)
         except KeyError:
             entry = None
 
         if entry is not None and entry.is_elicit:
             return (
-                "Elicit stage: the owner is the source of truth. Run the divergence "
+                "Elicit package: the owner is the source of truth. Run the divergence "
                 "round BEFORE drafting — ask what scenarios are already in their head, "
                 "then probe the negative space (which actor has no scenario? what must "
                 "the system refuse to do?). Only once their candidates are on the table "
@@ -500,25 +458,25 @@ class GapEngine:
                 "one batch with provenance."
             )
         return (
-            "Synthesize stage: you are the source — the owner cannot answer 'what are "
+            "Synthesize package: you are the source — the owner cannot answer 'what are "
             "the contracts?'. Design it, present it with rationale, and let them "
             "adjudicate. Form proposals and ask for objection rather than asking open "
             "questions. Address this cluster as one coherent exchange and submit as one "
             "batch with provenance."
         )
 
-    def current_stage(self) -> int:
-        """The lowest stage that still has open gaps, else the highest stage.
+    def current_package(self) -> int:
+        """The lowest package that still has open gaps, else the highest package.
 
-        The plan never states how the current stage is determined (DEFECTS.md F6).
+        The plan never states how the current package is determined (DEFECTS.md F6).
         """
-        for entry in self.methodology.stages:
+        for entry in self.methodology.packages:
             for rule in self.methodology.rules:
-                if rule.stage != entry.number:
+                if rule.package != entry.number:
                     continue
                 if self._derive(rule):
                     return entry.number
-        return self.methodology.stage_range[1]
+        return self.methodology.package_range[1]
 
     # --- contracts:66 ---
 
@@ -593,7 +551,7 @@ class GapEngine:
         if allow_missing:
             root = gap_key.split("|")[1]
             return Gap(
-                key=gap_key, rule_key=rule_key, priority=9, stage=None,
+                key=gap_key, rule_key=rule_key, priority=9, package=None,
                 ask="(gap no longer derived from current plan state)",
                 target=None,
                 root=RowRef.parse(root) if root and root != "-" else None,

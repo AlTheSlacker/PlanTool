@@ -15,15 +15,14 @@ parses them out of `spec/v2/plan.md` and compares against `REGISTRY`, so "we wra
 everything" is a test rather than a sentence in a docstring. A hand-kept list inside this
 module would report success the first time somebody added a contract and forgot.
 
-Four of those 39 are `EXCLUDED` here, each carrying its reason, rather than quietly absent:
-a permanent false shortfall is a gap everyone learns to ignore, and a real omission
-eventually hides inside it. Three are the writer lock, deleted with the mechanism it
-guarded (D5); the fourth is the split, deleted with the level it divided (v3 change 1). The
-five revision-service contracts were `DEFERRED` until M7 and are now built and exposed, so
-`DEFERRED` is empty. `EXCLUDED` is what the coverage test subtracts, so nothing is
-unaccounted for and nothing is silently missing.
+Three of those 39 are the writer lock, deleted with the mechanism it guarded (D5). They are
+`EXCLUDED` here, each carrying its reason, rather than quietly absent: a permanent false
+shortfall is a gap everyone learns to ignore, and a real omission eventually hides inside
+it. The five revision-service contracts were `DEFERRED` until M7 and are now built and
+exposed, so `DEFERRED` is empty. `EXCLUDED` is what the coverage test subtracts, so nothing
+is unaccounted for and nothing is silently missing.
 
-**Six tools are here that the frozen plan does not send here** — the mandate, the stage
+**Six tools are here that the frozen plan does not send here** — the mandate, the package
 script, the active warnings, the journal, the gate history and `compose_brief` (DEVIATIONS
 D18). They are exposed because `plan_status` tells a resuming planner to call them. The
 alternative was to reword the digest so it only names what happens to be exposed, which
@@ -31,18 +30,16 @@ would let the specification's internal bookkeeping decide what a planner is allo
 know. The door (`engine/door.py`) now makes the two lists agree mechanically: any call
 named in outgoing text must resolve here, or the call fails.
 
-The same shape recurred once at the build-grouping level and cost more: three tools of ours
-went unexposed while finalization refused a plan whose tasks were in no group, so an
-invariant that was enforceable and not satisfiable stopped every plan authored through this
-surface (DEFECTS.md F39). That level is gone (v3 change 1) and those three tools with it,
-but the question it leaves is permanent, and it is worth asking of every guard: **which
-exposed call satisfies this invariant?** Every tool with no contract behind it appears in
-`ADDED` with the reason it exists.
+The same shape recurred at the packaging level and cost more: `declare_package`,
+`assign_task` and `packaging` are ours (D13) and none of them was exposed, while
+`finalize_plan` refuses a plan whose tasks are in no package. An invariant that is
+enforceable and not satisfiable stops every plan authored through this surface — DEFECTS.md
+F39. Every tool with no contract behind it appears in `ADDED` with the reason it exists.
 
 The glossary is the third such group (D23) and the plan has nothing to say about it at all —
-it never asks what the words mean (DEFECTS.md F40). Its labels are the fourth: they replace
-the declared build grouping as the way a review list is filtered (v3 D7/D12), and a
-grouping's replacement is no more anticipated by the frozen plan than the grouping's death.
+it never asks what the words mean (DEFECTS.md F40). `plan_status` names `glossary()` even
+when the plan has no terms yet, because a line that appears only once there are terms can
+never be the line that produces the first one.
 
 **`NotWriter` is moot, not implemented.** `contracts:50` declares it for "a write tool
 invoked without holding the writer lease"; there is no lease, the lock having been removed
@@ -77,10 +74,8 @@ from engine.gaps import GapEngine
 from engine.gates import GateEngine
 from engine.graph import LinkGraph
 from engine.guidance import Guidance
-from engine.catalogue import RELATIONSHIPS, CatalogueService
 from engine.models import (
     ChangeRequest,
-    Comparison,
     Disposition,
     LinkSpec,
     OwnerDecision,
@@ -89,14 +84,13 @@ from engine.models import (
     RowSelector,
     RowSubmission,
 )
-from engine.behaviours import BehaviourService
+from engine.obligations import ObligationService
 from engine.render import PlanRender
 from engine.resume import ResumeService
 from engine.revision import RevisionService
 from engine.rows import RowService
 from engine.storage import Storage
 from engine.tasks import TaskGraphService
-from engine.labels import LabelService
 from engine.terms import TermService
 from engine.validation import SpikeSpec, ValidationService
 from engine.warnings import WarningService
@@ -215,8 +209,8 @@ def as_submission(field_name: str, value: Any) -> RowSubmission:
     """
     got = as_dict(field_name, value)
     unknown = set(got) - {
-        "table", "content", "name", "provenance", "assumption_kind", "links", "stage",
-        "spike", "grounds", "alternatives",
+        "table", "content", "name", "provenance", "assumption_kind", "links", "package",
+        "spike",
     }
     if unknown:
         raise _fail(field_name, f"a row; it has no field {sorted(unknown)[0]!r}", value)
@@ -242,26 +236,12 @@ def as_submission(field_name: str, value: Any) -> RowSubmission:
             _as_link(f"{field_name}.links[{i}]", link)
             for i, link in enumerate(got.get("links") or [])
         ],
-        stage=got.get("stage"),
+        package=got.get("package"),
         # D16 — a world-assumption is filed with the spike that will attack it; row-service
         # requires it there and refuses it anywhere else, so the decoder just carries it.
         spike=(
             as_spike_spec(f"{field_name}.spike", got["spike"])
             if got.get("spike") is not None
-            else None
-        ),
-        # v3 D11, and this parser is the whole of the client-facing route to them: a row
-        # filed through the surface without these keys can never carry its argument, and
-        # every live row stays a gap forever. One decoder serves both `rows` (submit_rows)
-        # and `row` (a supersede replacement), so the two cannot diverge.
-        grounds=(
-            as_str(f"{field_name}.grounds", got["grounds"])
-            if got.get("grounds") is not None
-            else None
-        ),
-        alternatives=(
-            as_str(f"{field_name}.alternatives", got["alternatives"])
-            if got.get("alternatives") is not None
             else None
         ),
     )
@@ -286,8 +266,8 @@ def as_submissions(field_name: str, value: Any) -> list[RowSubmission]:
 def as_selector(field_name: str, value: Any) -> RowSelector:
     got = as_dict(field_name, value)
     unknown = set(got) - {
-        "ids", "table", "stage", "provenance", "live_only", "neighbourhood_of",
-        "limit", "offset", "labels",
+        "ids", "table", "package", "provenance", "live_only", "neighbourhood_of",
+        "limit", "offset",
     }
     if unknown:
         raise _fail(
@@ -297,7 +277,7 @@ def as_selector(field_name: str, value: Any) -> RowSelector:
     return RowSelector(
         ids=as_refs(f"{field_name}.ids", got["ids"]) if got.get("ids") else None,
         table=got.get("table"),
-        stage=got.get("stage"),
+        package=got.get("package"),
         provenance=Provenance(provenance) if provenance else None,
         live_only=bool(got.get("live_only", False)),
         neighbourhood_of=(
@@ -307,30 +287,7 @@ def as_selector(field_name: str, value: Any) -> RowSelector:
         ),
         limit=got.get("limit", 100),
         offset=got.get("offset", 0),
-        # **A field of the selector, not a top-level `read_rows` parameter.** That row takes
-        # exactly one argument and dispatch calls `read_rows(**args)` against
-        # `read_rows(self, selector)`, so a top-level `labels` would be a `TypeError` caught
-        # by the blanket handler and reported as the caller's mistake. Both halves — the
-        # whitelist above and this construction — have to move together, since `as_selector`
-        # refuses any key it does not know.
-        #
-        # **This is the one place allowed to be generous about a bare string.** The model
-        # refuses `labels="engine"` outright, because a `str` is a sequence of `str` and
-        # would filter on its own letters; here a JSON `"labels": "engine"` is plainly one
-        # word, so it is coerced. The friendliness lives at the edge and the model stays
-        # strict.
-        labels=_as_labels(f"{field_name}.labels", got.get("labels")),
     )
-
-
-def _as_labels(field_name: str, value: Any) -> tuple[str, ...]:
-    if value is None:
-        return ()
-    if isinstance(value, str):
-        return (value,)
-    if not isinstance(value, list):
-        raise _fail(field_name, "a list of words, or one word", value)
-    return tuple(as_str(f"{field_name}[{i}]", v) for i, v in enumerate(value))
 
 
 def as_spike_spec(field_name: str, value: Any) -> SpikeSpec:
@@ -403,79 +360,23 @@ def as_owner_decision(field_name: str, value: Any) -> OwnerDecision:
     )
 
 
-# `as_split` stood here, decoding the parts a split divided into. It existed for one
-# parameter of one call, and both are gone with the level (v3 change 1).
-
-
-def as_comparisons(field_name: str, value: Any) -> tuple[Comparison, ...]:
-    """The judgments a registration carries about the near matches it was shown.
-
-    **A comparison names its candidate by name and container, never by an ordinal**, which
-    is the catalogue's identity and also what a planner has in hand: the refusal that sent
-    them here printed the names. A bare name cannot identify a candidate in a table whose
-    identity is a pair, and this parser is where that would first go wrong.
-
-    An unknown relationship is rejected by name and the five are listed, because the five
-    are not guessable and a misspelt one does not merely fail downstream — it takes the
-    branch that writes the entry the planner had just said not to write.
-    """
+def as_split(field_name: str, value: Any) -> list[tuple[str, list[int]]]:
+    """The sub-tasks a split divides into: each a title and the obligations it takes on."""
     if not isinstance(value, list):
-        raise _fail(field_name, "a list of comparisons", value)
+        raise _fail(field_name, "a list of sub-tasks", value)
     out = []
     for i, item in enumerate(value):
-        where = f"{field_name}[{i}]"
-        got = as_dict(where, item)
-        unknown = set(got) - {"matched", "container", "relationship", "reason"}
-        if unknown:
+        got = as_dict(f"{field_name}[{i}]", item)
+        if "title" not in got or "obligations" not in got:
             raise _fail(
-                where, f"a comparison; it has no field {sorted(unknown)[0]!r}", item
+                f"{field_name}[{i}]", "a sub-task with a title and obligations", item
             )
-        for required in ("matched", "relationship", "reason"):
-            if not got.get(required):
-                raise _fail(where, f"a comparison with a {required}", item)
-        relationship = as_str(f"{where}.relationship", got["relationship"])
-        if relationship not in RELATIONSHIPS:
-            raise _fail(
-                f"{where}.relationship",
-                "one of " + "; ".join(f"{k} — {v}" for k, v in RELATIONSHIPS.items()),
-                relationship,
+        out.append(
+            (
+                as_str(f"{field_name}[{i}].title", got["title"]),
+                as_ints(f"{field_name}[{i}].obligations", got["obligations"]),
             )
-        out.append(Comparison(
-            matched=as_str(f"{where}.matched", got["matched"]),
-            relationship=relationship,
-            reason=as_str(f"{where}.reason", got["reason"]),
-            container=(
-                as_str(f"{where}.container", got["container"])
-                if got.get("container")
-                else None
-            ),
-        ))
-    return tuple(out)
-
-
-def as_targets(field_name: str, value: Any) -> list[RowRef | int]:
-    """What a label is being put on: plan-row addresses, task ids, or a mix of both.
-
-    `DECODERS` had `refs` and `ints` and nothing that accepts both, and a label attaches to
-    either kind — so a caller labelling three rows and a task had no way to say so in one
-    call.
-
-    **The `bool` rejection is not defensive.** `bool` subclasses `int`, so a bare
-    `isinstance(v, int)` reads `True` as task 1 and writes an attachment to whichever task
-    happens to hold that id. It is checked here and again in the service, because the
-    service is reachable without the door.
-    """
-    if not isinstance(value, list):
-        raise _fail(field_name, "a list of addresses and task ids", value)
-    out: list[RowRef | int] = []
-    for i, item in enumerate(value):
-        where = f"{field_name}[{i}]"
-        if type(item) is int:
-            out.append(as_int(where, item))
-        elif isinstance(item, str):
-            out.append(as_ref(where, item))
-        else:
-            raise _fail(where, "an address like 'requirements:61' or a task id", item)
+        )
     return out
 
 
@@ -491,11 +392,10 @@ DECODERS: dict[str, Callable[[str, Any], Any]] = {
     "selector": as_selector,
     "spike": as_spike_spec,
     "selection": as_selection,
+    "split": as_split,
     "evidence": as_text_map,
     "change_request": as_change_request,
     "owner_decision": as_owner_decision,
-    "comparisons": as_comparisons,
-    "targets": as_targets,
 }
 
 
@@ -559,7 +459,7 @@ REGISTRY: dict[str, Tool] = {
            Param("target_schema_version", "int", note="the schema version to reach"),
            writes=True),
         # --- row-service (components:2) ---
-        _t("submit_rows", "rows", "submit_rows", "contracts:69",
+        _t("submit_rows", "rows", "submit_rows", "contracts:9",
            "File a batch of rows; each is accepted or rejected on its own, and the batch is "
            "atomic.",
            Param("batch", "rows", note="the rows to file, each with a name of its own; a "
@@ -567,11 +467,11 @@ REGISTRY: dict[str, Tool] = {
                                        "attack it (question, hypothesis, method, budget)"),
            Param("idempotency_key", "str", note="replaying this key returns the first receipt"),
            writes=True),
-        _t("read_rows", "rows", "read_rows", "contracts:74",
+        _t("read_rows", "rows", "read_rows", "contracts:10",
            "Read the rows a selector picks out, a page at a time.",
-           Param("selector", "selector", note="which rows: by address, table, stage, "
+           Param("selector", "selector", note="which rows: by address, table, package, "
                                               "provenance, liveness or neighbourhood")),
-        _t("resolve_assumption", "rows", "resolve_assumption", "contracts:70",
+        _t("resolve_assumption", "rows", "resolve_assumption", "contracts:11",
            "Upgrade an open assumption in place, quoting the owner's answer.",
            Param("ref", "ref", note="the assumption to settle"),
            Param("quote", "str", note="the owner's answer, in his words"),
@@ -582,39 +482,26 @@ REGISTRY: dict[str, Tool] = {
            Param("name", "str", required=False,
                  note="a new name, when the answer changed what the row says"),
            writes=True),
-        _t("supersede_row", "rows", "supersede_row", "contracts:71",
+        _t("supersede_row", "rows", "supersede_row", "contracts:12",
            "Replace a row with a new one, keeping the old as frozen history.",
            Param("old", "ref", note="the row being replaced"),
            Param("replacement", "row", note="the row that replaces it; if it is a "
                                             "world-assumption it carries its spike, as at "
                                             "submission"),
-           Param("reason", "str", note="why the old row was abandoned — what was learned "
-                                       "that makes it wrong, which is not what the "
-                                       "replacement's grounds say"),
            Param("idempotency_key", "str", note="replaying this key returns the first result"),
            writes=True),
-        _t("retire_row", "rows", "retire_row", "contracts:72",
+        _t("retire_row", "rows", "retire_row", "contracts:13",
            "Retire a row that no longer applies, with the reason on the record.",
            Param("ref", "ref", note="the row to retire"),
            Param("reason", "str", note="why it no longer applies"),
            Param("idempotency_key", "str", note="replaying this key retires it once"),
            writes=True),
-        _t("record_grounds", "rows", "record_grounds", DEVIATION,
-           "Give a row the reasoning behind it: why it says what it says, and what was "
-           "considered instead. Write-once per field.",
-           Param("ref", "ref", note="the live row the argument belongs to"),
-           Param("grounds", "str", note="why this row's content is what it is"),
-           Param("alternatives", "str", note="what else was considered and why it lost; "
-                                             "\"none, it follows from X\" is a complete "
-                                             "answer when it is true"),
-           Param("idempotency_key", "str", note="replaying this key returns the first result"),
-           writes=True),
         # --- gap-engine (components:5) ---
         _t("next_gaps", "gaps", "next_gaps", "contracts:19",
            "The next cluster of gaps to work, newest deficiency first.",
            Param("limit", "int", required=False, note="how many to return"),
-           Param("stage", "int", required=False,
-                 note="restrict to one stage; omit for the current one")),
+           Param("package", "int", required=False,
+                 note="restrict to one package; omit for the current one")),
         _t("dismiss_gap", "gaps", "dismiss_gap", "contracts:66",
            "Set a gap aside with a recorded reason; it stops re-surfacing.",
            Param("gap_key", "str", note="the gap being dismissed"),
@@ -627,8 +514,8 @@ REGISTRY: dict[str, Tool] = {
            writes=True),
         # --- gate-engine (components:6) ---
         _t("run_gate", "gates", "run_gate", "contracts:22",
-           "Run a stage's mechanical gate and record the verdict with its holes.",
-           Param("stage", "int", note="which stage to gate"),
+           "Run a package's mechanical gate and record the verdict with its holes.",
+           Param("package", "int", note="which package to gate"),
            writes=True),
         # --- warning-service (components:7) ---
         _t("suppress_warning", "warns", "suppress_warning", "contracts:24",
@@ -687,54 +574,75 @@ REGISTRY: dict[str, Tool] = {
            Param("severity", "str", note="how badly it matters"),
            Param("name", "str", note="what the finding says, in a few words"),
            Param("resolve_by", "int",
-                 note="the stage gate this must be resolved by — its deadline, made a gate"),
+                 note="the package gate this must be resolved by — its deadline, made a gate"),
            writes=True),
-        _t("resolve_finding", "findings", "resolve_finding", "contracts:73",
+        _t("resolve_finding", "findings", "resolve_finding", "contracts:34",
            "Take a finding to a terminal outcome; an accepted risk stays visible at handoff.",
            Param("finding_id", "int", note="the finding being closed"),
            Param("outcome", "str", note="how it was closed"),
-           Param("reason", "str", note="the reasoning, which an accepted risk needs most"),
+           Param("rationale", "str", note="the reasoning, which an accepted risk needs most"),
            writes=True),
         _t("reallocate_finding", "findings", "reallocate_finding", DEVIATION,
            "Defer an open finding to a later gate, on the record. The one alternative to "
            "resolving it at its own gate.",
            Param("finding_id", "int", note="the open finding being deferred"),
-           Param("resolve_by", "int", note="the later stage gate it now answers to"),
+           Param("resolve_by", "int", note="the later package gate it now answers to"),
            Param("reason", "str", note="why it belongs there instead — the owner reads this"),
            writes=True),
         # --- task-graph (components:11) ---
+        _t("declare_package", "tasks", "declare_package", DEVIATION,
+           "Declare a build package — the one grouping a human chooses rather than derives.",
+           Param("name", "str", note="what this package is, in the owner's words"),
+           Param("intent", "str", required=False,
+                 note="what it is for, if the name does not carry it"),
+           writes=True),
+        _t("assign_task", "tasks", "assign_task", DEVIATION,
+           "Place a task in a package. Membership is mandatory and there is no catch-all.",
+           Param("source_ref", "ref", note="the components row whose task this is"),
+           Param("package_id", "int", note="the package it belongs to, by id"),
+           writes=True),
+        _t("packaging", "tasks", "packaging", DEVIATION,
+           "The cut so far: each package with its tasks, and the tasks still in none."),
         _t("finalize_plan", "tasks", "finalize_plan", "contracts:35",
            "Freeze the plan and derive the task graph from it.",
+           Param("required_packages", "ints", required=False,
+                 note="the packages whose gates must have passed"),
            writes=True),
         _t("graph_status", "tasks", "graph_status", "contracts:38",
            "Where the build has got to across the whole graph."),
-        _t("next_task", "tasks", "next_task", "contracts:55",
-           "The next ready task and its candidate rows — the selection is yours to make.",
+        _t("next_subtask", "tasks", "next_subtask", "contracts:55",
+           "The next ready sub-task and its candidate rows — the selection is yours to make.",
            Param("allow_draft", "bool", required=False,
                  note="true to work from a plan that is not finalized"),
            Param("consent", "str", required=False,
                  note="the owner's recorded agreement to work from a draft")),
         _t("verify_completion", "tasks", "verify_completion", "contracts:62",
-           "Check delivered evidence against every behaviour the task owes.",
-           Param("task_id", "int", note="the task being verified"),
-           Param("evidence", "evidence", note="what was delivered, per behaviour"),
+           "Check delivered evidence against every contract the sub-task owes.",
+           Param("subtask_id", "int", note="the sub-task being verified"),
+           Param("evidence", "evidence", note="what was delivered, per contract"),
            writes=True),
         _t("report_status", "tasks", "report_status", "contracts:60",
            "The engine's report of what it observed; 'done' still needs a passing verification.",
-           Param("task_id", "int", note="the task reported on"),
+           Param("subtask_id", "int", note="the sub-task reported on"),
            Param("status", "str", note="what happened"),
            Param("detail", "str", required=False, note="notes, which are not evidence"),
            writes=True),
         # --- brief-composer (components:12) ---
         _t("compose_brief", "briefs", "compose_brief", "contracts:68",
            "Record your selection as an immutable brief; every candidate must be accounted for.",
-           Param("task_id", "int", note="the task the brief is for"),
+           Param("subtask_id", "int", note="the sub-task the brief is for"),
            Param("selection", "selection",
                  note="the rows you include, and a reason for each you leave out"),
            writes=True),
         _t("audit_brief", "briefs", "audit_brief", "contracts:41",
            "Meter a brief against the closure frozen with it.",
            Param("brief_id", "int", note="the brief to audit")),
+        _t("split_subtask", "briefs", "split_subtask", "contracts:40",
+           "Divide a sub-task whose brief proved too large, redistributing what it owes.",
+           Param("subtask_id", "int", note="the sub-task to divide"),
+           Param("into", "split",
+                 note="the sub-tasks to divide it into, each with the obligations it takes"),
+           writes=True),
         # --- session-service (components:14) ---
         _t("journal_note", "resume", "journal_note", "contracts:48",
            "Leave an informal learning that is not a plan row.",
@@ -749,68 +657,60 @@ REGISTRY: dict[str, Tool] = {
            "Where the work got to — the one call a cold planner makes first."),
         _t("journal", "resume", "journal", "contracts:48",
            "The journal notes, in full.",
-           Param("stage", "int", required=False, note="restrict to one stage")),
+           Param("package", "int", required=False, note="restrict to one package")),
         _t("gate_runs", "resume", "gate_runs", "contracts:22",
            "Every gate verdict recorded, newest first."),
         # --- guidance (components:4) ---
         _t("get_mandate", "guidance", "get_mandate", "contracts:17",
            "The engineer's mandate the methodology serves."),
-        _t("get_stage_script", "guidance", "get_stage_script", "contracts:65",
-           "The script for one planning stage.",
-           Param("stage", "int", note="which stage's script")),
+        _t("get_package_script", "guidance", "get_package_script", "contracts:65",
+           "The script for one planning package.",
+           Param("package", "int", note="which package's script")),
         _t("get_auxiliary", "guidance", "get_auxiliary", DEVIATION,
-           "A script that belongs to no single stage — the red team's, for one.",
+           "A script that belongs to no single package — the red team's, for one.",
            Param("name", "str", note="which auxiliary script")),
-        # --- the glossary and its labels (components:2, by deviation) ---
-        #
-        # The glossary is the owner's table and there is no approval step: whatever is
-        # written was authorised by him at the moment it was written, so there is no queue
-        # of unsettled proposals and nothing to settle. `approve_term`, `retire_term` and
-        # `export_glossary` were struck by v3 change 4 with the machinery behind them — the
-        # proposal lifecycle, the banned list, and a manifest with no consumer.
+        # --- the glossary (components:2, by deviation) ---
         _t("define_term", "terms", "define_term", DEVIATION,
-           "Record what a word means in this plan, in the owner's terms.",
+           "Propose what a word means in this plan; the owner settles it. Draft the "
+           "definition yourself — you have just read the rows it appears in.",
            Param("term", "str", note="the word itself"),
            Param("definition", "str",
-                 note="what it means here, in a sentence. A word listed with no meaning "
-                      "beside it is a word two readers read two ways"),
+                 note="what you believe it means here, in a sentence, for the owner to "
+                      "accept or rewrite"),
+           Param("names_ref", "ref", required=False,
+                 note="the row this word names, if it names one"),
+           writes=True),
+        _t("approve_term", "terms", "approve_term", DEVIATION,
+           "Record the owner settling a definition — as proposed, or in his own words.",
+           Param("term", "str", note="the word being settled"),
+           Param("definition", "str", required=False,
+                 note="the owner's own wording, when he rewrote it; omit to accept the "
+                      "proposal as it stands"),
            writes=True),
         _t("redefine_term", "terms", "redefine_term", DEVIATION,
-           "Change what a word means, in place.",
+           "Sharpen what a word means, keeping the old wording as history. Also how a "
+           "retired word comes back.",
            Param("term", "str", note="the word being redefined"),
            Param("definition", "str", note="what it means now"),
+           Param("names_ref", "ref", required=False,
+                 note="the row it names, if that changed too"),
            writes=True),
-        _t("remove_term", "terms", "remove_term", DEVIATION,
-           "Take a word out of the glossary. If anything carries it as a label, this "
-           "refuses and says how widely, so you can supply a replacement or take it off "
-           "everything.",
-           Param("term", "str", note="the word to remove"),
-           Param("replacement", "str", required=False,
-                 note="a word every attachment moves to; it must itself be defined"),
-           Param("detach_all", "bool", required=False,
-                 note="true to take the label off everything instead of moving it"),
+        _t("retire_term", "terms", "retire_term", DEVIATION,
+           "Take a word out of use, saying where it may no longer appear and what to say "
+           "instead.",
+           Param("term", "str", note="the word being retired"),
+           Param("ban_scope", "str",
+                 note="where it is out: prose, identifier, or both"),
+           Param("ban_reason", "str", note="why, so the next writer can agree with it"),
+           Param("use_instead", "str", required=False,
+                 note="the word to say instead; it must be defined already"),
            writes=True),
         _t("glossary", "terms", "glossary", DEVIATION,
-           "Every word this plan has agreed the meaning of, alphabetically."),
-        _t("attach_label", "label_service", "attach_label", DEVIATION,
-           "Put a label on plan rows or tasks. A label is a glossary term, so the word must "
-           "be defined first.",
-           Param("word", "str", note="the label, which must be a live glossary term"),
-           Param("targets", "targets",
-                 note="what to label: plan-row addresses like 'requirements:61', task ids "
-                      "as whole numbers, or a mix"),
-           writes=True),
-        _t("detach_label", "label_service", "detach_label", DEVIATION,
-           "Take a label off plan rows or tasks. The attachment is stamped, not deleted: it "
-           "stays as the record that the label was once there.",
-           Param("word", "str", note="the label to take off"),
-           Param("targets", "targets", note="which rows and tasks to take it off"),
-           writes=True),
-        _t("labels", "label_service", "labels", DEVIATION,
-           "Which labels are in use and how widely — as two counts, rows and tasks, never "
-           "their sum. Naming one lists everything carrying it.",
-           Param("word", "str", required=False,
-                 note="one label, to see every row and task carrying it")),
+           "Every word this plan has agreed the meaning of, retired ones included."),
+        _t("export_glossary", "terms", "export_glossary", DEVIATION,
+           "Publish the vocabulary as a manifest in the workspace for your own checks to "
+           "read.",
+           writes=False),
         # --- the render (components:15, by deviation) ---
         _t("render_plan", "renderer", "render_plan", DEVIATION,
            "Write the plan to a document in the workspace for the owner to read; the "
@@ -846,99 +746,6 @@ REGISTRY: dict[str, Tool] = {
            Param("confirm", "bool", required=False,
                  note="true to actually rewind; omit to preview what a rewind reverts"),
            writes=True),
-        # --- catalogue-service (v3 D10) ---
-        #
-        # No contract row describes any of this: the frozen plan never anticipated a
-        # catalogue, so it cannot have anticipated the calls. That is exactly what
-        # DEVIATION means, and each carries its written reason in `ADDED` below. No
-        # `Absence` entry is filed either — an absence records a call that *exists* and is
-        # deliberately not exposed, and none of these was ever built before.
-        #
-        # Three of these take a parameter whose whole difficulty is knowing what to put in
-        # it — `visibility`, `container` and `comparisons` — and `Param.note` is, in this
-        # module's own words, the whole of the tool's documented interface. A caller who
-        # cannot tell whether `container` wants a name or a ref will pass the wrong one and
-        # read `ContainerNotCatalogued` as a bug in the tool.
-        _t("catalogue_object", "catalogue", "catalogue_object", DEVIATION,
-           "Record an object the plan intends to exist, owned by a component. The search "
-           "runs inside this call, and the top of the ranking must be judged first.",
-           Param("name", "str", note="the class or type name, as it will be written"),
-           Param("purpose", "str",
-                 note="what concept this owns: verb, object, qualifier. It carries the "
-                      "whole of the search, so a vague one is an entry nothing will match"),
-           Param("visibility", "str",
-                 note="public or private — whether anything outside this component may "
-                      "name it"),
-           Param("component_ref", "ref",
-                 note="the component that owns it, as `components:n`. An object's owner is "
-                      "a component and never a task: a service class carries the entry "
-                      "points of twenty tasks"),
-           Param("idempotency_key", "str",
-                 note="replaying this key returns the first result"),
-           Param("comparisons", "comparisons", required=False,
-                 note="your judgment on each near match the search showed you, as "
-                      "{matched, container, relationship, reason}. The candidate is named "
-                      "by name and container, exactly as the refusal printed it. "
-                      "`same` and `contains` mean use what exists, and write no entry. "
-                      "The search matches on any shared word, so read the candidate before "
-                      "answering — a spurious match is expected and `unrelated` settles it"),
-           writes=True),
-        _t("catalogue_function", "catalogue", "catalogue_function", DEVIATION,
-           "Record a function or method the plan intends to exist, owned by a task. The "
-           "search runs inside this call, and the top of the ranking must be judged first.",
-           Param("name", "str", note="the function name, as it will be written"),
-           Param("purpose", "str",
-                 note="what concept this owns: verb, object, qualifier. It carries the "
-                      "whole of the search"),
-           Param("visibility", "str",
-                 note="public or private. A task has exactly one public entry point — the "
-                      "only thing another task's pseudocode may call"),
-           Param("task_id", "int", note="the task this function is the work of"),
-           Param("idempotency_key", "str",
-                 note="replaying this key returns the first result"),
-           Param("container", "str", required=False,
-                 note="the *name* of the object holding it — not a ref, and not a file. "
-                      "Omit for a module-level function; a module is a location, and "
-                      "location is never identity here"),
-           Param("comparisons", "comparisons", required=False,
-                 note="your judgment on each near match the search showed you, as "
-                      "{matched, container, relationship, reason}. The search matches on "
-                      "any shared word, so read the candidate before answering — a spurious "
-                      "match is expected and `unrelated` settles it"),
-           writes=True),
-        _t("retire_catalogue_entry", "catalogue", "retire_catalogue_entry", DEVIATION,
-           "Withdraw an entry the design no longer calls for, with the reason on the "
-           "record. The name becomes free again; retirement is never undone.",
-           Param("name", "str", note="the entry to retire"),
-           Param("container", "str", required=False,
-                 note="the name of the object holding it; omit for a module-level entry"),
-           Param("reason", "str",
-                 note="why it no longer applies. At planning time a design that changed; "
-                      "at build time an absence discovered"),
-           Param("idempotency_key", "str", note="replaying this key retires it once"),
-           writes=True),
-        _t("restate_purpose", "catalogue", "restate_purpose", DEVIATION,
-           "Reword what an entry says it owns. In place, because a purpose line is an "
-           "index entry rather than an argument, and nothing cites it.",
-           Param("name", "str", note="the entry to reword"),
-           Param("container", "str", required=False,
-                 note="the name of the object holding it; omit for a module-level entry"),
-           Param("purpose", "str", note="the new purpose line: verb, object, qualifier"),
-           Param("idempotency_key", "str",
-                 note="replaying this key returns the first result"),
-           writes=True),
-        _t("search_catalogue", "catalogue", "search_catalogue", DEVIATION,
-           "What is already catalogued near this description or name, ranked, both "
-           "directions at once. No cut-off and no notification: it computes and shows.",
-           Param("query", "str",
-                 note="a name, a purpose line, or both — the words are what is matched, "
-                      "against every entry's own name and purpose"),
-           Param("limit", "int", required=False,
-                 note="how many to show; a page size, not a similarity cut-off")),
-        _t("catalogue_clusters", "catalogue", "catalogue_clusters", DEVIATION,
-           "Live entries grouped by the purpose vocabulary they share, most shared first. "
-           "The cross-container report: containers are shown, never filtered on.",
-           Param("limit", "int", required=False, note="how many clusters to show")),
     )
 }
 
@@ -957,12 +764,9 @@ class Absence:
     reason: str
 
 
-#: Contracts the plan sends here that this tool does not implement, each with the decision
-#: that struck it. Three are the writer lock, removed entirely (D5) on the grounds that the
-#: owner plans in one session and the lock guarded a situation that cannot arise. The fourth
-#: is the split, removed with the sub-task level (v3 D5/D7): a task is one function, so
-#: there is nothing to divide, and the call is named here under the frozen plan's own
-#: spelling so a reader grepping it lands on the reason.
+#: Deliberately never built. The writer lock was removed entirely (D5) on the grounds that
+#: the owner plans in one session and the lock guarded a situation that cannot arise; these
+#: three are its remains.
 EXCLUDED: tuple[Absence, ...] = (
     Absence("contracts:53", "renew_lease",
             "the writer lock was removed; there is no lease to renew"),
@@ -970,13 +774,9 @@ EXCLUDED: tuple[Absence, ...] = (
             "the writer lock was removed; there is nothing held to release"),
     Absence("contracts:63", "acquire_writer_lock",
             "the writer lock was removed; there is nothing to acquire"),
-    Absence("contracts:40", "split_subtask",
-            "the level it divided is gone (v3 change 1): a task is one externally-callable "
-            "function, so an over-large brief is answered by the plan naming smaller "
-            "contracts, not by the graph dividing a node after the fact"),
 )
 
-#: Not built yet, each bound to the build stage that owes it — the outstanding-problem
+#: Not built yet, each bound to the build package that owes it — the outstanding-problem
 #: rule: an unresolved item is fixed now or bound to a named gate, never floating.
 DEFERRED: tuple[Absence, ...] = (
 )
@@ -987,91 +787,45 @@ DEFERRED: tuple[Absence, ...] = (
 #: catches. Each entry names the deviation that decided it.
 ADDED: tuple[Absence, ...] = (
     Absence(DEVIATION, "render_plan",
-            "the plan scoped plan rendering out, and the last planning stage ends by "
+            "the plan scoped plan rendering out, and the last planning package ends by "
             "skimming a rendered plan with the owner (D21)"),
     Absence(DEVIATION, "get_auxiliary",
             "the red-team script is a content asset requirements:71 ships and no contract "
             "served it, so the red team could not fetch its own brief (D21)"),
+    Absence(DEVIATION, "declare_package",
+            "packages are the one level a human declares (D13) and finalization refuses a "
+            "plan with an unpackaged task, so with no tool to declare one, no plan "
+            "authored through this surface could ever finalize (D13, F39)"),
+    Absence(DEVIATION, "assign_task",
+            "the other half of D13's membership: the placement is the recorded judgment "
+            "and nothing else can record it (D13, F39)"),
     Absence(DEVIATION, "define_term",
-            "the eight planning stages never ask what the words mean, so a plan could "
+            "the eight planning packages never ask what the words mean, so a plan could "
             "not say — and a vocabulary nothing records is the one F27 broke (D23)"),
+    Absence(DEVIATION, "approve_term",
+            "a definition the tool took from a planning session and filed as settled is "
+            "the tool deciding what the owner's words mean; he accepts it or writes his "
+            "own (D23)"),
     Absence(DEVIATION, "redefine_term",
-            "a meaning sharpens, and a word that could be defined once and never corrected "
-            "is a glossary nobody keeps true (D23)"),
-    Absence(DEVIATION, "remove_term",
-            "the glossary is the owner's to edit, and a table you may add to and rewrite "
-            "but never remove from is not one he owns. It is also the only place the "
-            "replacement word belongs: supplied at the moment it is needed and consumed "
-            "immediately, rather than stored forever in a column (v3 change 4)"),
+            "a meaning sharpens, and the old wording has to stay readable or the change "
+            "reads as a contradiction later (D23)"),
+    Absence(DEVIATION, "retire_term",
+            "retiring a word is the act the whole mechanism exists to make visible, and "
+            "the banned list is what every check downstream counts against (D23)"),
     Absence(DEVIATION, "glossary",
             "a writer needs the words before typing, and a resuming planner has no other "
             "way back to them (D23)"),
-    Absence(DEVIATION, "attach_label",
-            "labels replace the declared build grouping as the way a review list is "
-            "filtered (v3 D7/D12), and the lookup this call performs is the whole of the "
-            "glossary's mechanical role: a label must be a word the plan has defined"),
-    Absence(DEVIATION, "detach_label",
-            "a label put on wrongly has to come off, and it must come off by stamping "
-            "rather than deleting — the attachment is the record that the label was once "
-            "there (v3 change 4)"),
-    Absence(DEVIATION, "labels",
-            "a label on all 687 rows and a label on one are both useless for filtering, "
-            "and only a count against its denominator tells them apart; without this the "
-            "only way to find what a row carries was one call per word (v3 change 4)"),
+    Absence(DEVIATION, "export_glossary",
+            "the delivery point that achieves the most: the tool publishes the vocabulary "
+            "and the codebase's own checks enforce it, with no judgment exercised (D23)"),
+    Absence(DEVIATION, "packaging",
+            "package ids are the only way to assign and a declaration returns one once, so "
+            "a planner resuming cold could not get back to them (D13, F39)"),
     Absence(DEVIATION, "reallocate_finding",
             "D15 gives a finding two exits, resolve or defer-to-a-later-gate; without a tool "
             "for the second, the gate lock could only ever be satisfied by resolving, and a "
             "finding that genuinely belongs later would have no honest move (D15, F39)"),
-    Absence(DEVIATION, "record_grounds",
-            "the plan never anticipated the decision-context fields, so it cannot have "
-            "anticipated the call; without one, the only way to give an existing row its "
-            "grounds is a full replacement submission and a supersede reason for an "
-            "abandonment that never happened (v3 D11)"),
-    Absence(DEVIATION, "catalogue_object",
-            "the frozen plan never anticipated a catalogue, so no contract asks for one; "
-            "and objects are the half that catches things — measured over v2's own engine "
-            "the identity collides eleven times and every collision is an object, against "
-            "zero among the 431 functions (v3 D10)"),
-    Absence(DEVIATION, "catalogue_function",
-            "D10's functions and methods; the entry a task's public one *is* the task, so "
-            "without this call nothing records what the plan intends to exist and "
-            "duplication is caught in the tree instead of in the plan (v3 D10)"),
-    Absence(DEVIATION, "retire_catalogue_entry",
-            "a design that changes leaves entries behind, and an entry that cannot die is "
-            "offered as a candidate for the rest of the plan while locking its own name "
-            "against reuse (v3 D10)"),
-    Absence(DEVIATION, "restate_purpose",
-            "the purpose line carries the whole of the search, so a wrong one is a search "
-            "that fails silently; without this the only repair is a retirement and a "
-            "re-registration, which would poison the churn measurement with typos (v3 D10)"),
-    Absence(DEVIATION, "search_catalogue",
-            "the planner's half of the loop — the tool computes and shows, and a planner "
-            "who cannot look before writing is back to the condition that let three naming "
-            "collisions land in one sitting (v3 D10)"),
-    Absence(DEVIATION, "catalogue_clusters",
-            "the cross-container report: duplication becomes true when nobody is standing "
-            "there, so it is found by a ranked reading rather than by a notification, and "
-            "a threshold would be a judgment written as arithmetic (v3 D10)"),
 )
-
-# There is deliberately no fourth list for "the frozen contract text is stale".
-#
-# There was one — `AMENDED` — holding the five contracts v3 change 2 changed the shape of
-# (`contracts:9`, `:11`, `:12`, `:13`, `:34`). Al ruled on 2026-07-31 that a contract whose
-# signature or error list a change has altered is *superseded in the frozen plan*, through
-# `archive/v1`'s own `lineage.supersede_row`, not annotated at the code: "Of course I want
-# it done properly. I always want it done properly." Those five became `contracts:69`–`73`,
-# which is where `REGISTRY` above now points, and the list emptied.
-#
-# It is not left empty for the next change to refill. `EXCLUDED`, `DEFERRED` and `ADDED`
-# each record something with no other home: a contract the surface will never implement, one
-# it has not implemented yet, a call the plan never anticipated. A stale contract has a home
-# — the row itself — so a list here would only be somewhere to park the supersession instead
-# of performing it, which is the exact substitution the ruling rejected.
-#
-# The check that the substitution has not crept back is `TestTheDenominator`: `plan.md`
-# renders active rows only, so a superseded address disappears from it, and a `REGISTRY`
-# entry still naming one leaves its successor unaccounted for and fails.
 
 #: `contracts:50`'s `NotWriter`, struck rather than implemented. Recorded here because an
 #: outcome that is simply absent looks the same as one that was forgotten.
@@ -1210,47 +964,39 @@ class Surface:
     def __init__(self, storage: Storage, *, guidance: Guidance | None = None):
         self.storage = storage
         self.terms = TermService(storage)
-        self.rows = RowService(storage)
+        # The glossary is built before the row service, which consults it at submission:
+        # the moment of typing is the only moment at which saying "that word is retired"
+        # changes what gets written (D23).
+        self.rows = RowService(storage, terms=self.terms)
+        self.terms.rows = self.rows
         self.graph = LinkGraph(storage)
         self.conflicts = ConflictService(storage, self.rows)
         self.warns = WarningService(storage)
         self.gaps = GapEngine(storage, self.rows)
         # The warning ledger mirrors conditions the gap-engine computes (open gaps, open
-        # assumptions). Late-bound here — the gap-engine is built after the warning service
-        # — so `active_warnings` reconciles those against live state and never reports one a
-        # mutation has already cleared (DEFECTS.md F50).
+        # assumptions, retired-word uses). Late-bound here — the gap-engine is built after
+        # the warning service — so `active_warnings` reconciles those against live state and
+        # never reports one a mutation has already cleared (DEFECTS.md F50). Same late-bind
+        # shape as `terms.rows = rows` above.
         self.warns.live_warning_keys = self.gaps.live_warning_keys
-        # Findings are built before the gate that reads them: the stage-7 criteria go
+        # Findings are built before the gate that reads them: the package-7 criteria go
         # through the finding service now, not through plan_rows (D22).
         self.findings = FindingService(storage, self.rows)
         self.gates = GateEngine(
             storage, self.rows, self.conflicts, self.warns, gaps=self.gaps,
-            findings=self.findings,
+            findings=self.findings, terms=self.terms,
         )
         self.validation = ValidationService(
             storage, self.rows, self.graph, self.conflicts
         )
         self.attachments = AttachmentService(storage, self.rows)
-        self.behaviours = BehaviourService(storage)
-        # The catalogue takes the row service and neither collaborator is optional (v3
-        # D10): `rows` is what checks that a `component_ref` names a live component and
-        # what resolves the addresses inside a purpose line, and convention 11 makes an
-        # unpassed collaborator skip its guard and proceed — a catalogue missing both would
-        # look identical to a working one.
-        self.catalogue = CatalogueService(storage, self.rows)
-        # **`label_service`, not `labels`.** Four things would otherwise be called `labels` —
-        # the tool, the `RowSelector` field, the `RowPage` field, and the service method —
-        # plus this attribute, which the registry's `service` column resolves to, as a
-        # fifth. The three data fields are fine, each qualified by what holds it; this one
-        # would sit beside the tool name in dispatch, and `renderer` a few lines below
-        # records the precedent against exactly that.
-        self.label_service = LabelService(storage, self.rows, self.terms)
+        self.obligations = ObligationService(storage)
         self.tasks = TaskGraphService(
             storage, self.rows, graph=self.graph, findings=self.findings
         )
         self.briefs = BriefComposer(
             storage, self.tasks, graph=self.graph, attachments=self.attachments,
-            behaviours=self.behaviours,
+            obligations=self.obligations, terms=self.terms,
         )
         self.revision = RevisionService(
             storage, self.graph, self.rows, self.findings, self.warns, self.conflicts
@@ -1262,6 +1008,7 @@ class Surface:
         self.renderer = PlanRender(storage, self.rows, self.findings)
         self.resume = ResumeService(
             storage, gaps=self.gaps, warnings=self.warns, guidance=self.guidance,
+            terms=self.terms,
         )
         self.log = ObservabilityLog(storage.workspace)
         self._resolve = resolver_from(self.rows, self.findings)

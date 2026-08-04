@@ -20,7 +20,7 @@ from engine.storage import Storage
 class ImpactReport:
     """contracts:15 — every row transitively affected by a change.
 
-    The plan also requires briefs and built tasks to be enumerated
+    The plan also requires briefs and built sub-tasks to be enumerated
     (requirements:50). Those belong to the deferred execution module (DEVIATIONS.md
     D1), so this report carries rows only and says so.
     """
